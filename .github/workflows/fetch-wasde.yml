@@ -24,7 +24,7 @@ jobs:
         run: pip install openpyxl requests
 
       - name: Fetch WASDE data
-        run: python scripts/fetch_wasde.py
+        run: python commodity-markets-deploy_2/scripts/fetch_wasde.py
 
       - name: Commit and push
         run: |

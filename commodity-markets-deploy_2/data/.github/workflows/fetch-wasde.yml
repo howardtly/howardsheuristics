@@ -21,7 +21,7 @@ jobs:
           python-version: '3.11'
  
       - name: Install dependencies
-        run: pip install openpyxl requests
+        run: pip install openpyxl requests pandas python-calamine
  
       - name: Fetch WASDE data
         run: python scripts/fetch_wasde.py

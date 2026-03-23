@@ -1381,12 +1381,15 @@ function WASDETable({ commodity }) {
     }
   }, [commodity.id]);
 
+  // Use commodity-specific years if available, else fall back to global MY
+  const years = commodity.years || MY;
+  const fcIdx = years.length - 1;
+
   const formatVal = (v, row) => {
     if (v === null || v === undefined) return "—";
     if (row.price) return typeof v === "number" ? v.toFixed(2) : v;
     if (row.pct) return typeof v === "number" ? v.toFixed(1) + "%" : v;
     if (typeof v === "number") {
-      // If any value in this row has a decimal, show all with 1 decimal
       if (!row._hasDecimal) {
         row._hasDecimal = row.values.some(x => typeof x === "number" && x % 1 !== 0);
       }
@@ -1411,14 +1414,14 @@ function WASDETable({ commodity }) {
             }}>
               Item
             </th>
-            {MY.map((yr, i) => (
+            {years.map((yr, i) => (
               <th key={yr} style={{
-                background: i === FC ? "var(--color-background-info)" : "var(--color-background-secondary)",
+                background: i === fcIdx ? "var(--color-background-info)" : "var(--color-background-secondary)",
                 padding: "8px 10px", textAlign: "right", fontWeight: 500, fontSize: 11,
-                color: i === FC ? "var(--color-text-info)" : "var(--color-text-secondary)",
+                color: i === fcIdx ? "var(--color-text-info)" : "var(--color-text-secondary)",
                 borderBottom: "1.5px solid var(--color-border-primary)", minWidth: 72,
               }}>
-                {yr}{i === FC ? " F" : ""}
+                {yr}{i === fcIdx ? " F" : ""}
               </th>
             ))}
           </tr>
@@ -1428,7 +1431,7 @@ function WASDETable({ commodity }) {
             <>
               {si > 0 && <tr key={`sh-${si}`}>
                 <td style={{ padding: "8px 14px", background: "#ffffff", position: "sticky", left: 0, zIndex: 1 }}></td>
-                {MY.map((_, i) => <td key={i}></td>)}
+                {years.map((_, i) => <td key={i}></td>)}
               </tr>}
               {section.rows.map((row, ri) => (
                 <tr key={`r-${si}-${ri}`} style={{
@@ -1539,18 +1542,50 @@ function GlobalWASDETable({ commodity }) {
 
 function WASDEPage() {
   const [sel, setSel] = useState("corn");
+  const [liveUS, setLiveUS] = useState(null);
+  const [dataLabel, setDataLabel] = useState("representative data");
+
+  // Try to load live data
+  useEffect(() => {
+    fetch("data/wasde.json")
+      .then(r => { if (!r.ok) throw new Error("not found"); return r.json(); })
+      .then(data => {
+        if (data && data.us && Object.keys(data.us).length > 0) {
+          setLiveUS(data.us);
+          const d = new Date(data.fetched_at);
+          setDataLabel("USDA ERS data, fetched " + d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }));
+          console.log("Loaded live WASDE data:", Object.keys(data.us));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Build commodity map: use live data if available, else hardcoded
+  const hardcodedMap = {};
+  WASDE_COMMODITIES.forEach(c => { hardcodedMap[c.id] = c; });
+
   const map = {};
-  WASDE_COMMODITIES.forEach(c => { map[c.id] = c; });
+  WASDE_COMMODITIES.forEach(c => {
+    if (liveUS && liveUS[c.id]) {
+      map[c.id] = liveUS[c.id];
+    } else {
+      map[c.id] = c;
+    }
+  });
 
   const globalId = sel === "soybean_meal" ? "soybean_meal" : sel === "soybean_oil" ? "soybean_oil" : sel;
   const globalData = WASDE_GLOBAL[globalId];
 
+  const commodity = map[sel];
+  const years = commodity.years || MY;
+
   const dlWasde = () => {
-    const c = map[sel];
-    const headers = ["Item", ...MY.map((y, i) => i === FC ? y + " F" : y)];
+    const c = commodity;
+    const yrs = c.years || MY;
+    const headers = ["Item", ...yrs.map((y, i) => i === yrs.length - 1 ? y + " F" : y)];
     const rows = [];
     c.sections.forEach(s => {
-      rows.push([`--- ${s.header} (${s.unit}) ---`, ...MY.map(() => "")]);
+      rows.push([`--- ${s.header} ---`, ...yrs.map(() => "")]);
       s.rows.forEach(r => rows.push([r.label, ...r.values]));
     });
     if (globalData) {
@@ -1587,10 +1622,10 @@ function WASDEPage() {
         <div style={{ marginLeft: "auto", paddingBottom: 4 }}><DownloadBtn onClick={dlWasde} /></div>
       </div>
 
-      <h3 style={{ fontSize: 15, fontWeight: 500, color: "var(--color-text-primary)", margin: "0 0 10px" }}>U.S. {map[sel].label} balance sheet</h3>
-      <WASDETable commodity={map[sel]} />
+      <h3 style={{ fontSize: 15, fontWeight: 500, color: "var(--color-text-primary)", margin: "0 0 10px" }}>U.S. {commodity.label} balance sheet</h3>
+      <WASDETable commodity={commodity} />
       <div style={{ marginTop: 6, marginBottom: 4, fontSize: 10, color: "var(--color-text-tertiary)" }}>
-        F = USDA forecast. Marketing years: corn/soybeans Sep–Aug, wheat Jun–May, soybean meal/oil Oct–Sep. Area: million acres. Yield: bushels per acre. Supply/use/stocks: million bushels (corn, soybeans, wheat) / thousand short tons (soybean meal) / million pounds (soybean oil). Price: $/bushel (corn, soybeans, wheat) / $/short ton (meal) / ¢/lb (oil).
+        Source: {dataLabel}. Marketing years: corn/soybeans Sep–Aug, wheat Jun–May, soybean meal/oil Oct–Sep.
       </div>
 
       {globalData && (<>
@@ -4872,26 +4907,10 @@ function App() {
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [openGroups, setOpenGroups] = useState({ grains: true, livestock: true, energy: true, drivers: true, cot: true });
   const [refreshing, setRefreshing] = useState(false);
-  const [liveData, setLiveData] = useState({});
-  const [dataSource, setDataSource] = useState("representative");
   const [lastRefreshed, setLastRefreshed] = useState(() => {
     const now = new Date();
     return now.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
   });
-
-  // Attempt to load live data on mount
-  useEffect(() => {
-    fetch("data/wasde.json")
-      .then(r => { if (!r.ok) throw new Error("not found"); return r.json(); })
-      .then(data => {
-        if (data && data.us) {
-          setLiveData(prev => ({ ...prev, wasde: data }));
-          setDataSource("live");
-          console.log("Loaded live WASDE data, fetched at:", data.fetched_at);
-        }
-      })
-      .catch(() => { console.log("No live WASDE data found, using representative data"); });
-  }, []);
 
   useEffect(() => {
     if (window.Chart) { setChartReady(true); return; }

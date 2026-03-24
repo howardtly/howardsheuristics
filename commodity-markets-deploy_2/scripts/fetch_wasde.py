@@ -247,16 +247,15 @@ def parse_soybeans(wb):
         years.append(my)
         # Hardcoded: Table03 columns B through K (indices 1-10)
         # B=Beg stocks, C=Production, D=Imports, E=Total supply,
-        # F=Crush, G=Exports, H=Seed/feed/residual, I=Total(usage), J=Ending stocks
-        # Read exactly 9 columns from index 1 to 9
-        sd.append([to_float(row[c]) if c < len(row) else None for c in range(1, 10)])
+        # F=Crush, G=Seed use, H=Feed and residual, I=Exports, J=Total usage, K=Ending stocks
+        sd.append([to_float(row[c]) if c < len(row) else None for c in range(1, 11)])
 
     print(f"  Soy S&D: {len(years)} years")
 
-    # Explicit labels matching the 9 columns (B through J)
+    # Explicit labels matching columns B through K (indices 1-10)
     sd_labels = [
         "Beginning stocks", "Production", "Imports", "Total supply",
-        "Crush", "Exports", "Seed, feed, and residual",
+        "Crush", "Seed use", "Feed and residual use", "Exports",
         "Total usage", "Ending stocks"
     ]
 

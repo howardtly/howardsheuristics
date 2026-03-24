@@ -155,26 +155,52 @@ def find_sheet(wb, *candidates):
 def parse_soybeans(wb):
     # Area: tab02 or Table02
     ws02 = find_sheet(wb, "tab02", "Table02", "Table 02")
+    area_data = {}
     if not ws02:
         print("  Soy area sheet not found")
-        area_data = {}
     else:
         rows02 = list(ws02.iter_rows(values_only=True))
-        area_data = {}
-        for i in range(4, len(rows02)):
+        print(f"  Soy area sheet: {len(rows02)} rows")
+        # Print first rows for debugging
+        for i in range(min(6, len(rows02))):
+            print(f"    Row {i}: {[str(c)[:25] if c else '' for c in (rows02[i] or [])][:7]}")
+        
+        for i in range(2, len(rows02)):
             row = rows02[i]
             if not row: continue
-            try: yr = int(str(row[0]).strip())
-            except (ValueError, TypeError): continue
-            my = f"{yr}/{str(yr+1)[-2:]}"
-            planted = to_float(row[1])
-            harvested = to_float(row[2])
-            area_data[my] = {
-                "planted": round(planted / 1000, 1) if planted else None,
-                "harvested": round(harvested / 1000, 1) if harvested else None,
-                "yield": r1(to_float(row[3])),
-            }
+            year_val = str(row[0]).strip() if row[0] else ""
+            
+            # Try marketing year format first (1980/81)
+            if "/" in year_val and len(year_val) >= 6:
+                my = year_val
+                planted = to_float(row[1])
+                harvested = to_float(row[2])
+                yld = to_float(row[3])
+                # Check units: if planted > 500, it's in 1,000 acres, convert to million
+                if planted and planted > 500:
+                    planted = round(planted / 1000, 1)
+                if harvested and harvested > 500:
+                    harvested = round(harvested / 1000, 1)
+                area_data[my] = {"planted": r1(planted), "harvested": r1(harvested), "yield": r1(yld)}
+            else:
+                # Try calendar year format (1980 -> 1980/81)
+                try:
+                    yr = int(year_val)
+                    my = f"{yr}/{str(yr+1)[-2:]}"
+                    planted = to_float(row[1])
+                    harvested = to_float(row[2])
+                    yld = to_float(row[3])
+                    if planted and planted > 500:
+                        planted = round(planted / 1000, 1)
+                    if harvested and harvested > 500:
+                        harvested = round(harvested / 1000, 1)
+                    area_data[my] = {"planted": r1(planted), "harvested": r1(harvested), "yield": r1(yld)}
+                except (ValueError, TypeError):
+                    continue
     print(f"  Soy area: {len(area_data)} years")
+    if area_data:
+        s = list(area_data.keys())[-1]
+        print(f"    Sample {s}: {area_data[s]}")
 
     # S&D: tab3 or Table03
     ws03 = find_sheet(wb, "tab3", "Table03", "Table 03", "tab03")
@@ -182,9 +208,42 @@ def parse_soybeans(wb):
         print("  Soy S&D sheet not found")
         return None
     rows03 = list(ws03.iter_rows(values_only=True))
-    sd_labels = ["Beginning stocks", "Production", "Imports", "Total supply", "Crush", "Exports", "Seed, feed, and residual", "Total disappearance", "Ending stocks"]
+    print(f"  Soy S&D sheet: {len(rows03)} rows")
+    # Print first data rows for format detection
+    for i in range(min(8, len(rows03))):
+        print(f"    Row {i}: {[str(c)[:20] if c else '' for c in (rows03[i] or [])][:11]}")
+
+    # Find first data row (has marketing year in col 0)
+    data_start = None
+    for i in range(len(rows03)):
+        row = rows03[i]
+        if not row: continue
+        val = str(row[0]).strip() if row[0] else ""
+        if "/" in val and len(val) >= 6:
+            try:
+                int(val[:4])
+                data_start = i
+                break
+            except ValueError:
+                pass
+    
+    if data_start is None:
+        print("  Could not find soy S&D data start")
+        return None
+
+    # Count data columns in first data row
+    first_row = rows03[data_start]
+    ncols = 0
+    for c in range(1, len(first_row)):
+        val = str(first_row[c]).strip() if first_row[c] else ""
+        if val and val not in ("", "nan"):
+            ncols = c
+    ncols_data = ncols  # last column with data
+
+    print(f"  Soy S&D data starts row {data_start}, ~{ncols_data} data columns")
+
     years, sd = [], []
-    for i in range(7, len(rows03)):
+    for i in range(data_start, len(rows03)):
         row = rows03[i]
         if not row: continue
         my = str(row[0]).strip() if row[0] else ""
@@ -192,19 +251,41 @@ def parse_soybeans(wb):
         try: int(my[:4])
         except ValueError: continue
         years.append(my)
-        sd.append([to_float(row[1 + c]) for c in range(len(sd_labels))])
+        # Read all columns from 1 to ncols_data+1
+        sd.append([to_float(row[c]) for c in range(1, ncols_data + 1)])
     print(f"  Soy S&D: {len(years)} years")
+
+    # Map columns by position
+    # From the debug output, tab3/Table03 has:
+    # col1=Beg stocks, col2=Production, col3=Imports, col4=Total supply,
+    # col5=Crush, col6=Exports, col7=Seed/feed/residual, col8=Total disappearance, col9=Ending stocks
+    # But let's use the actual count — total usage is second-to-last, ending stocks is last
+    sd_labels = ["Beginning stocks", "Production", "Imports", "Total supply", "Crush", "Exports", 
+                 "Seed, feed, and residual", "Total usage", "Ending stocks"]
+    
+    # Adjust if column count doesn't match
+    actual_cols = len(sd[0]) if sd else 0
+    if actual_cols != len(sd_labels):
+        print(f"  WARNING: expected {len(sd_labels)} cols, got {actual_cols}")
+        # Use positional: total usage = col index -2, ending stocks = col index -1
+        if actual_cols >= 2:
+            sd_labels = [f"Col{c+1}" for c in range(actual_cols)]
+            sd_labels[0] = "Beginning stocks"
+            sd_labels[1] = "Production"
+            if actual_cols > 2: sd_labels[2] = "Imports"
+            if actual_cols > 3: sd_labels[3] = "Total supply"
+            sd_labels[-2] = "Total usage"
+            sd_labels[-1] = "Ending stocks"
 
     rows_out = [
         {"label": "Area planted", "values": [area_data.get(y, {}).get("planted") for y in years]},
         {"label": "Area harvested", "values": [area_data.get(y, {}).get("harvested") for y in years]},
         {"label": "Yield per harvested acre", "values": [area_data.get(y, {}).get("yield") for y in years]},
     ]
-    renames = {"Total disappearance": "Total usage"}
     for ci, label in enumerate(sd_labels):
-        display = renames.get(label, label)
-        rd = {"label": display, "values": [ri(sd[yi][ci]) for yi in range(len(years))]}
-        if "total" in display.lower() or "ending" in display.lower(): rd["bold"] = True
+        if ci >= actual_cols: break
+        rd = {"label": label, "values": [ri(sd[yi][ci]) for yi in range(len(years))]}
+        if "total" in label.lower() or "ending" in label.lower(): rd["bold"] = True
         if label == "Beginning stocks": rd["spaceBefore"] = True
         rows_out.append(rd)
 
@@ -212,6 +293,10 @@ def parse_soybeans(wb):
     tu = next((r for r in rows_out if r["label"] == "Total usage"), None)
     if es and tu:
         rows_out.append({"label": "Stocks/use (%)", "values": [pct(es["values"][i], tu["values"][i]) for i in range(len(years))], "bold": True, "pct": True})
+
+    return {"id": "soybeans", "label": "Soybeans", "years": years,
+            "sections": [{"header": "Supply and disappearance", "unit": "million bushels", "rows": rows_out}]}
+    print(f"  Soy S&D: {len(years)} years")
 
     return {"id": "soybeans", "label": "Soybeans", "years": years,
             "sections": [{"header": "Supply and disappearance", "unit": "million bushels", "rows": rows_out}]}

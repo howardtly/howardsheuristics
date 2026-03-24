@@ -71,7 +71,7 @@ const SOYBEANS = {
 };
 
 const SOYBEAN_MEAL = {
-  label: "Soybean meal", id: "soymeal",
+  label: "Soybean meal", id: "soybean_meal",
   sections: [
     { header: "Supply", unit: "thousand short tons", rows: [
       { label: "Beginning stocks", values: [231,275,254,228,214,220,264,254,332,247,275,246,234,237,225,230,202,274,238,247,314,330,314,285,263,330,348,362,398,377,362,320,340,375,400,380] },
@@ -92,7 +92,7 @@ const SOYBEAN_MEAL = {
 };
 
 const SOYBEAN_OIL = {
-  label: "Soybean oil", id: "soyoil",
+  label: "Soybean oil", id: "soybean_oil",
   sections: [
     { header: "Supply", unit: "million pounds", rows: [
       { label: "Beginning stocks", values: [1354,1497,1711,1726,1501,1416,1574,1723,1680,2262,1972,2393,2257,1710,2020,2448,2885,3186,2731,2517,2692,2517,2338,1777,1725,1780,1901,1601,1777,1831,1633,2090,2345,1717,1600,1650] },

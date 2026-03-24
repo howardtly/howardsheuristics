@@ -4950,7 +4950,7 @@ function App() {
     <div style={{ display: "flex", height: "100vh", fontFamily: "var(--font-sans)" }}>
       <div style={{ width: navCollapsed ? 48 : 220, flexShrink: 0, transition: "width 0.2s ease", borderRight: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-secondary)", display: "flex", flexDirection: "column", overflow: "hidden", height: "100vh", position: "sticky", top: 0 }}>
         <div style={{ padding: navCollapsed ? "16px 8px" : "16px 16px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", gap: 10, minHeight: 56, flexShrink: 0 }}>
-          {!navCollapsed && <div><div style={{ fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)", whiteSpace: "nowrap" }}>Commodity Markets</div></div>}
+          {!navCollapsed && <div><div style={{ fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)", whiteSpace: "nowrap" }}>Howard's Heuristics</div></div>}
           <button onClick={() => setNavCollapsed(!navCollapsed)} style={{ marginLeft: navCollapsed ? 0 : "auto", background: "transparent", border: "none", cursor: "pointer", padding: 4, color: "var(--color-text-secondary)", display: "flex" }}>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">{navCollapsed ? <path d="M6 3l5 5-5 5" /> : <path d="M10 3L5 8l5 5" />}</svg>
           </button>

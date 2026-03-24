@@ -1433,7 +1433,9 @@ function WASDETable({ commodity }) {
                 {years.map((_, i) => <td key={i}></td>)}
               </tr>}
               {section.rows.map((row, ri) => (
-                <tr key={`r-${si}-${ri}`} style={{
+                <React.Fragment key={`r-${si}-${ri}`}>
+                {row.spaceBefore && <tr><td style={{ padding: "4px 0", background: "#ffffff", position: "sticky", left: 0, zIndex: 1 }}></td>{years.map((_, i) => <td key={i} style={{ padding: "4px 0" }}></td>)}</tr>}
+                <tr style={{
                   borderBottom: "0.5px solid var(--color-border-tertiary)",
                 }}>
                   <td style={{
@@ -1459,6 +1461,7 @@ function WASDETable({ commodity }) {
                     </td>
                   ))}
                 </tr>
+                </React.Fragment>
               ))}
             </>
           ))}

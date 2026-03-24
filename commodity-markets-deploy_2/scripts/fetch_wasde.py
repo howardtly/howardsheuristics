@@ -406,9 +406,7 @@ def parse_soymeal(wb):
     rows_out.append({"label": "Total usage", "values": [ri(sd[yi][6]) for yi in range(len(years))], "bold": True})
 
     es_vals = [ri(sd[yi][7]) for yi in range(len(years))]
-    tu_vals = [ri(sd[yi][6]) for yi in range(len(years))]
     rows_out.append({"label": "Ending stocks", "values": es_vals, "bold": True, "spaceBefore": True})
-    rows_out.append({"label": "Stocks/use (%)", "values": [pct(es_vals[i], tu_vals[i]) for i in range(len(years))], "bold": True, "pct": True})
 
     return {"id": "soybean_meal", "label": "Soybean Meal", "years": years,
             "sections": [{"header": "Supply and disappearance", "unit": "1,000 short tons", "rows": rows_out}]}
@@ -453,12 +451,12 @@ def parse_soyoil(wb):
         try: int(my[:4])
         except ValueError: continue
         years.append(my)
-        # Read columns B through J (indices 1-9)
-        sd.append([to_float(row[c]) if c < len(row) else None for c in range(1, 10)])
+        # Read columns B through K (indices 1-10)
+        sd.append([to_float(row[c]) if c < len(row) else None for c in range(1, 11)])
     print(f"  Soy oil: {len(years)} years")
 
     # Table05 columns: B=Beg stocks, C=Production, D=Imports, E=Total supply,
-    # F=Domestic total, G=Biofuel, H=Exports, I=Total disappearance(usage), J=Ending stocks
+    # F=Domestic total, G=Biofuel, H=Food/feed/other industrial, I=Exports, J=Total disappearance(usage), K=Ending stocks
     rows_out = []
     rows_out.append({"label": "Beginning stocks", "values": [ri(sd[yi][0]) for yi in range(len(years))]})
     rows_out.append({"label": "Production", "values": [ri(sd[yi][1]) for yi in range(len(years))]})
@@ -466,14 +464,13 @@ def parse_soyoil(wb):
     rows_out.append({"label": "Total supply", "values": [ri(sd[yi][3]) for yi in range(len(years))], "bold": True})
 
     rows_out.append({"label": "Domestic total", "values": [ri(sd[yi][4]) for yi in range(len(years))], "spaceBefore": True})
-    rows_out.append({"label": "Biofuel", "values": [ri(sd[yi][5]) for yi in range(len(years))]})
-    rows_out.append({"label": "Exports", "values": [ri(sd[yi][6]) for yi in range(len(years))]})
-    rows_out.append({"label": "Total usage", "values": [ri(sd[yi][7]) for yi in range(len(years))], "bold": True})
+    rows_out.append({"label": "Biofuel", "values": [ri(sd[yi][5]) for yi in range(len(years))], "indent": True})
+    rows_out.append({"label": "Food, feed, and other industrial", "values": [ri(sd[yi][6]) for yi in range(len(years))], "indent": True})
+    rows_out.append({"label": "Exports", "values": [ri(sd[yi][7]) for yi in range(len(years))]})
+    rows_out.append({"label": "Total usage", "values": [ri(sd[yi][8]) for yi in range(len(years))], "bold": True})
 
-    es_vals = [ri(sd[yi][8]) for yi in range(len(years))]
-    tu_vals = [ri(sd[yi][7]) for yi in range(len(years))]
+    es_vals = [ri(sd[yi][9]) for yi in range(len(years))]
     rows_out.append({"label": "Ending stocks", "values": es_vals, "bold": True, "spaceBefore": True})
-    rows_out.append({"label": "Stocks/use (%)", "values": [pct(es_vals[i], tu_vals[i]) for i in range(len(years))], "bold": True, "pct": True})
 
     return {"id": "soybean_oil", "label": "Soybean Oil", "years": years,
             "sections": [{"header": "Supply and disappearance", "unit": "million pounds", "rows": rows_out}]}

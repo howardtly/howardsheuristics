@@ -102,6 +102,39 @@ def parse_corn(wb_data):
             sd_data.append({label: to_float(row[2 + ci]) for ci, label in enumerate(col_labels)})
     print(f"  Corn S&D: {len(sd_years)} years")
 
+    # --- Ethanol from Table31 ---
+    # Table31: Corn FSI detail. Quarterly format like Table04.
+    # Headers: Market year, Quarter, HFCS, Glucose/dextrose, Starch, Alcohol for fuel, Alcohol for beverages, Cereals/other, Seed, Total FSI
+    ethanol_data = {}
+    try:
+        ws31 = wb["FGYearbookTable31"]
+        rows31 = list(ws31.iter_rows(values_only=True))
+        h31 = rows31[1]
+        h31_labels = [str(h31[c]).strip().replace("\n", " ") if h31[c] else "" for c in range(2, len(h31))]
+        print(f"  Table31 headers: {h31_labels}")
+        # Find the "Alcohol for fuel" column index
+        ethanol_col = None
+        for ci, lbl in enumerate(h31_labels):
+            if "alcohol for fuel" in lbl.lower() or "fuel" in lbl.lower():
+                ethanol_col = ci
+                break
+        if ethanol_col is not None:
+            print(f"  Ethanol column index: {ethanol_col}")
+            current_my31 = None
+            for i in range(2, len(rows31)):
+                row = rows31[i]
+                if not row or len(row) < 2: continue
+                col0 = str(row[0]).strip() if row[0] else ""
+                if "/" in col0 and len(col0) >= 7: current_my31 = col0
+                quarter = str(row[1]).strip() if row[1] else ""
+                if quarter.startswith("MY") and current_my31:
+                    ethanol_data[current_my31] = to_float(row[2 + ethanol_col])
+            print(f"  Ethanol: {len(ethanol_data)} years")
+        else:
+            print("  Ethanol column not found in Table31")
+    except Exception as e:
+        print(f"  Table31 error: {e}")
+
     years = sd_years
     rows_out = [
         {"label": "Area planted", "values": [r1(area_planted.get(y)) for y in years]},
@@ -109,34 +142,31 @@ def parse_corn(wb_data):
         {"label": "Yield per harvested acre", "values": [r1(yield_per_acre.get(y)) for y in years]},
     ]
 
-    sd_map = [
-        ("Beginning stocks", "Beginning stocks", False),
-        ("Production", "Production", False),
-        ("Imports", "Imports", False),
-        ("Total supply", "Total supply", True),
-        ("Food, alcohol, and industrial", "Food, alcohol, and industrial use", False),
-        ("Seed use", "Seed use", False),
-        ("Feed and residual", "Feed and residual use", False),
-        ("Total domestic", "Total domestic use", True),
-        ("Exports", "Exports", False),
-        ("Total use", "Total usage", True),
-        ("Ending stocks", "Ending stocks", True),
-    ]
-    for prefix, display, bold in sd_map:
+    # Helper to get S&D values by column prefix
+    def get_sd(prefix):
         key = next((k for k in col_labels if k.lower().startswith(prefix.lower())), None)
-        values = [ri(sd_data[yi].get(key)) if key else None for yi in range(len(years))]
-        rd = {"label": display, "values": values}
-        if bold: rd["bold"] = True
-        # spaceBefore: before beginning stocks, before first use row (after total supply), before ending stocks (after total usage)
-        if display == "Beginning stocks": rd["spaceBefore"] = True
-        if display == "Food, alcohol, and industrial use": rd["spaceBefore"] = True
-        if display == "Ending stocks": rd["spaceBefore"] = True
-        rows_out.append(rd)
+        return [ri(sd_data[yi].get(key)) if key else None for yi in range(len(years))]
 
-    es = next((r for r in rows_out if r["label"] == "Ending stocks"), None)
-    tu = next((r for r in rows_out if r["label"] == "Total usage"), None)
-    if es and tu:
-        rows_out.append({"label": "Stocks/use (%)", "values": [pct(es["values"][i], tu["values"][i]) for i in range(len(years))], "bold": True, "pct": True})
+    # Supply
+    rows_out.append({"label": "Beginning stocks", "values": get_sd("Beginning stocks"), "spaceBefore": True})
+    rows_out.append({"label": "Production", "values": get_sd("Production")})
+    rows_out.append({"label": "Imports", "values": get_sd("Imports")})
+    rows_out.append({"label": "Total supply", "values": get_sd("Total supply"), "bold": True})
+
+    # Use — reordered: Feed/residual, FSI, Ethanol (indent), Seed (indent), Total domestic
+    rows_out.append({"label": "Feed and residual", "values": get_sd("Feed and residual"), "spaceBefore": True})
+    rows_out.append({"label": "Food, seed & industrial", "values": get_sd("Food, alcohol, and industrial")})
+    rows_out.append({"label": "Ethanol", "values": [ri(ethanol_data.get(y)) for y in years], "indent": True})
+    rows_out.append({"label": "Seed", "values": get_sd("Seed use"), "indent": True})
+    rows_out.append({"label": "Total domestic use", "values": get_sd("Total domestic"), "bold": True})
+    rows_out.append({"label": "Exports", "values": get_sd("Exports")})
+    rows_out.append({"label": "Total usage", "values": get_sd("Total use"), "bold": True})
+
+    # Ending stocks
+    es_vals = get_sd("Ending stocks")
+    tu_vals = get_sd("Total use")
+    rows_out.append({"label": "Ending stocks", "values": es_vals, "bold": True, "spaceBefore": True})
+    rows_out.append({"label": "Stocks/use (%)", "values": [pct(es_vals[i], tu_vals[i]) for i in range(len(years))], "bold": True, "pct": True})
 
     return {"id": "corn", "label": "Corn", "years": years,
             "sections": [{"header": "Supply and disappearance", "unit": "million bushels", "rows": rows_out}]}
@@ -291,8 +321,8 @@ def parse_soybeans(wb):
             dom_vals.append(None)
 
     rows_out.append({"label": "Crush", "values": crush_vals, "spaceBefore": True})
-    rows_out.append({"label": "Seed use", "values": seed_vals})
-    rows_out.append({"label": "Feed and residual use", "values": feed_vals})
+    rows_out.append({"label": "Seed", "values": seed_vals})
+    rows_out.append({"label": "Feed and residual", "values": feed_vals})
     rows_out.append({"label": "Total domestic use", "values": dom_vals, "bold": True})
     rows_out.append({"label": "Exports", "values": [ri(sd[yi][7]) for yi in range(len(years))]})
     rows_out.append({"label": "Total usage", "values": [ri(sd[yi][8]) for yi in range(len(years))], "bold": True})
@@ -529,6 +559,9 @@ def parse_wheat(wb_data):
             if "total disappearance" in lower: renames[lbl] = "Total usage"
             elif "total supply" in lower: renames[lbl] = "Total supply"
             elif "total domestic" in lower: renames[lbl] = "Total domestic use"
+            elif lower.strip() == "food use": renames[lbl] = "Food"
+            elif "seed use" in lower: renames[lbl] = "Seed"
+            elif "feed and residual use" in lower: renames[lbl] = "Feed and residual"
 
         for ci, lbl in enumerate(col_labels):
             display = renames.get(lbl, lbl.replace(" 2/", "").replace(" 3/", "").replace(" 4/", "").strip())
@@ -536,7 +569,7 @@ def parse_wheat(wb_data):
             rd = {"label": display, "values": values}
             if "total" in display.lower() or "ending" in display.lower(): rd["bold"] = True
             if "beginning" in display.lower(): rd["spaceBefore"] = True
-            if display == "Food use": rd["spaceBefore"] = True
+            if display == "Food": rd["spaceBefore"] = True
             if "ending" in display.lower(): rd["spaceBefore"] = True
             rows_out.append(rd)
 

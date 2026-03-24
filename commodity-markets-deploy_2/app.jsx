@@ -1443,8 +1443,8 @@ function WASDETable({ commodity }) {
                     background: "#ffffff",
                     padding: row.indent ? "5px 14px 5px 28px" : "5px 14px",
                     fontWeight: row.bold ? 500 : 400,
-                    color: row.indent ? "var(--color-text-tertiary)" : "var(--color-text-primary)",
-                    fontSize: row.indent ? 11 : 12,
+                    color: "var(--color-text-primary)",
+                    fontSize: 12,
                     borderRight: "0.5px solid var(--color-border-tertiary)",
                   }}>
                     {row.label}

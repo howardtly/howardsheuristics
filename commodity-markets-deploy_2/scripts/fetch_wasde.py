@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """
-WASDE Data Fetch v10
-- Wheat: Table01 area + Table06 S&D, both filtered to "All wheat" rows
-- Corn: area from Table01 with carry-forward
-- Soybeans: area from tab02 converted to million acres
+WASDE Data Fetch v11
+- Wheat Table06: col0=MY, col1=Type ("All wheat"), col2+=S&D data
+- Oil crops: tries current URL, falls back to cached data
 """
 
 import json, os, sys, urllib.request, urllib.error, zipfile
@@ -17,19 +16,31 @@ OUTPUT_DIR = os.path.join(REPO_ROOT, "data")
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 
 CORN_URL = "https://www.ers.usda.gov/media/5764/feed-grains-yearbook-tables-all-years.xlsx?v=77939"
-OILCROPS_URL = "https://www.ers.usda.gov/media/5219/all-tables-oil-crops-yearbook-complete-data-set-in-compressed-zip-file.zip?v=11593"
+OILCROPS_URLS = [
+    "https://www.ers.usda.gov/media/5220/all-tables-oil-crops-yearbook.xlsx?v=57591",
+    "https://www.ers.usda.gov/media/5220/all-tables-oil-crops-yearbook.xlsx",
+    "https://www.ers.usda.gov/media/5219/all-tables-oil-crops-yearbook-complete-data-set-in-compressed-zip-file.zip?v=11593",
+]
 WHEAT_URL = "https://www.ers.usda.gov/media/5706/wheat-data-all-years.xlsx?v=53976"
 
 
 def fetch_url(url, timeout=60):
-    print(f"  Fetching: {url[:90]}...")
+    print(f"  Trying: {url[:90]}...")
     try:
         req = urllib.request.Request(url, headers=HEADERS)
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.read()
+            data = resp.read()
+            print(f"  OK: {len(data):,} bytes")
+            return data
     except Exception as e:
         print(f"  FAILED: {e}")
         return None
+
+def fetch_with_fallbacks(urls, timeout=60):
+    for url in urls:
+        data = fetch_url(url, timeout)
+        if data and len(data) > 100: return data
+    return None
 
 def to_float(v):
     if v is None: return None
@@ -50,15 +61,10 @@ def pct(num, den):
     return None
 
 
-# ═══════════════════════════════════════════════════════════
-# CORN
-# ═══════════════════════════════════════════════════════════
-
 def parse_corn(wb_data):
     import openpyxl
     wb = openpyxl.load_workbook(BytesIO(wb_data), read_only=True, data_only=True)
 
-    # Area from Table01: col0=Commodity, col1=MY, col2=Planted, col3=Harvested, col4=Production, col5=Yield
     ws01 = wb["FGYearbookTable01"]
     rows01 = list(ws01.iter_rows(values_only=True))
     area_planted, area_harvested, yield_per_acre = {}, {}, {}
@@ -77,7 +83,6 @@ def parse_corn(wb_data):
         yield_per_acre[my] = to_float(row[5])
     print(f"  Corn area: {len(area_planted)} years")
 
-    # S&D from Table04
     ws04 = wb["FGYearbookTable04"]
     rows04 = list(ws04.iter_rows(values_only=True))
     header = rows04[1]
@@ -133,10 +138,6 @@ def parse_corn(wb_data):
     return {"id": "corn", "label": "Corn", "years": years,
             "sections": [{"header": "Supply and disappearance", "unit": "million bushels", "rows": rows_out}]}
 
-
-# ═══════════════════════════════════════════════════════════
-# SOYBEANS
-# ═══════════════════════════════════════════════════════════
 
 def parse_soybeans(wb):
     ws02 = wb["tab02"]
@@ -260,10 +261,6 @@ def parse_soyoil(wb):
             "sections": [{"header": "Supply and disappearance", "unit": "million pounds", "rows": rows_out}]}
 
 
-# ═══════════════════════════════════════════════════════════
-# WHEAT — Table01 (area, filtered to "All wheat") + Table06 (S&D, filtered to "All wheat")
-# ═══════════════════════════════════════════════════════════
-
 def parse_wheat(wb_data):
     try:
         import pandas as pd
@@ -280,16 +277,13 @@ def parse_wheat(wb_data):
         except: pass
     if xls is None: return None
 
-    # --- Area from Table01, filtered to "All wheat" ---
-    # Format: col0=Class, col1=Marketing year, col2=Planted (million acres), col3=Harvested (million acres), col4=Production, col5=Yield
+    # Area from Table01: col0=Class, col1=MY, col2=Planted, col3=Harvested, col4=Production, col5=Yield
+    # Filter for "All wheat"
     area_data = {}
     try:
         df = pd.read_excel(xls, sheet_name="Table01", header=None)
         rows = [tuple(r) for r in df.values.tolist()]
         print(f"  Wheat area: Table01, {len(rows)} rows")
-        # Print header for reference
-        print(f"    Header: {[str(c)[:30] if pd.notna(c) else '' for c in rows[1][:6]]}")
-
         for i in range(2, len(rows)):
             row = rows[i]
             cls = str(row[0]).strip().lower() if pd.notna(row[0]) else ""
@@ -303,109 +297,51 @@ def parse_wheat(wb_data):
                 "harvested": r1(to_float(row[3])),
                 "yield": r1(to_float(row[5])),
             }
-        print(f"    All wheat: {len(area_data)} years")
+        print(f"    All wheat area: {len(area_data)} years")
         if area_data:
-            sample = list(area_data.keys())[-1]
-            print(f"    Sample {sample}: {area_data[sample]}")
+            s = list(area_data.keys())[-1]
+            print(f"    Sample {s}: {area_data[s]}")
     except Exception as e:
         print(f"    Area error: {e}")
 
-    # --- S&D from Table06, filtered to "All wheat" ---
-    # Table06 has multiple wheat classes. We need rows where the class column = "All wheat"
-    # Format may be: col0=Class/label, col1=MY, then S&D columns
-    # OR: col0=MY with class rows interspersed
-    # Let's detect the format
+    # S&D from Table06: col0=MY, col1=Type ("All wheat"), col2+=S&D data
     try:
         df = pd.read_excel(xls, sheet_name="Table06", header=None)
         rows = [tuple(r) for r in df.values.tolist()]
         print(f"  Wheat S&D: Table06, {len(rows)} rows")
-        # Print first 8 rows for debugging
-        for i in range(min(8, len(rows))):
-            print(f"    Row {i}: {[str(c)[:25] if pd.notna(c) else '' for c in rows[i][:12]]}")
 
-        # Determine format: does it have a class column?
-        # Check if any of the first data rows have "All wheat" or a wheat class name
-        has_class_col = False
-        header_idx = None
-        for i in range(min(10, len(rows))):
-            for c_idx, cell in enumerate(rows[i]):
-                s = str(cell).strip().lower() if pd.notna(cell) else ""
-                if s == "all wheat":
-                    has_class_col = True
-                    break
-            # Find the header row (has "Beginning stocks" or "Marketing year")
-            row_str = " ".join(str(c).lower() if pd.notna(c) else "" for c in rows[i])
-            if "beginning stocks" in row_str or "marketing year" in row_str:
-                header_idx = i
+        # Header is row 1: col0=MY label, col1=Type label, col2+=S&D column names
+        header = rows[1]
+        col_labels = []
+        for c in range(2, len(header)):
+            val = str(header[c]).strip() if pd.notna(header[c]) else ""
+            if val:
+                col_labels.append(val)
+            else:
+                break
+        print(f"    Columns ({len(col_labels)}): {col_labels}")
 
-        print(f"    Has class column: {has_class_col}, Header at row: {header_idx}")
+        # Data rows: col0=MY, col1=Type, col2+=values
+        # Filter for rows where col1 = "All wheat"
+        years, sd_data = [], []
+        for i in range(2, len(rows)):
+            row = rows[i]
+            wheat_type = str(row[1]).strip().lower() if pd.notna(row[1]) else ""
+            if wheat_type != "all wheat": continue
+            my = str(row[0]).strip() if pd.notna(row[0]) else ""
+            if "/" not in my or len(my) < 6: continue
+            try: int(my[:4])
+            except ValueError: continue
+            years.append(my)
+            sd_data.append([to_float(row[2 + c]) for c in range(len(col_labels))])
 
-        if has_class_col and header_idx is not None:
-            # Format with class column: col0=Class, col1=MY, col2+=S&D data
-            # Get column labels from header row
-            col_labels = []
-            for c in range(2, 14):
-                if c < len(rows[header_idx]):
-                    val = str(rows[header_idx][c]).strip() if pd.notna(rows[header_idx][c]) else ""
-                    if val: col_labels.append(val)
-                    else: break
-                else: break
-            print(f"    S&D columns: {col_labels}")
-
-            years, sd_data = [], []
-            for i in range(header_idx + 1, len(rows)):
-                row = rows[i]
-                cls = str(row[0]).strip().lower() if pd.notna(row[0]) else ""
-                if cls != "all wheat": continue
-                my = str(row[1]).strip() if pd.notna(row[1]) else ""
-                if "/" not in my or len(my) < 6: continue
-                try: int(my[:4])
-                except ValueError: continue
-                years.append(my)
-                sd_data.append([to_float(row[2 + c]) for c in range(len(col_labels))])
-
-        else:
-            # Format without class column: col0=MY, col1+=S&D data
-            # Need to find "All wheat" section boundaries
-            col_labels = []
-            if header_idx is not None:
-                for c in range(1, 13):
-                    if c < len(rows[header_idx]):
-                        val = str(rows[header_idx][c]).strip() if pd.notna(rows[header_idx][c]) else ""
-                        if val: col_labels.append(val)
-                        else: break
-                    else: break
-            print(f"    S&D columns: {col_labels}")
-
-            # Find "All wheat" section
-            in_all_wheat = False
-            years, sd_data = [], []
-            for i in range(len(rows)):
-                row = rows[i]
-                first = str(row[0]).strip().lower() if pd.notna(row[0]) else ""
-                if first == "all wheat":
-                    in_all_wheat = True
-                    continue
-                # Another class name ends the section
-                if in_all_wheat and first and not any(c.isdigit() for c in first[:4]) and "/" not in first:
-                    # Might be a new class
-                    if any(w in first for w in ["hard red", "soft red", "white", "durum"]):
-                        break
-                if not in_all_wheat: continue
-                my = str(row[0]).strip() if pd.notna(row[0]) else ""
-                if "/" not in my or len(my) < 6: continue
-                try: int(my[:4])
-                except ValueError: continue
-                years.append(my)
-                sd_data.append([to_float(row[1 + c]) for c in range(len(col_labels))])
+        print(f"    All wheat S&D: {len(years)} years ({years[0] if years else '?'}..{years[-1] if years else '?'})")
 
         if not years:
-            print("    No All wheat data found in Table06")
+            print("    No All wheat S&D found")
             return None
 
-        print(f"    All wheat S&D: {len(years)} years ({years[0]}..{years[-1]})")
-
-        # Build output rows
+        # Build output
         rows_out = []
         if area_data:
             rows_out.append({"label": "Area planted", "values": [area_data.get(y, {}).get("planted") for y in years]})
@@ -420,7 +356,7 @@ def parse_wheat(wb_data):
             elif "total domestic" in lower: renames[lbl] = "Total domestic use"
 
         for ci, lbl in enumerate(col_labels):
-            display = renames.get(lbl, lbl.replace(" 2/", "").replace(" 3/", "").replace(" 4/", ""))
+            display = renames.get(lbl, lbl.replace(" 2/", "").replace(" 3/", "").replace(" 4/", "").strip())
             values = [ri(sd_data[yi][ci]) for yi in range(len(years))]
             rd = {"label": display, "values": values}
             if "total" in display.lower() or "ending" in display.lower(): rd["bold"] = True
@@ -432,7 +368,10 @@ def parse_wheat(wb_data):
         if es and tu:
             rows_out.append({"label": "Stocks/use (%)", "values": [pct(es["values"][i], tu["values"][i]) for i in range(len(years))], "bold": True, "pct": True})
 
-        print(f"    Final: {len(years)} years, {len(rows_out)} rows")
+        sample_rows = rows_out[:5]
+        for r in sample_rows:
+            print(f"    {r['label']}: ...{r['values'][-3:]}")
+
         return {"id": "wheat", "label": "Wheat", "years": years,
                 "sections": [{"header": "Supply and disappearance", "unit": "million bushels", "rows": rows_out}]}
 
@@ -446,8 +385,19 @@ def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     output_file = os.path.join(OUTPUT_DIR, "wasde.json")
 
+    # Try to load existing data to preserve commodities that fail to fetch
+    existing = {}
+    if os.path.exists(output_file):
+        try:
+            with open(output_file) as f:
+                old = json.load(f)
+            if old.get("us"):
+                existing = old["us"]
+                print(f"Loaded existing data: {list(existing.keys())}")
+        except: pass
+
     print("=" * 60)
-    print("WASDE Data Fetch v10")
+    print("WASDE Data Fetch v11")
     print(f"Time: {datetime.utcnow().isoformat()}Z")
     print("=" * 60)
 
@@ -460,25 +410,45 @@ def main():
         if r: result["us"]["corn"] = r
 
     print("\n-- OIL CROPS --")
-    data = fetch_url(OILCROPS_URL)
+    data = fetch_with_fallbacks(OILCROPS_URLS)
     if data:
         try:
             import openpyxl
-            zf = zipfile.ZipFile(BytesIO(data))
-            if "Soy.xlsx" in zf.namelist():
-                wb = openpyxl.load_workbook(BytesIO(zf.read("Soy.xlsx")), read_only=True, data_only=True)
+            wb = None
+            # Try opening as xlsx directly first
+            try:
+                wb = openpyxl.load_workbook(BytesIO(data), read_only=True, data_only=True)
+                print(f"  Opened as xlsx, sheets: {wb.sheetnames[:10]}")
+            except Exception:
+                # Try as zip (old format)
+                try:
+                    zf = zipfile.ZipFile(BytesIO(data))
+                    if "Soy.xlsx" in zf.namelist():
+                        wb = openpyxl.load_workbook(BytesIO(zf.read("Soy.xlsx")), read_only=True, data_only=True)
+                        print(f"  Opened Soy.xlsx from zip, sheets: {wb.sheetnames[:10]}")
+                except Exception as e2:
+                    print(f"  Could not open as xlsx or zip: {e2}")
+
+            if wb:
                 for fn, parser in [("soybeans", parse_soybeans), ("soybean_meal", parse_soymeal), ("soybean_oil", parse_soyoil)]:
                     r = parser(wb)
                     if r: result["us"][fn] = r
         except Exception as e:
             print(f"  Error: {e}")
-            import traceback; traceback.print_exc()
+    else:
+        print("  All URLs failed — preserving existing soy data")
 
     print("\n-- WHEAT --")
     data = fetch_url(WHEAT_URL)
     if data:
         r = parse_wheat(data)
         if r: result["us"]["wheat"] = r
+
+    # Preserve any commodities that failed to fetch this time
+    for cid in ["corn", "soybeans", "soybean_meal", "soybean_oil", "wheat"]:
+        if cid not in result["us"] and cid in existing:
+            result["us"][cid] = existing[cid]
+            print(f"  Preserved existing {cid} data")
 
     print(f"\n{'='*60}")
     print(f"RESULTS: {len(result['us'])} / 5")

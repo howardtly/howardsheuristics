@@ -1442,7 +1442,7 @@ function WASDETable({ commodity }) {
                     position: "sticky", left: 0, zIndex: 1,
                     background: "#ffffff",
                     padding: row.indent ? "5px 14px 5px 28px" : "5px 14px",
-                    fontWeight: row.bold ? 500 : 400,
+                    fontWeight: row.bold ? 600 : 400,
                     color: "var(--color-text-primary)",
                     fontSize: 12,
                     borderRight: "0.5px solid var(--color-border-tertiary)",
@@ -1453,7 +1453,7 @@ function WASDETable({ commodity }) {
                     <td key={vi} style={{
                       padding: "5px 10px", textAlign: "right",
                       fontFamily: "var(--font-mono)", fontSize: 11,
-                      fontWeight: row.bold ? 500 : 400,
+                      fontWeight: row.bold ? 600 : 400,
                       color: vi === fcIdx ? "var(--color-text-info)" : "var(--color-text-primary)",
                       background: vi === fcIdx ? "rgba(59,130,246,0.04)" : "transparent",
                     }}>

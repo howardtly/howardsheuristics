@@ -153,11 +153,24 @@ def parse_corn(wb_data):
     rows_out.append({"label": "Imports", "values": get_sd("Imports")})
     rows_out.append({"label": "Total supply", "values": get_sd("Total supply"), "bold": True})
 
-    # Use — reordered: Feed/residual, FSI, Ethanol (indent), Seed (indent), Total domestic
+    # Use — reordered: Feed/residual, FSI (=food/alcohol/industrial + seed), Ethanol (indent), Seed (indent), Total domestic
+    fsi_raw = get_sd("Food, alcohol, and industrial")
+    seed_vals = get_sd("Seed use")
+    # FSI = food/alcohol/industrial + seed
+    fsi_vals = []
+    for i in range(len(years)):
+        f, s = fsi_raw[i], seed_vals[i]
+        if f is not None and s is not None:
+            fsi_vals.append(f + s)
+        elif f is not None:
+            fsi_vals.append(f)
+        else:
+            fsi_vals.append(None)
+
     rows_out.append({"label": "Feed and residual", "values": get_sd("Feed and residual"), "spaceBefore": True})
-    rows_out.append({"label": "Food, seed & industrial", "values": get_sd("Food, alcohol, and industrial")})
+    rows_out.append({"label": "Food, seed & industrial", "values": fsi_vals})
     rows_out.append({"label": "Ethanol", "values": [ri(ethanol_data.get(y)) for y in years], "indent": True})
-    rows_out.append({"label": "Seed", "values": get_sd("Seed use"), "indent": True})
+    rows_out.append({"label": "Seed", "values": seed_vals, "indent": True})
     rows_out.append({"label": "Total domestic use", "values": get_sd("Total domestic"), "bold": True})
     rows_out.append({"label": "Exports", "values": get_sd("Exports")})
     rows_out.append({"label": "Total usage", "values": get_sd("Total use"), "bold": True})

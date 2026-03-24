@@ -231,16 +231,10 @@ def parse_soybeans(wb):
         print("  Could not find soy S&D data start")
         return None
 
-    # Count data columns in first data row
-    first_row = rows03[data_start]
-    ncols = 0
-    for c in range(1, len(first_row)):
-        val = str(first_row[c]).strip() if first_row[c] else ""
-        if val and val not in ("", "nan"):
-            ncols = c
-    ncols_data = ncols  # last column with data
-
-    print(f"  Soy S&D data starts row {data_start}, ~{ncols_data} data columns")
+    print(f"  Soy S&D data starts row {data_start}")
+    if data_start < len(rows03):
+        fr = rows03[data_start]
+        print(f"    First data: {[str(c)[:15] if c else '' for c in (fr or [])][:12]}")
 
     years, sd = [], []
     for i in range(data_start, len(rows03)):
@@ -251,31 +245,20 @@ def parse_soybeans(wb):
         try: int(my[:4])
         except ValueError: continue
         years.append(my)
-        # Read all columns from 1 to ncols_data+1
-        sd.append([to_float(row[c]) for c in range(1, ncols_data + 1)])
+        # Hardcoded: Table03 columns B through K (indices 1-10)
+        # B=Beg stocks, C=Production, D=Imports, E=Total supply,
+        # F=Crush, G=Exports, H=Seed/feed/residual, I=Total(usage), J=Ending stocks
+        # Read exactly 9 columns from index 1 to 9
+        sd.append([to_float(row[c]) if c < len(row) else None for c in range(1, 10)])
+
     print(f"  Soy S&D: {len(years)} years")
 
-    # Map columns by position
-    # From the debug output, tab3/Table03 has:
-    # col1=Beg stocks, col2=Production, col3=Imports, col4=Total supply,
-    # col5=Crush, col6=Exports, col7=Seed/feed/residual, col8=Total disappearance, col9=Ending stocks
-    # But let's use the actual count — total usage is second-to-last, ending stocks is last
-    sd_labels = ["Beginning stocks", "Production", "Imports", "Total supply", "Crush", "Exports", 
-                 "Seed, feed, and residual", "Total usage", "Ending stocks"]
-    
-    # Adjust if column count doesn't match
-    actual_cols = len(sd[0]) if sd else 0
-    if actual_cols != len(sd_labels):
-        print(f"  WARNING: expected {len(sd_labels)} cols, got {actual_cols}")
-        # Use positional: total usage = col index -2, ending stocks = col index -1
-        if actual_cols >= 2:
-            sd_labels = [f"Col{c+1}" for c in range(actual_cols)]
-            sd_labels[0] = "Beginning stocks"
-            sd_labels[1] = "Production"
-            if actual_cols > 2: sd_labels[2] = "Imports"
-            if actual_cols > 3: sd_labels[3] = "Total supply"
-            sd_labels[-2] = "Total usage"
-            sd_labels[-1] = "Ending stocks"
+    # Explicit labels matching the 9 columns (B through J)
+    sd_labels = [
+        "Beginning stocks", "Production", "Imports", "Total supply",
+        "Crush", "Exports", "Seed, feed, and residual",
+        "Total usage", "Ending stocks"
+    ]
 
     rows_out = [
         {"label": "Area planted", "values": [area_data.get(y, {}).get("planted") for y in years]},
@@ -283,7 +266,6 @@ def parse_soybeans(wb):
         {"label": "Yield per harvested acre", "values": [area_data.get(y, {}).get("yield") for y in years]},
     ]
     for ci, label in enumerate(sd_labels):
-        if ci >= actual_cols: break
         rd = {"label": label, "values": [ri(sd[yi][ci]) for yi in range(len(years))]}
         if "total" in label.lower() or "ending" in label.lower(): rd["bold"] = True
         if label == "Beginning stocks": rd["spaceBefore"] = True
@@ -293,10 +275,6 @@ def parse_soybeans(wb):
     tu = next((r for r in rows_out if r["label"] == "Total usage"), None)
     if es and tu:
         rows_out.append({"label": "Stocks/use (%)", "values": [pct(es["values"][i], tu["values"][i]) for i in range(len(years))], "bold": True, "pct": True})
-
-    return {"id": "soybeans", "label": "Soybeans", "years": years,
-            "sections": [{"header": "Supply and disappearance", "unit": "million bushels", "rows": rows_out}]}
-    print(f"  Soy S&D: {len(years)} years")
 
     return {"id": "soybeans", "label": "Soybeans", "years": years,
             "sections": [{"header": "Supply and disappearance", "unit": "million bushels", "rows": rows_out}]}

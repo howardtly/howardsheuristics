@@ -1375,15 +1375,14 @@ function ChartBox({ id, height = 260, renderChart, deps }) {
 
 function WASDETable({ commodity }) {
   const scrollRef = useRef(null);
+  const years = commodity.years || MY;
+  const fcIdx = years.length - 1;
+
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
     }
-  }, [commodity.id]);
-
-  // Use commodity-specific years if available, else fall back to global MY
-  const years = commodity.years || MY;
-  const fcIdx = years.length - 1;
+  }, [commodity.id, years.length]);
 
   const formatVal = (v, row) => {
     if (v === null || v === undefined) return "—";
@@ -1453,8 +1452,8 @@ function WASDETable({ commodity }) {
                       padding: "5px 10px", textAlign: "right",
                       fontFamily: "var(--font-mono)", fontSize: 11,
                       fontWeight: row.bold ? 500 : 400,
-                      color: vi === FC ? "var(--color-text-info)" : "var(--color-text-primary)",
-                      background: vi === FC ? "rgba(59,130,246,0.04)" : "transparent",
+                      color: vi === fcIdx ? "var(--color-text-info)" : "var(--color-text-primary)",
+                      background: vi === fcIdx ? "rgba(59,130,246,0.04)" : "transparent",
                     }}>
                       {formatVal(v, row)}
                     </td>

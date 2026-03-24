@@ -367,11 +367,6 @@ def parse_soymeal(wb):
     rows_out.append({"label": "Ending stocks", "values": es_vals, "bold": True, "spaceBefore": True})
     rows_out.append({"label": "Stocks/use (%)", "values": [pct(es_vals[i], tu_vals[i]) for i in range(len(years))], "bold": True, "pct": True})
 
-    # Price as last row
-    price_vals = [sd[yi][8] for yi in range(len(years))]
-    if any(v is not None for v in price_vals):
-        rows_out.append({"label": "Price ($/short ton)", "values": price_vals, "price": True})
-
     return {"id": "soybean_meal", "label": "Soybean Meal", "years": years,
             "sections": [{"header": "Supply and disappearance", "unit": "1,000 short tons", "rows": rows_out}]}
 

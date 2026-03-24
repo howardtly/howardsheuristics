@@ -139,26 +139,48 @@ def parse_corn(wb_data):
             "sections": [{"header": "Supply and disappearance", "unit": "million bushels", "rows": rows_out}]}
 
 
+def find_sheet(wb, *candidates):
+    """Find a sheet by trying multiple name candidates."""
+    for name in candidates:
+        if name in wb.sheetnames:
+            return wb[name]
+    # Case-insensitive fallback
+    for name in candidates:
+        for sn in wb.sheetnames:
+            if sn.lower() == name.lower():
+                return wb[sn]
+    return None
+
+
 def parse_soybeans(wb):
-    ws02 = wb["tab02"]
-    rows02 = list(ws02.iter_rows(values_only=True))
-    area_data = {}
-    for i in range(4, len(rows02)):
-        row = rows02[i]
-        if not row: continue
-        try: yr = int(str(row[0]).strip())
-        except (ValueError, TypeError): continue
-        my = f"{yr}/{str(yr+1)[-2:]}"
-        planted = to_float(row[1])
-        harvested = to_float(row[2])
-        area_data[my] = {
-            "planted": round(planted / 1000, 1) if planted else None,
-            "harvested": round(harvested / 1000, 1) if harvested else None,
-            "yield": r1(to_float(row[3])),
-        }
+    # Area: tab02 or Table02
+    ws02 = find_sheet(wb, "tab02", "Table02", "Table 02")
+    if not ws02:
+        print("  Soy area sheet not found")
+        area_data = {}
+    else:
+        rows02 = list(ws02.iter_rows(values_only=True))
+        area_data = {}
+        for i in range(4, len(rows02)):
+            row = rows02[i]
+            if not row: continue
+            try: yr = int(str(row[0]).strip())
+            except (ValueError, TypeError): continue
+            my = f"{yr}/{str(yr+1)[-2:]}"
+            planted = to_float(row[1])
+            harvested = to_float(row[2])
+            area_data[my] = {
+                "planted": round(planted / 1000, 1) if planted else None,
+                "harvested": round(harvested / 1000, 1) if harvested else None,
+                "yield": r1(to_float(row[3])),
+            }
     print(f"  Soy area: {len(area_data)} years")
 
-    ws03 = wb["tab3"]
+    # S&D: tab3 or Table03
+    ws03 = find_sheet(wb, "tab3", "Table03", "Table 03", "tab03")
+    if not ws03:
+        print("  Soy S&D sheet not found")
+        return None
     rows03 = list(ws03.iter_rows(values_only=True))
     sd_labels = ["Beginning stocks", "Production", "Imports", "Total supply", "Crush", "Exports", "Seed, feed, and residual", "Total disappearance", "Ending stocks"]
     years, sd = [], []
@@ -196,7 +218,10 @@ def parse_soybeans(wb):
 
 
 def parse_soymeal(wb):
-    ws = wb["tab4"]
+    ws = find_sheet(wb, "tab4", "Table04", "Table 04", "tab04")
+    if not ws:
+        print("  Soy meal sheet not found")
+        return None
     rows = list(ws.iter_rows(values_only=True))
     labels = ["Beginning stocks", "Production", "Imports", "Total supply", "Domestic use", "Exports", "Total disappearance", "Ending stocks", "Price ($/short ton)"]
     years, sd = [], []
@@ -230,7 +255,10 @@ def parse_soymeal(wb):
 
 
 def parse_soyoil(wb):
-    ws = wb["tab5"]
+    ws = find_sheet(wb, "tab5", "Table05", "Table 05", "tab05")
+    if not ws:
+        print("  Soy oil sheet not found")
+        return None
     rows = list(ws.iter_rows(values_only=True))
     labels = ["Beginning stocks", "Production", "Imports", "Total supply", "Domestic total", "Biofuel", "Exports", "Total disappearance", "Ending stocks"]
     years, sd = [], []

@@ -46,20 +46,28 @@ ATTR = {
     28:  "production",        # 1000 MT
     57:  "imports",           # 1000 MT (MY Imports)
     86:  "total_supply",      # 1000 MT
-    130: "feed_dom",          # 1000 MT
+    130: "feed_dom",          # 1000 MT (Feed and Residual)
     192: "fsi_consumption",   # 1000 MT
     125: "total_consumption", # 1000 MT (domestic consumption)
     88:  "exports",           # 1000 MT (MY Exports)
     176: "ending_stocks",     # 1000 MT
     178: "total_distribution",# 1000 MT
+    7:   "crush",             # 1000 MT (Oilseed Crush)
+    149: "food_use",          # 1000 MT (Food Use Dom. Cons.)
+    161: "feed_waste",        # 1000 MT (Feed Waste Dom. Cons.)
 }
 
-# For soybeans, we also need crush (AttributeId 59)
-SOYBEAN_EXTRA_ATTR = {
-    59: "crush",  # 1000 MT
-}
+SOYBEAN_EXTRA_ATTR = {}
 
-MARKET_YEARS = list(range(2015, 2026))  # 2015/16 through 2025/26
+# Start year per commodity to match US balance sheet history
+COMMODITY_START_YEARS = {
+    "corn":         1975,
+    "soybeans":     1980,
+    "wheat":        1984,
+    "soybean_meal": 1980,
+    "soybean_oil":  1980,
+}
+CURRENT_YEAR = 2025  # latest marketing year
 
 
 def fetch_psd(commodity_code, market_year):
@@ -182,11 +190,11 @@ def build_country_rows_soybeans(data_by_year, country_code, years):
     rows.append({"label": "Total supply", "values": supply, "bold": True})
 
     crush = [val(y, "crush") for y in years]
-    fsi = [val(y, "fsi_consumption") for y in years]
-    feed = [val(y, "feed_dom") for y in years]
+    food = [val(y, "food_use") for y in years]
+    feed = [val(y, "feed_waste") for y in years]
     dom = [val(y, "total_consumption") for y in years]
     rows.append({"label": "Crush", "values": crush, "spaceBefore": True})
-    rows.append({"label": "Food use", "values": fsi})
+    rows.append({"label": "Food use", "values": food})
     rows.append({"label": "Feed", "values": feed})
     rows.append({"label": "Domestic consumption", "values": dom})
     exp = [val(y, "exports") for y in years]
@@ -317,8 +325,8 @@ def build_world_rows_soybeans(data_by_year, years):
     yld_area = aggregate_world(data_by_year, "area_harvested", years, lambda v: v)
     yld = [round(yld_prod[i] / yld_area[i], 2) if yld_area[i] and yld_prod[i] else None for i in range(len(years))]
     crush = aggregate_world(data_by_year, "crush", years)
-    fsi = aggregate_world(data_by_year, "fsi_consumption", years)
-    feed = aggregate_world(data_by_year, "feed_dom", years)
+    food = aggregate_world(data_by_year, "food_use", years)
+    feed = aggregate_world(data_by_year, "feed_waste", years)
     dom = aggregate_world(data_by_year, "total_consumption", years)
     exp = aggregate_world(data_by_year, "exports", years)
     tu = [round(dom[i] + exp[i], 1) if dom[i] is not None and exp[i] is not None else None for i in range(len(years))]
@@ -331,7 +339,7 @@ def build_world_rows_soybeans(data_by_year, years):
         {"label": "Imports", "values": imp},
         {"label": "Total supply", "values": supply, "bold": True},
         {"label": "Crush", "values": crush, "spaceBefore": True},
-        {"label": "Food use", "values": fsi},
+        {"label": "Food use", "values": food},
         {"label": "Feed", "values": feed},
         {"label": "Domestic consumption", "values": dom},
         {"label": "Exports", "values": exp},
@@ -421,17 +429,19 @@ def main():
     print("=" * 60)
     print("PSD World Balance Sheet Fetch")
     print(f"Time: {datetime.utcnow().isoformat()}Z")
-    print(f"Years: {MARKET_YEARS[0]}/{MARKET_YEARS[0]+1-2000} to {MARKET_YEARS[-1]}/{MARKET_YEARS[-1]+1-2000}")
     print("=" * 60)
 
-    year_labels = [f"{y}/{str(y+1)[-2:]}" for y in MARKET_YEARS]
     world_data = {}
 
     for comm_id, comm_code in COMMODITIES.items():
-        print(f"\n-- {comm_id.upper()} (code {comm_code}) --")
-        data_by_year = {}  # {market_year: {country_code: {attr: value}}}
+        start_year = COMMODITY_START_YEARS.get(comm_id, 2000)
+        market_years = list(range(start_year, CURRENT_YEAR + 1))
+        year_labels = [f"{y}/{str(y+1)[-2:]}" for y in market_years]
+        
+        print(f"\n-- {comm_id.upper()} (code {comm_code}) — {len(market_years)} years ({year_labels[0]}..{year_labels[-1]}) --")
+        data_by_year = {}
 
-        for my in MARKET_YEARS:
+        for my in market_years:
             print(f"  Fetching MY {my}...", end=" ")
             records = fetch_psd(comm_code, my)
             if records:
@@ -446,21 +456,36 @@ def main():
             print(f"  No data fetched for {comm_id}")
             continue
 
+        # Debug: for soybeans, print all attribute IDs from first year's US data
+        if comm_id == "soybeans" and data_by_year:
+            first_yr = list(data_by_year.keys())[0]
+            us_data = data_by_year[first_yr].get("US", {})
+            print(f"  Debug soy US attrs for MY{first_yr}: {list(us_data.keys())}")
+            # Also check raw records for crush-like attributes
+            records = fetch_psd(comm_code, CURRENT_YEAR)
+            if records:
+                us_attrs = set()
+                for r in records:
+                    if r.get("CountryCode", "").strip() == "US":
+                        us_attrs.add((r["AttributeId"], r["AttributeDescription"].strip(), r.get("Value")))
+                print(f"  All US soy attributes for MY{CURRENT_YEAR}:")
+                for aid, desc, val in sorted(us_attrs):
+                    print(f"    {aid}: {desc} = {val}")
+
         # Build world total and country tables
         world_builder, country_builder = WORLD_BUILDERS[comm_id]
         countries_config = COUNTRIES[comm_id]
 
-        world_rows = world_builder(data_by_year, MARKET_YEARS)
+        world_rows = world_builder(data_by_year, market_years)
         print(f"  World total: {len(world_rows)} rows")
 
         countries_list = []
         for cc, name in countries_config.items():
-            # Check if this country has data
-            has_data = any(cc in data_by_year.get(my, {}) for my in MARKET_YEARS)
+            has_data = any(cc in data_by_year.get(my, {}) for my in market_years)
             if not has_data:
                 print(f"  {name} ({cc}): no data found")
                 continue
-            country_rows = country_builder(data_by_year, cc, MARKET_YEARS)
+            country_rows = country_builder(data_by_year, cc, market_years)
             countries_list.append({"label": name, "rows": country_rows})
             print(f"  {name}: {len(country_rows)} rows")
 

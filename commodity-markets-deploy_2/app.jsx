@@ -1434,7 +1434,6 @@ function WASDETable({ commodity }) {
               </tr>}
               {section.rows.map((row, ri) => (
                 <React.Fragment key={`r-${si}-${ri}`}>
-                {row.spaceBefore && <tr><td style={{ padding: "4px 0", background: "#ffffff", position: "sticky", left: 0, zIndex: 1 }}></td>{years.map((_, i) => <td key={i} style={{ padding: "4px 0" }}></td>)}</tr>}
                 <tr style={{
                   borderBottom: "0.5px solid var(--color-border-tertiary)",
                 }}>
@@ -1471,13 +1470,43 @@ function WASDETable({ commodity }) {
   );
 }
 
-function GlobalWASDETable({ commodity }) {
+function GlobalWASDEMiniTable({ title, rows, years, fcIdx, formatVal }) {
   const scrollRef = useRef(null);
-  const years = commodity.years || GMY;
-  const fcIdx = years.length - 1;
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
-  }, [commodity.id, years.length]);
+  }, [title, years.length]);
+
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div ref={scrollRef} style={{ overflowX: "auto", border: "0.5px solid var(--color-border-tertiary)", borderRadius: "var(--border-radius-lg)" }}>
+        <table style={{ borderCollapse: "collapse", fontSize: 12, minWidth: "100%", whiteSpace: "nowrap" }}>
+          <thead>
+            <tr style={{ background: "#e8e8e8" }}>
+              <th style={{ position: "sticky", left: 0, zIndex: 2, background: "#e8e8e8", padding: "7px 12px", textAlign: "left", fontWeight: 600, fontSize: 12.5, color: "var(--color-text-primary)", borderBottom: "1.5px solid var(--color-border-primary)", borderRight: "0.5px solid var(--color-border-tertiary)", minWidth: 180, letterSpacing: "0.3px" }}>{title}</th>
+              {years.map((y, i) => (
+                <th key={y} style={{ background: "#e8e8e8", padding: "7px 10px", textAlign: "right", fontWeight: i === fcIdx ? 600 : 400, fontSize: 12, color: i === fcIdx ? "var(--color-text-primary)" : "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)", whiteSpace: "nowrap" }}>{i === fcIdx ? y + " F" : y}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, ri) => (
+              <tr key={ri} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+                <td style={{ position: "sticky", left: 0, zIndex: 1, background: "#ffffff", padding: "6px 12px", fontWeight: row.bold ? 600 : 400, fontSize: 13, color: "var(--color-text-primary)", borderRight: "0.5px solid var(--color-border-tertiary)", paddingLeft: row.indent ? 24 : 12 }}>{row.label}</td>
+                {row.values.map((v, vi) => (
+                  <td key={vi} style={{ padding: "6px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12.5, fontWeight: row.bold ? 600 : 400, color: vi === fcIdx ? "var(--color-text-primary)" : "var(--color-text-secondary)" }}>{formatVal(v, row)}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function GlobalWASDETable({ commodity }) {
+  const years = commodity.years || GMY;
+  const fcIdx = years.length - 1;
 
   const formatVal = (v, row) => {
     if (v === null || v === undefined) return "—";
@@ -1496,50 +1525,13 @@ function GlobalWASDETable({ commodity }) {
   };
 
   return (
-    <div ref={scrollRef} style={{ overflowX: "auto", border: "0.5px solid var(--color-border-tertiary)", borderRadius: "var(--border-radius-lg)" }}>
-      <table style={{ borderCollapse: "collapse", fontSize: 12, minWidth: "100%", whiteSpace: "nowrap" }}>
-        <thead>
-          <tr style={{ background: "var(--color-background-secondary)" }}>
-            <th style={{ position: "sticky", left: 0, zIndex: 2, background: "#ffffff", padding: "7px 12px", textAlign: "left", fontWeight: 500, fontSize: 12.5, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)", borderRight: "0.5px solid var(--color-border-tertiary)", minWidth: 180 }}>Item</th>
-            {years.map((y, i) => (
-              <th key={y} style={{ padding: "7px 10px", textAlign: "right", fontWeight: i === fcIdx ? 600 : 400, fontSize: 12.5, color: i === fcIdx ? "var(--color-text-primary)" : "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)", whiteSpace: "nowrap" }}>{i === fcIdx ? y + " F" : y}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {commodity.sections.map((section, si) => (<React.Fragment key={si}>
-            {si > 0 && <tr>
-              <td style={{ padding: "8px 12px", background: "#ffffff", position: "sticky", left: 0, zIndex: 1 }}></td>
-              {years.map((_, i) => <td key={i}></td>)}
-            </tr>}
-            {section.rows.map((row, ri) => (<React.Fragment key={ri}>
-              {row.spaceBefore && <tr><td style={{ padding: "4px 0", background: "#ffffff", position: "sticky", left: 0, zIndex: 1 }}></td>{years.map((_, i) => <td key={i}></td>)}</tr>}
-              <tr style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
-                <td style={{ position: "sticky", left: 0, zIndex: 1, background: "#ffffff", padding: "6px 12px", fontWeight: row.bold ? 600 : 400, fontSize: 13, color: "var(--color-text-primary)", borderRight: "0.5px solid var(--color-border-tertiary)", paddingLeft: row.indent ? 24 : 12 }}>{row.label}</td>
-                {row.values.map((v, vi) => (
-                  <td key={vi} style={{ padding: "6px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12.5, fontWeight: row.bold ? 600 : 400, color: vi === fcIdx ? "var(--color-text-primary)" : "var(--color-text-secondary)" }}>{formatVal(v, row)}</td>
-                ))}
-              </tr>
-            </React.Fragment>))}
-          </React.Fragment>))}
-          {commodity.countries && commodity.countries.map((country, ci) => (<React.Fragment key={`c${ci}`}>
-            <tr><td style={{ padding: "6px 0", background: "#ffffff", position: "sticky", left: 0, zIndex: 1 }}></td>{years.map((_, i) => <td key={i}></td>)}</tr>
-            <tr style={{ background: "#e8e8e8" }}>
-              <td style={{ padding: "8px 12px", fontWeight: 600, fontSize: 12.5, color: "var(--color-text-primary)", background: "#e8e8e8", position: "sticky", left: 0, zIndex: 1, letterSpacing: "0.3px" }}>{country.label}</td>
-              {years.map((y, i) => <td key={i} style={{ background: "#e8e8e8", padding: "8px 10px", textAlign: "right", fontWeight: i === fcIdx ? 600 : 400, fontSize: 11.5, color: "var(--color-text-secondary)" }}>{y}</td>)}
-            </tr>
-            {country.rows.map((row, ri) => (<React.Fragment key={ri}>
-              {row.spaceBefore && <tr><td style={{ padding: "4px 0", background: "#ffffff", position: "sticky", left: 0, zIndex: 1 }}></td>{years.map((_, i) => <td key={i}></td>)}</tr>}
-              <tr style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
-                <td style={{ position: "sticky", left: 0, zIndex: 1, background: "#ffffff", padding: "6px 12px 6px 20px", fontWeight: row.bold ? 600 : 400, fontSize: 13, color: "var(--color-text-primary)", borderRight: "0.5px solid var(--color-border-tertiary)" }}>{row.label}</td>
-                {row.values.map((v, vi) => (
-                  <td key={vi} style={{ padding: "6px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12.5, fontWeight: row.bold ? 600 : 400, color: vi === fcIdx ? "var(--color-text-primary)" : "var(--color-text-secondary)" }}>{formatVal(v, row)}</td>
-                ))}
-              </tr>
-            </React.Fragment>))}
-          </React.Fragment>))}
-        </tbody>
-      </table>
+    <div>
+      {commodity.sections.map((section, si) => (
+        <GlobalWASDEMiniTable key={si} title={section.header} rows={section.rows} years={years} fcIdx={fcIdx} formatVal={formatVal} />
+      ))}
+      {commodity.countries && commodity.countries.map((country, ci) => (
+        <GlobalWASDEMiniTable key={`c${ci}`} title={country.label} rows={country.rows} years={years} fcIdx={fcIdx} formatVal={formatVal} />
+      ))}
     </div>
   );
 }

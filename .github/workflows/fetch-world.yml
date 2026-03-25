@@ -1,0 +1,38 @@
+name: Fetch World Balance Sheets
+
+on:
+  schedule:
+    - cron: '0 0 13 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fetch-world:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Fetch PSD world data
+        env:
+          PSD_API_KEY: ${{ secrets.PSD_API_KEY }}
+        run: python commodity-markets-deploy_2/scripts/fetch_psd_world.py
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Update world balance sheets $(date -u +%Y-%m-%d)"
+            git push
+          fi

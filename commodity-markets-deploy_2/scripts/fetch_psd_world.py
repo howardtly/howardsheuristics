@@ -155,7 +155,7 @@ def build_country_rows_corn(data_by_year, cc, years):
     rows = [
         {"label": "Area harvested", "values": [v(y, "area_harvested", to_mha) for y in years]},
         {"label": "Yield", "values": [v(y, "yield", to_yield) for y in years]},
-        {"label": "Beginning stocks", "values": [v(y, "beginning_stocks") for y in years], "spaceBefore": True},
+        {"label": "Beginning stocks", "values": [v(y, "beginning_stocks") for y in years]},
         {"label": "Production", "values": [v(y, "production") for y in years]},
         {"label": "Imports", "values": [v(y, "imports") for y in years]},
         {"label": "Total supply", "values": [_supply(v(y,"beginning_stocks"),v(y,"production"),v(y,"imports"),v(y,"total_supply")) for y in years], "bold": True},
@@ -163,12 +163,12 @@ def build_country_rows_corn(data_by_year, cc, years):
     feed=[v(y,"feed_dom") for y in years]; fsi=[v(y,"fsi_consumption") for y in years]; dom=[v(y,"total_consumption") for y in years]; exp=[v(y,"exports") for y in years]
     tu=[_tu(dom[i],exp[i]) for i in range(len(years))]; es=[v(y,"ending_stocks") for y in years]
     rows += [
-        {"label": "Feed dom. consumption", "values": feed, "spaceBefore": True},
+        {"label": "Feed dom. consumption", "values": feed},
         {"label": "FSI consumption", "values": fsi},
         {"label": "Domestic consumption", "values": dom},
         {"label": "Exports", "values": exp},
         {"label": "Total usage", "values": tu, "bold": True},
-        {"label": "Ending stocks", "values": es, "bold": True, "spaceBefore": True},
+        {"label": "Ending stocks", "values": es, "bold": True},
         {"label": "Stocks/use (%)", "values": [pct(es[i],tu[i]) for i in range(len(years))], "bold": True, "pct": True},
     ]
     return rows
@@ -178,7 +178,7 @@ def build_country_rows_soybeans(data_by_year, cc, years):
     rows = [
         {"label": "Area harvested", "values": [v(y, "area_harvested", to_mha) for y in years]},
         {"label": "Yield", "values": [v(y, "yield", to_yield) for y in years]},
-        {"label": "Beginning stocks", "values": [v(y, "beginning_stocks") for y in years], "spaceBefore": True},
+        {"label": "Beginning stocks", "values": [v(y, "beginning_stocks") for y in years]},
         {"label": "Production", "values": [v(y, "production") for y in years]},
         {"label": "Imports", "values": [v(y, "imports") for y in years]},
         {"label": "Total supply", "values": [_supply(v(y,"beginning_stocks"),v(y,"production"),v(y,"imports"),v(y,"total_supply")) for y in years], "bold": True},
@@ -187,13 +187,13 @@ def build_country_rows_soybeans(data_by_year, cc, years):
     dom=[v(y,"total_consumption") for y in years]; exp=[v(y,"exports") for y in years]
     tu=[_tu(dom[i],exp[i]) for i in range(len(years))]; es=[v(y,"ending_stocks") for y in years]
     rows += [
-        {"label": "Crush", "values": crush, "spaceBefore": True},
+        {"label": "Crush", "values": crush},
         {"label": "Food use", "values": food},
         {"label": "Feed", "values": feed},
         {"label": "Domestic consumption", "values": dom},
         {"label": "Exports", "values": exp},
         {"label": "Total usage", "values": tu, "bold": True},
-        {"label": "Ending stocks", "values": es, "bold": True, "spaceBefore": True},
+        {"label": "Ending stocks", "values": es, "bold": True},
         {"label": "Stocks/use (%)", "values": [pct(es[i],tu[i]) for i in range(len(years))], "bold": True, "pct": True},
     ]
     return rows
@@ -203,7 +203,7 @@ def build_country_rows_wheat(data_by_year, cc, years):
     rows = [
         {"label": "Area harvested", "values": [v(y, "area_harvested", to_mha) for y in years]},
         {"label": "Yield", "values": [v(y, "yield", to_yield) for y in years]},
-        {"label": "Beginning stocks", "values": [v(y, "beginning_stocks") for y in years], "spaceBefore": True},
+        {"label": "Beginning stocks", "values": [v(y, "beginning_stocks") for y in years]},
         {"label": "Production", "values": [v(y, "production") for y in years]},
         {"label": "Imports", "values": [v(y, "imports") for y in years]},
         {"label": "Total supply", "values": [_supply(v(y,"beginning_stocks"),v(y,"production"),v(y,"imports"),v(y,"total_supply")) for y in years], "bold": True},
@@ -212,12 +212,12 @@ def build_country_rows_wheat(data_by_year, cc, years):
     dom=[v(y,"total_consumption") for y in years]; exp=[v(y,"exports") for y in years]
     tu=[_tu(dom[i],exp[i]) for i in range(len(years))]; es=[v(y,"ending_stocks") for y in years]
     rows += [
-        {"label": "FSI consumption", "values": fsi, "spaceBefore": True},
+        {"label": "FSI consumption", "values": fsi},
         {"label": "Feed consumption", "values": feed},
         {"label": "Domestic consumption", "values": dom},
         {"label": "Exports", "values": exp},
         {"label": "Total usage", "values": tu, "bold": True},
-        {"label": "Ending stocks", "values": es, "bold": True, "spaceBefore": True},
+        {"label": "Ending stocks", "values": es, "bold": True},
         {"label": "Stocks/use (%)", "values": [pct(es[i],tu[i]) for i in range(len(years))], "bold": True, "pct": True},
     ]
     return rows
@@ -233,7 +233,7 @@ def build_country_rows_simple(data_by_year, cc, years):
         {"label": "Domestic consumption", "values": dom},
         {"label": "Exports", "values": exp},
         {"label": "Total usage", "values": tu, "bold": True},
-        {"label": "Ending stocks", "values": es, "bold": True, "spaceBefore": True},
+        {"label": "Ending stocks", "values": es, "bold": True},
     ]
 
 def build_world_rows_corn(dby, years):
@@ -244,9 +244,9 @@ def build_world_rows_corn(dby, years):
     f=aggregate_world(dby,"feed_dom",years); fsi=aggregate_world(dby,"fsi_consumption",years); d=aggregate_world(dby,"total_consumption",years)
     e=aggregate_world(dby,"exports",years); tu=[_tu(d[i],e[i]) for i in range(len(years))]; es=aggregate_world(dby,"ending_stocks",years)
     return [{"label":"Area harvested","values":a},{"label":"Yield","values":yld},
-        {"label":"Beginning stocks","values":bs,"spaceBefore":True},{"label":"Production","values":p},{"label":"Imports","values":im},{"label":"Total supply","values":sup,"bold":True},
-        {"label":"Feed dom. consumption","values":f,"spaceBefore":True},{"label":"FSI consumption","values":fsi},{"label":"Domestic consumption","values":d},{"label":"Exports","values":e},{"label":"Total usage","values":tu,"bold":True},
-        {"label":"Ending stocks","values":es,"bold":True,"spaceBefore":True},{"label":"Stocks/use (%)","values":[pct(es[i],tu[i]) for i in range(len(years))],"bold":True,"pct":True}]
+        {"label":"Beginning stocks","values":bs},{"label":"Production","values":p},{"label":"Imports","values":im},{"label":"Total supply","values":sup,"bold":True},
+        {"label":"Feed dom. consumption","values":f},{"label":"FSI consumption","values":fsi},{"label":"Domestic consumption","values":d},{"label":"Exports","values":e},{"label":"Total usage","values":tu,"bold":True},
+        {"label":"Ending stocks","values":es,"bold":True},{"label":"Stocks/use (%)","values":[pct(es[i],tu[i]) for i in range(len(years))],"bold":True,"pct":True}]
 
 def build_world_rows_soybeans(dby, years):
     a=aggregate_world(dby,"area_harvested",years,to_mha); yp=aggregate_world(dby,"production",years,lambda v:v); ya=aggregate_world(dby,"area_harvested",years,lambda v:v)
@@ -257,9 +257,9 @@ def build_world_rows_soybeans(dby, years):
     d=aggregate_world(dby,"total_consumption",years); e=aggregate_world(dby,"exports",years)
     tu=[_tu(d[i],e[i]) for i in range(len(years))]; es=aggregate_world(dby,"ending_stocks",years)
     return [{"label":"Area harvested","values":a},{"label":"Yield","values":yld},
-        {"label":"Beginning stocks","values":bs,"spaceBefore":True},{"label":"Production","values":p},{"label":"Imports","values":im},{"label":"Total supply","values":sup,"bold":True},
-        {"label":"Crush","values":cr,"spaceBefore":True},{"label":"Food use","values":fo},{"label":"Feed","values":fe},{"label":"Domestic consumption","values":d},{"label":"Exports","values":e},{"label":"Total usage","values":tu,"bold":True},
-        {"label":"Ending stocks","values":es,"bold":True,"spaceBefore":True},{"label":"Stocks/use (%)","values":[pct(es[i],tu[i]) for i in range(len(years))],"bold":True,"pct":True}]
+        {"label":"Beginning stocks","values":bs},{"label":"Production","values":p},{"label":"Imports","values":im},{"label":"Total supply","values":sup,"bold":True},
+        {"label":"Crush","values":cr},{"label":"Food use","values":fo},{"label":"Feed","values":fe},{"label":"Domestic consumption","values":d},{"label":"Exports","values":e},{"label":"Total usage","values":tu,"bold":True},
+        {"label":"Ending stocks","values":es,"bold":True},{"label":"Stocks/use (%)","values":[pct(es[i],tu[i]) for i in range(len(years))],"bold":True,"pct":True}]
 
 def build_world_rows_wheat(dby, years):
     a=aggregate_world(dby,"area_harvested",years,to_mha); yp=aggregate_world(dby,"production",years,lambda v:v); ya=aggregate_world(dby,"area_harvested",years,lambda v:v)
@@ -269,9 +269,9 @@ def build_world_rows_wheat(dby, years):
     fsi=aggregate_world(dby,"fsi_consumption",years); fe=aggregate_world(dby,"feed_dom",years); d=aggregate_world(dby,"total_consumption",years)
     e=aggregate_world(dby,"exports",years); tu=[_tu(d[i],e[i]) for i in range(len(years))]; es=aggregate_world(dby,"ending_stocks",years)
     return [{"label":"Area harvested","values":a},{"label":"Yield","values":yld},
-        {"label":"Beginning stocks","values":bs,"spaceBefore":True},{"label":"Production","values":p},{"label":"Imports","values":im},{"label":"Total supply","values":sup,"bold":True},
-        {"label":"FSI consumption","values":fsi,"spaceBefore":True},{"label":"Feed consumption","values":fe},{"label":"Domestic consumption","values":d},{"label":"Exports","values":e},{"label":"Total usage","values":tu,"bold":True},
-        {"label":"Ending stocks","values":es,"bold":True,"spaceBefore":True},{"label":"Stocks/use (%)","values":[pct(es[i],tu[i]) for i in range(len(years))],"bold":True,"pct":True}]
+        {"label":"Beginning stocks","values":bs},{"label":"Production","values":p},{"label":"Imports","values":im},{"label":"Total supply","values":sup,"bold":True},
+        {"label":"FSI consumption","values":fsi},{"label":"Feed consumption","values":fe},{"label":"Domestic consumption","values":d},{"label":"Exports","values":e},{"label":"Total usage","values":tu,"bold":True},
+        {"label":"Ending stocks","values":es,"bold":True},{"label":"Stocks/use (%)","values":[pct(es[i],tu[i]) for i in range(len(years))],"bold":True,"pct":True}]
 
 def build_world_rows_simple(dby, years):
     bs=aggregate_world(dby,"beginning_stocks",years); p=aggregate_world(dby,"production",years); im=aggregate_world(dby,"imports",years)

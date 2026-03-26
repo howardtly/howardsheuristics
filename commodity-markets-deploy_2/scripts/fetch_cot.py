@@ -20,31 +20,35 @@ OUTPUT_DIR = os.path.join(REPO_ROOT, "data")
 CFTC_URL = "https://www.cftc.gov/files/dea/history/com_disagg_txt_{year}.zip"
 
 # Map CFTC Market_and_Exchange_Names to our IDs
-# The CFTC CSV field format: "COMMODITY - EXCHANGE NAME"
-# We match the commodity portion (before " - ") exactly.
+# We match the commodity portion (before " - EXCHANGE") exactly.
 # Multiple aliases handle name changes over the years.
 COMMODITY_MAP = {
-    # Exact commodity name (before " - ") -> our ID
+    # Grains (consistent names)
     "CORN": "cot-corn",
+    "SOYBEANS": "cot-soybeans",
+    "SOYBEAN OIL": "cot-oil",
+    "SOYBEAN MEAL": "cot-meal",
     "WHEAT-SRW": "cot-chi-wheat",
     "WHEAT SRW": "cot-chi-wheat",
-    "SOYBEANS": "cot-soybeans",
     "WHEAT-HRW": "cot-kc-wheat",
     "WHEAT HRW": "cot-kc-wheat",
     "WHEAT-HRSPRING": "cot-mpls-wheat",
     "WHEAT HRSPRING": "cot-mpls-wheat",
-    "SOYBEAN OIL": "cot-oil",
-    "SOYBEAN MEAL": "cot-meal",
+    # Livestock (consistent names)
     "LIVE CATTLE": "cot-live-cattle",
     "FEEDER CATTLE": "cot-feeder-cattle",
     "LEAN HOGS": "cot-lean-hogs",
+    # Crude oil — name changed ~2023
     "CRUDE OIL, LIGHT SWEET": "cot-crude-oil",
-    "CRUDE OIL, LIGHT SWEET - NEW YORK MERCANTILE EXCHANGE": "cot-crude-oil",
+    "CRUDE OIL, LIGHT SWEET (WTI)": "cot-crude-oil",
+    # Heating oil — name changed ~2013
     "NY HARBOR ULSD": "cot-heating-oil",
+    "NO 2 HEATING OIL  NY HARBOR": "cot-heating-oil",
     "NO. 2 HEATING OIL, NY HARBOR": "cot-heating-oil",
-    "#2 HEATING OIL,NY HARBOR-N.Y.M.E.": "cot-heating-oil",
+    # Natural gas — name changed ~2023
     "NATURAL GAS": "cot-nat-gas",
-    "NATURAL GAS - NEW YORK MERCANTILE EXCHANGE": "cot-nat-gas",
+    "HENRY HUB NATURAL GAS": "cot-nat-gas",
+    "NATURAL GAS ICE HENRY HUB": "cot-nat-gas",
 }
 
 COMMODITY_META = {
@@ -64,7 +68,7 @@ COMMODITY_META = {
 }
 
 CURRENT_YEAR = datetime.utcnow().year
-START_YEAR = 2006  # First year of CFTC disaggregated report
+START_YEAR = 2010  # CFTC disaggregated combined data starts 2010
 BAND_YEARS = 10  # Use most recent N years for seasonal band charts
 
 
@@ -94,6 +98,14 @@ def download_cftc_zip(year):
 
 _unmatched_names = set()
 
+# Prefix fallback for commodities with many name variants
+_PREFIX_MAP = [
+    ("CRUDE OIL", "cot-crude-oil"),
+    ("NO 2 HEATING OIL", "cot-heating-oil"),
+    ("NO. 2 HEATING OIL", "cot-heating-oil"),
+    ("HEATING OIL", "cot-heating-oil"),
+]
+
 def identify_commodity(market_name):
     """Match CFTC market name to our commodity ID using exact commodity name matching."""
     full_name = market_name.strip()
@@ -113,62 +125,125 @@ def identify_commodity(market_name):
     if commodity_part in COMMODITY_MAP:
         return COMMODITY_MAP[commodity_part]
     
-    # Track unmatched for debugging (only first occurrence)
-    if commodity_part not in _unmatched_names and len(_unmatched_names) < 50:
+    # Prefix fallback for energy names that vary across years
+    for prefix, cot_id in _PREFIX_MAP:
+        if commodity_part.startswith(prefix):
+            # Exclude false positives (e.g., "HEATING OIL AVG PRICE OPTIONS")
+            if "OPTION" in commodity_part or "SWAP" in commodity_part or "SPREAD" in commodity_part or "CALENDAR" in commodity_part or "CAL " in commodity_part or "BASIS" in commodity_part or "CRACK" in commodity_part or "FIN " in commodity_part:
+                break
+            return cot_id
+    
+    # Track unmatched for debugging
+    if commodity_part not in _unmatched_names and len(_unmatched_names) < 200:
         _unmatched_names.add(commodity_part)
     
     return None
 
 
-def parse_cftc_csv(lines):
+def parse_cftc_csv(lines, year=None):
     """Parse CFTC CSV lines into weekly records per commodity.
-    Returns: {cot_id: [{date, prod_long, prod_short, swap_long, swap_short,
-                        mm_long, mm_short, other_long, other_short, oi}, ...]}
-    sorted by date ascending.
+    Handles column name differences between old (2006-2012) and new (2013+) CFTC files.
+    Returns: {cot_id: [{date, prod_long, prod_short, ...}, ...]}
     """
+    # Normalize headers: strip whitespace from the header line
+    if lines:
+        lines[0] = ",".join(h.strip() for h in lines[0].split(","))
+
     reader = csv.DictReader(lines)
     records = defaultdict(list)
 
+    # Get actual column names from the CSV header
+    fieldnames = reader.fieldnames or []
+
+    # Helper to find a column by trying multiple names
+    def find_col(row, *candidates):
+        for c in candidates:
+            val = row.get(c)
+            if val is not None and val != "":
+                return val
+        return None
+
+    # Log column names for first year to help debug
+    if year and year <= 2007:
+        matching_cols = [c for c in fieldnames if any(kw in c.lower() for kw in ["money", "prod", "swap", "date", "market", "open_int"])]
+        print(f"    Key columns ({year}): {matching_cols[:15]}")
+
+    matched_count = 0
     for row in reader:
-        market = row.get("Market_and_Exchange_Names", "")
+        # Market name column
+        market = find_col(row, "Market_and_Exchange_Names", "Market and Exchange Names",
+                          "Market_and_Exchange_Names ", "Contract_Market_Name")
+        if not market:
+            continue
         cot_id = identify_commodity(market)
         if not cot_id:
             continue
 
-        # Parse the report date
-        date_str = row.get("Report_Date_as_YYYY-MM-DD", row.get("As_of_Date_In_Form_YYYYMMDD", ""))
+        # Date column — different names across eras
+        date_str = find_col(row, "Report_Date_as_YYYY-MM-DD", "Report_Date_as_MM-DD-YYYY",
+                            "As_of_Date_In_Form_YYYYMMDD", "As_of_Date_In_Form_YYYY-MM-DD",
+                            "Report_Date_as_YYYY_MM_DD")
         if not date_str:
             continue
 
+        # Normalize date format
+        date_str = date_str.strip()
+        if len(date_str) == 10 and date_str[2] == "-" and date_str[5] == "-":
+            # MM-DD-YYYY -> YYYY-MM-DD
+            date_str = date_str[6:10] + "-" + date_str[0:2] + "-" + date_str[3:5]
+        elif len(date_str) == 8 and date_str.isdigit():
+            # YYYYMMDD -> YYYY-MM-DD
+            date_str = date_str[0:4] + "-" + date_str[4:6] + "-" + date_str[6:8]
+
         try:
-            prod_long = int(row.get("Prod_Merc_Positions_Long_All", 0))
-            prod_short = int(row.get("Prod_Merc_Positions_Short_All", 0))
-            swap_long = int(row.get("Swap_Positions_Long_All", row.get("Swap__Positions_Long_All", 0)))
-            swap_short = int(row.get("Swap_Positions_Short_All", row.get("Swap__Positions_Short_All", 0)))
-            mm_long = int(row.get("M_Money_Positions_Long_All", 0))
-            mm_short = int(row.get("M_Money_Positions_Short_All", 0))
-            other_long = int(row.get("Other_Rept_Positions_Long_All", 0))
-            other_short = int(row.get("Other_Rept_Positions_Short_All", 0))
-            oi = int(row.get("Open_Interest_All", 0))
+            # Position columns — try multiple name variants
+            prod_long = int(find_col(row, "Prod_Merc_Positions_Long_All", "Prod_Merc_Positions_Long_ALL",
+                                      "Prod_Merc_Positions_Long_Other") or 0)
+            prod_short = int(find_col(row, "Prod_Merc_Positions_Short_All", "Prod_Merc_Positions_Short_ALL",
+                                       "Prod_Merc_Positions_Short_Other") or 0)
+            swap_long = int(find_col(row, "Swap_Positions_Long_All", "Swap__Positions_Long_All",
+                                      "Swap_Positions_Long_ALL", "Swap__Positions_Long_ALL") or 0)
+            swap_short = int(find_col(row, "Swap_Positions_Short_All", "Swap__Positions_Short_All",
+                                       "Swap_Positions_Short_ALL", "Swap__Positions_Short_ALL") or 0)
+            mm_long = int(find_col(row, "M_Money_Positions_Long_All", "M_Money_Positions_Long_ALL") or 0)
+            mm_short = int(find_col(row, "M_Money_Positions_Short_All", "M_Money_Positions_Short_ALL") or 0)
+            other_long = int(find_col(row, "Other_Rept_Positions_Long_All", "Other_Rept_Positions_Long_ALL") or 0)
+            other_short = int(find_col(row, "Other_Rept_Positions_Short_All", "Other_Rept_Positions_Short_ALL") or 0)
+            oi = int(find_col(row, "Open_Interest_All", "Open_Interest_ALL", "Open_Interest_All ") or 0)
         except (ValueError, TypeError):
             continue
 
+        matched_count += 1
         records[cot_id].append({
             "date": date_str,
-            "prod_long": prod_long,
-            "prod_short": prod_short,
+            "prod_long": prod_long, "prod_short": prod_short,
             "prod_net": prod_long - prod_short,
-            "swap_long": swap_long,
-            "swap_short": swap_short,
+            "swap_long": swap_long, "swap_short": swap_short,
             "swap_net": swap_long - swap_short,
-            "mm_long": mm_long,
-            "mm_short": mm_short,
+            "mm_long": mm_long, "mm_short": mm_short,
             "mm_net": mm_long - mm_short,
-            "other_long": other_long,
-            "other_short": other_short,
+            "other_long": other_long, "other_short": other_short,
             "other_net": other_long - other_short,
             "oi": oi,
         })
+
+    if year:
+        ids_found = sorted(set(records.keys()))
+        print(f"    {year}: {matched_count} matched rows → {len(ids_found)} commodities: {', '.join(ids_found[:8])}{'...' if len(ids_found) > 8 else ''}")
+        if matched_count == 0:
+            print(f"    WARNING: 0 matches for {year}! All column names: {fieldnames[:20]}")
+            # Also show a sample market name from the file
+            reader2 = csv.DictReader(lines)
+            sample_markets = set()
+            for i, row2 in enumerate(reader2):
+                m = None
+                for cand in ["Market_and_Exchange_Names", "Market and Exchange Names", "Contract_Market_Name"]:
+                    m = row2.get(cand)
+                    if m: break
+                if m and len(sample_markets) < 5:
+                    sample_markets.add(m.split(" - ")[0].strip())
+                if i > 50: break
+            print(f"    Sample commodity names: {sample_markets}")
 
     # Sort each commodity by date
     for cot_id in records:
@@ -228,7 +303,7 @@ def main():
     for year in range(START_YEAR, CURRENT_YEAR + 1):
         lines = download_cftc_zip(year)
         if lines:
-            parsed = parse_cftc_csv(lines)
+            parsed = parse_cftc_csv(lines, year=year)
             all_years_parsed[year] = parsed
             for cot_id, recs in parsed.items():
                 all_records[cot_id].extend(recs)
@@ -329,12 +404,12 @@ def main():
                 med_vals.append(vals[len(vals)//2] if vals else None)
             medians[f] = med_vals
 
-        # Compute record long and short from ALL history (back to 2006)
-        all_mm_long = [r["mm_long"] for r in recs]
-        all_mm_short = [r["mm_short"] for r in recs]
-        rec_long = max(all_mm_long) if all_mm_long else latest["mm_long"]
-        rec_short = min([-s for s in all_mm_short]) if all_mm_short else -abs(latest["mm_short"])
-        # rec_short stored as negative (short position convention)
+        # Compute record long and short from ALL history
+        # Record long = highest net long (most positive mm_net)
+        # Record short = deepest net short (most negative mm_net)
+        all_mm_net = [r["mm_net"] for r in recs]
+        rec_long = max(all_mm_net) if all_mm_net else latest["mm_net"]
+        rec_short = min(all_mm_net) if all_mm_net else latest["mm_net"]
 
         cot_output[cot_id] = {
             **meta,
@@ -374,10 +449,18 @@ def main():
             corn_25 = yearly_out["2025"]["mm_net"][:12]
             print(f"    Corn 2025 MM net wks 1-12: {corn_25}")
 
-    # Log unmatched commodity names
+    # Log unmatched commodity names (helps find CFTC name changes)
     if _unmatched_names:
         print(f"\n  Unmatched CFTC commodity names ({len(_unmatched_names)}):")
-        for n in sorted(_unmatched_names)[:20]:
+        # Prioritize energy-related unmatched names
+        energy_kw = ["OIL", "GAS", "CRUDE", "HEAT", "PETROL", "FUEL", "ULSD", "WTI", "HENRY"]
+        energy_unmatched = sorted([n for n in _unmatched_names if any(kw in n.upper() for kw in energy_kw)])
+        other_unmatched = sorted([n for n in _unmatched_names if n not in energy_unmatched])
+        if energy_unmatched:
+            print(f"    Energy-related:")
+            for n in energy_unmatched[:15]:
+                print(f"      {n}")
+        for n in other_unmatched[:15]:
             print(f"    {n}")
 
     # Output

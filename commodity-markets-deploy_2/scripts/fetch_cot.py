@@ -260,53 +260,30 @@ def main():
         other_short_series = [r["other_short"] for r in recent]
         oi_series = [r["oi"] for r in recent]
 
-        # Build yearly data for multi-year line charts
-        # Group records by calendar year, then assign ordinal position within year
-        yearly = defaultdict(list)
+        # Build yearly data using ISO week numbering (matches Excel's isocalendar / ISOWEEKNUM)
+        # The ISO year handles year boundaries correctly:
+        #   Dec 30, 2024 → ISO year 2025, week 1
+        #   Dec 28, 2025 → ISO year 2025, week 52
+        # CFTC report dates are already Tuesdays (data cutoff day)
         fields_to_track = ["mm_net", "mm_long", "mm_short", "prod_net", "prod_long", "prod_short",
                            "swap_net", "swap_long", "swap_short", "other_net", "other_long", "other_short", "oi"]
-        by_year_recs = defaultdict(list)
+        NUM_SLOTS = 53  # ISO weeks 1-53, stored at indices 0-52
+
+        yearly_out = {}
         for rec in recs:
             try:
                 dt = datetime.strptime(rec["date"], "%Y-%m-%d")
-                by_year_recs[dt.year].append(rec)
+                iso_yr, iso_wk, _ = dt.isocalendar()
+                yr_key = str(iso_yr)
+                if yr_key not in yearly_out:
+                    yearly_out[yr_key] = {}
+                    for f in fields_to_track:
+                        yearly_out[yr_key][f] = [None] * NUM_SLOTS
+                idx = iso_wk - 1  # week 1 → index 0
+                if 0 <= idx < NUM_SLOTS:
+                    for f in fields_to_track:
+                        yearly_out[yr_key][f][idx] = rec.get(f)
             except: pass
-
-        for yr in by_year_recs:
-            by_year_recs[yr].sort(key=lambda r: r["date"])
-
-        # Build yearly data using simple day-of-year week index on Tuesday cutoff
-        # week_index = (day_of_year - 1) // 7 → 0-52
-        # Jan 1-7 = index 0, Jan 8-14 = index 1, ..., Dec 25-31 = index 51 or 52
-        def get_tuesday(report_date):
-            """Get the Tuesday of the report week (data cutoff day)."""
-            days_since_tue = (report_date.weekday() - 1) % 7
-            return report_date - timedelta(days=days_since_tue)
-
-        def week_index(dt):
-            """Simple week index: (day_of_year - 1) // 7 → 0-52."""
-            return (dt.timetuple().tm_yday - 1) // 7
-
-        NUM_SLOTS = 53  # indices 0-52
-
-        yearly_out = {}
-        for yr, yr_recs in sorted(by_year_recs.items()):
-            by_week = {}
-            for rec in yr_recs:
-                try:
-                    dt = datetime.strptime(rec["date"], "%Y-%m-%d")
-                    tue = get_tuesday(dt)
-                    # Use the Tuesday's year for indexing (handles late-Dec edge cases)
-                    if tue.year != yr:
-                        continue  # skip if Tuesday falls in different year
-                    wi = min(week_index(tue), NUM_SLOTS - 1)
-                    by_week[wi] = rec
-                except: pass
-
-            year_data = {}
-            for f in fields_to_track:
-                year_data[f] = [by_week[w].get(f) if w in by_week else None for w in range(NUM_SLOTS)]
-            yearly_out[str(yr)] = year_data
 
         # Build median from ALL years
         medians = {}

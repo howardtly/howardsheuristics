@@ -3482,7 +3482,8 @@ function COTChartsPage({ ready }) {
   useEffect(() => { setHiddenYears(new Set()); }, [sel, timeRange]);
 
   // 53 x-axis slots (index 0-52). Labels: month name at fixed positions matching (doy-1)//7
-  const monthStarts = { 0: "Jan", 4: "Feb", 8: "Mar", 13: "Apr", 17: "May", 21: "Jun", 26: "Jul", 30: "Aug", 35: "Sep", 39: "Oct", 43: "Nov", 48: "Dec" };
+  // ISO week index of month starts (2025 reference): Jan wk1=idx0, Feb wk5=idx4, etc.
+    const monthStarts = { 0: "Jan", 4: "Feb", 8: "Mar", 13: "Apr", 17: "May", 21: "Jun", 26: "Jul", 30: "Aug", 35: "Sep", 39: "Oct", 43: "Nov", 48: "Dec" };
   const NUM_SLOTS = 53;
   const xLabels = Array.from({ length: NUM_SLOTS }, (_, i) => monthStarts[i] || "");
   const xGridColors = Array.from({ length: NUM_SLOTS }, (_, i) => i in monthStarts && i > 0 ? "rgba(0,0,0,0.12)" : "transparent");

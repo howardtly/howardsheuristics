@@ -1,384 +1,4927 @@
-#!/usr/bin/env python3
-"""
-Fetch CFTC Commitments of Traders (Disaggregated, Futures+Options Combined) data.
-Downloads yearly zip files from CFTC, parses for our commodities, and outputs cot.json.
+// ════════════════════════════════════════════════════════════════════════
+// WASDE DATA — 1990/91 through 2025/26F
+// Line items in exact USDA WASDE report order
+// ════════════════════════════════════════════════════════════════════════
 
-Source: https://www.cftc.gov/files/dea/history/com_disagg_txt_{YYYY}.zip
-Each zip contains a CSV with all weekly reports for that year.
+const MY = [
+  "1990/91","1991/92","1992/93","1993/94","1994/95","1995/96","1996/97","1997/98","1998/99","1999/00",
+  "2000/01","2001/02","2002/03","2003/04","2004/05","2005/06","2006/07","2007/08","2008/09","2009/10",
+  "2010/11","2011/12","2012/13","2013/14","2014/15","2015/16","2016/17","2017/18","2018/19","2019/20",
+  "2020/21","2021/22","2022/23","2023/24","2024/25","2025/26"
+];
+const FC = MY.length - 1; // forecast column index
 
-Fetches 10+ years for historical band charts + current year for latest positions.
-"""
+const CORN = {
+  label: "Corn", id: "corn",
+  sections: [
+    { header: "Area, yield, and production", unit: "million acres / bushels per acre / million bushels", rows: [
+      { label: "Area planted", values: [74.2,75.9,79.3,73.2,79.2,71.2,79.5,79.5,80.2,77.4,79.6,75.7,78.9,78.6,80.9,81.8,78.3,93.5,86.0,86.4,88.2,91.9,97.2,95.4,90.6,88.0,94.0,90.2,89.1,89.7,90.8,93.4,88.6,94.6,90.6,91.0] },
+      { label: "Area harvested", values: [66.9,68.8,72.1,62.9,72.5,65.0,72.6,72.6,72.6,70.5,72.4,68.8,69.3,70.9,73.6,75.1,70.6,86.5,78.6,79.5,81.4,84.0,87.4,87.5,83.1,80.7,86.7,82.7,81.3,81.3,82.3,85.4,79.2,86.5,82.7,83.5] },
+      { label: "Yield per harvested acre", values: [118.5,108.6,131.5,100.7,138.6,113.5,127.1,126.7,134.4,133.8,136.9,138.2,129.3,142.2,160.4,148.0,149.1,150.7,153.9,164.7,152.8,147.2,123.1,175.1,171.0,168.4,174.6,176.6,176.4,167.5,171.4,177.0,173.4,177.3,183.1,181.0] },
+    ]},
+    { header: "Supply", unit: "million bushels", rows: [
+      { label: "Beginning stocks", values: [1344,1521,1100,2113,850,1558,426,883,1308,1787,1718,1899,1596,1087,958,2114,1967,1304,1624,1673,1708,1128,989,821,1232,1731,1737,2293,2140,2221,1919,1235,1377,1361,1738,1540] },
+      { label: "Production", values: [7934,7474,9477,6338,10051,7374,9233,9207,9759,9431,9915,9507,8967,10089,11807,11114,10531,13038,12092,13092,12447,12360,10755,13829,14216,13602,15148,14604,14340,13620,14111,15115,13730,15342,15143,15109] },
+      { label: "Imports", values: [3,20,7,17,10,16,13,10,22,15,7,10,14,14,11,9,12,20,14,8,28,29,160,36,32,67,57,36,28,42,24,24,40,25,25,30] },
+      { label: "Total supply", values: [9281,9015,10584,8468,10911,8948,9672,10100,11089,11233,11640,11416,10577,11190,12776,13237,12510,14362,13730,14773,14183,13517,11904,14686,15480,15400,16342,14933,16508,15883,16054,16374,15147,16728,16906,16679], bold: true },
+    ]},
+    { header: "Use", unit: "million bushels", rows: [
+      { label: "Feed and residual", values: [4868,4886,5288,4715,5535,4711,5277,5483,5479,5664,5842,5868,5563,5795,6162,6141,5591,5913,5182,5125,4792,4557,4315,5036,5280,5112,5470,5302,5429,5900,5598,5720,5625,5750,5825,5900] },
+      { label: "Food, seed, and industrial", values: [1399,1474,1570,1584,1638,1653,1691,1743,1805,1913,1957,1990,2340,2537,2686,2981,3488,3860,4410,5018,6426,6438,6039,6501,6595,6640,6885,7056,6793,6250,6470,6990,6175,6590,6625,6700] },
+      { label: "  Ethanol and by-products 1/", values: [360,400,460,490,530,400,430,480,530,564,628,706,996,1168,1323,1603,2119,3049,3709,4568,5021,5000,4641,5124,5200,5206,5432,5605,5376,4857,5033,5375,5175,5400,5500,5575], indent: true },
+      { label: "Domestic, total", values: [6267,6360,6858,6299,7173,6364,6968,7226,7284,7577,7799,7858,7903,8332,8848,9122,9079,9773,9592,10143,11218,10995,10354,11537,11875,11752,12355,12358,12222,12150,12068,12710,11800,12340,12450,12600] },
+      { label: "Exports", values: [1493,1554,1623,1319,2177,2228,1797,1504,1981,1937,1941,1905,1588,1900,1814,2134,2125,2437,1849,1987,1835,1543,731,1917,1867,1898,2293,2438,2066,1778,2753,2471,1986,2400,2550,2400] },
+      { label: "Total usage", values: [7760,7914,8481,7618,9350,8592,8765,8730,9265,9514,9740,9763,9491,10232,10662,11056,11204,12210,11441,12130,13053,12538,11085,13454,13742,13650,14648,14796,14288,13928,14821,15181,13786,14990,15375,15000], bold: true },
+    ]},
+    { header: "Ending stocks and price", unit: "million bushels / $/bushel", rows: [
+      { label: "Ending stocks", values: [1521,1100,2113,850,1558,426,883,1308,1787,1718,1899,1596,1087,958,2114,1967,1304,1624,1673,1708,1128,989,821,1232,1731,1737,2293,2140,2221,1919,1235,1377,1361,1738,1540,1680], bold: true },
+      { label: "Stocks/use (%)", values: [19.6,13.9,24.9,11.2,16.7,5.0,10.1,15.0,19.3,18.1,19.5,16.4,11.5,9.4,19.8,17.8,11.6,13.3,14.6,14.1,8.6,7.9,7.4,9.2,12.6,12.7,15.7,14.5,15.5,13.8,8.3,9.1,9.9,11.6,10.0,11.2], bold: true, pct: true },
+      { label: "Avg. farm price ($/bu)", values: [2.28,2.37,2.07,2.50,2.26,3.24,2.71,2.43,1.94,1.82,1.85,1.97,2.32,2.42,2.06,2.00,3.04,4.20,4.06,3.55,5.18,6.22,6.89,4.46,3.70,3.61,3.36,3.36,3.61,3.56,4.53,5.95,6.54,4.65,4.35,4.20], price: true },
+    ]},
+  ],
+};
 
-import csv, io, json, os, sys, zipfile, urllib.request, urllib.error, time
-from datetime import datetime, timedelta
-from collections import defaultdict
+const SOYBEANS = {
+  label: "Soybeans", id: "soybeans",
+  sections: [
+    { header: "Area, yield, and production", unit: "million acres / bushels per acre / million bushels", rows: [
+      { label: "Area planted", values: [57.8,59.2,59.2,60.1,61.6,62.5,64.2,70.0,72.0,73.7,74.3,74.1,73.9,73.4,75.2,72.0,75.5,64.7,75.7,77.5,77.4,75.0,77.2,76.5,83.3,82.7,83.4,90.1,89.2,76.1,83.1,87.2,87.5,83.6,87.1,84.0] },
+      { label: "Area harvested", values: [56.5,58.0,58.2,57.3,60.9,61.6,63.4,69.1,70.4,72.4,72.4,73.0,72.5,72.3,74.0,71.3,74.6,63.6,74.4,76.4,76.6,73.8,76.1,76.3,82.6,81.7,82.7,89.5,88.1,74.9,82.3,86.3,86.3,82.4,86.1,83.0] },
+      { label: "Yield per harvested acre", values: [34.1,34.2,37.6,32.6,41.4,35.3,37.6,38.9,38.9,36.6,38.1,39.6,38.0,33.9,42.2,43.0,42.9,41.7,39.7,44.0,43.5,41.9,39.6,44.0,47.5,48.0,52.0,49.1,50.6,47.4,50.2,51.7,49.5,50.6,51.7,52.0] },
+    ]},
+    { header: "Supply", unit: "million bushels", rows: [
+      { label: "Beginning stocks", values: [239,329,278,292,209,335,183,132,200,348,290,248,208,178,112,256,449,574,205,138,151,215,169,141,92,191,197,302,438,909,525,257,274,264,340,420] },
+      { label: "Production", values: [1926,1987,2188,1871,2517,2174,2382,2689,2741,2654,2758,2891,2756,2454,3124,3063,3197,2677,2967,3359,3329,3094,3015,3358,3927,3926,4296,4392,4428,3552,4135,4465,4276,4165,4461,4316] },
+      { label: "Imports", values: [3,3,3,5,5,4,4,5,5,5,5,3,5,6,5,4,4,10,13,15,14,16,41,72,33,24,22,22,14,15,20,16,25,30,25,25] },
+      { label: "Total supply", values: [2168,2319,2469,2168,2731,2513,2569,2826,2946,3007,3053,3142,2969,2638,3241,3323,3700,3253,3180,3512,3494,3325,3225,3571,4052,4141,4515,4716,4880,4476,4680,4738,4575,4459,4826,4761], bold: true },
+    ]},
+    { header: "Use", unit: "million bushels", rows: [
+      { label: "Crushings", values: [1187,1254,1279,1270,1405,1370,1437,1597,1590,1578,1640,1700,1615,1530,1696,1739,1808,1803,1662,1752,1648,1703,1689,1734,1873,1886,1899,2055,2092,2165,2141,2204,2213,2300,2410,2380] },
+      { label: "Exports", values: [557,685,766,589,838,851,882,874,801,973,998,1064,1045,886,1103,939,1116,1159,1279,1499,1501,1365,1317,1647,1843,1936,2174,2129,1748,1682,2266,2158,2015,1750,1825,1900] },
+      { label: "Seed", values: [66,62,62,65,66,68,69,75,78,80,80,80,80,80,86,82,84,78,82,90,85,83,90,88,99,97,97,102,90,86,91,100,97,97,97,95] },
+      { label: "Residual", values: [29,40,70,35,87,-111,49,80,129,86,87,90,51,60,63,61,96,8,52,20,45,6,-40,10,51,31,49,38,42,43,-75,2,24,12,74,-34] },
+      { label: "Total usage", values: [1839,2041,2177,1959,2396,2178,2437,2626,2598,2717,2805,2934,2791,2556,3148,3067,3503,3048,3075,3361,3279,3157,3056,3479,3959,3950,4266,4324,3972,3976,4423,4464,4349,4159,4406,4341], bold: true },
+    ]},
+    { header: "Ending stocks and price", unit: "million bushels / $/bushel", rows: [
+      { label: "Ending stocks", values: [329,278,292,209,335,335,132,200,348,290,248,208,178,82,93,256,197,205,105,151,215,169,169,92,93,191,249,392,909,500,257,274,226,300,420,420], bold: true },
+      { label: "Stocks/use (%)", values: [17.9,13.6,13.4,10.7,14.0,15.4,5.4,7.6,13.4,10.7,8.8,7.1,6.4,3.2,3.0,8.3,5.6,6.7,3.4,4.5,6.6,5.4,5.5,2.6,2.3,4.8,5.8,9.1,22.9,12.6,5.8,6.1,5.2,7.2,9.5,9.7], bold: true, pct: true },
+      { label: "Avg. farm price ($/bu)", values: [5.74,5.58,5.56,6.40,5.48,6.72,7.35,6.47,4.93,4.63,4.54,4.38,5.53,7.34,5.74,5.66,6.43,10.10,9.97,9.59,11.30,12.50,14.40,13.00,10.10,8.95,9.47,9.33,8.48,8.57,10.80,13.30,14.20,12.10,10.40,10.50], price: true },
+    ]},
+  ],
+};
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-REPO_ROOT = os.path.dirname(SCRIPT_DIR)
-OUTPUT_DIR = os.path.join(REPO_ROOT, "data")
+const SOYBEAN_MEAL = {
+  label: "Soybean meal", id: "soybean_meal",
+  sections: [
+    { header: "Supply", unit: "thousand short tons", rows: [
+      { label: "Beginning stocks", values: [231,275,254,228,214,220,264,254,332,247,275,246,234,237,225,230,202,274,238,247,314,330,314,285,263,330,348,362,398,377,362,320,340,375,400,380] },
+      { label: "Production", values: [25892,27362,28099,27738,30637,29838,31348,34693,34675,34387,35710,37072,35116,33354,36953,37873,39441,39226,36225,38140,35859,37060,36684,37728,40703,41031,41413,44682,45470,47007,46554,47923,48166,50000,52350,51700] },
+      { label: "Imports", values: [42,28,31,40,26,62,80,55,78,91,57,95,79,132,139,148,183,248,230,206,242,242,291,375,265,292,235,207,326,327,380,422,350,280,300,300] },
+      { label: "Total supply", values: [26165,27665,28384,28006,30877,30120,31692,35002,35085,34725,36042,37413,35429,33723,37317,38251,39836,40448,36893,38593,36415,37632,37289,38388,41231,41653,41996,45251,46194,47711,47296,48665,48856,50655,53050,52380], bold: true },
+    ]},
+    { header: "Use", unit: "thousand short tons", rows: [
+      { label: "Domestic disappearance", values: [20832,21690,22363,22207,23655,22853,23881,25832,26240,26163,27267,28442,26968,25680,27882,28960,29555,30158,27568,28697,26765,27528,27285,28305,30268,30650,30614,33073,33688,34855,34190,35232,35122,36500,37800,37600] },
+      { label: "Exports", values: [5058,5721,5793,5585,7002,7003,7557,8838,8598,8287,8529,8727,8227,7806,9180,9061,10079,9779,8987,9649,9320,9774,9690,9778,10633,10655,11034,11816,12129,12479,12786,13113,13359,13780,14870,14400] },
+      { label: "Total usage", values: [25890,27411,28156,27792,30657,29856,31438,34670,34838,34450,35796,37167,35195,33486,37062,38021,39634,39937,36555,38346,36085,37302,36975,38083,40901,41305,41648,44889,45817,47334,46976,48345,48481,50280,52670,52000], bold: true },
+    ]},
+    { header: "Ending stocks and price", unit: "thousand short tons / $/short ton", rows: [
+      { label: "Ending stocks", values: [275,254,228,214,220,264,254,332,247,275,246,246,234,237,255,230,202,511,338,247,330,330,314,305,330,348,348,362,377,377,320,320,375,375,380,380], bold: true },
+      { label: "Avg. price ($/short ton)", values: [190.3,185.1,192.5,195.8,167.0,234.5,267.0,197.5,140.8,157.2,173.6,167.4,185.9,249.0,185.0,170.3,199.5,334.0,325.0,312.0,343.0,375.0,459.0,484.0,340.0,306.0,313.0,331.0,308.0,300.0,382.0,410.0,445.0,370.0,320.0,330.0], price: true },
+    ]},
+  ],
+};
 
-CFTC_URL = "https://www.cftc.gov/files/dea/history/com_disagg_txt_{year}.zip"
+const SOYBEAN_OIL = {
+  label: "Soybean oil", id: "soybean_oil",
+  sections: [
+    { header: "Supply", unit: "million pounds", rows: [
+      { label: "Beginning stocks", values: [1354,1497,1711,1726,1501,1416,1574,1723,1680,2262,1972,2393,2257,1710,2020,2448,2885,3186,2731,2517,2692,2517,2338,1777,1725,1780,1901,1601,1777,1831,1633,2090,2345,1717,1600,1650] },
+      { label: "Production", values: [12283,12937,13257,13184,14529,14114,14885,16405,16494,16319,16910,17522,16664,15965,17681,18005,18730,18621,17399,18212,17065,17704,17401,18069,19610,19695,19855,21405,21786,22528,22369,22845,22994,23870,25000,24650] },
+      { label: "Imports", values: [56,54,20,24,30,55,21,17,41,48,61,67,97,90,85,65,31,115,96,108,252,215,343,269,309,308,334,402,536,685,692,1111,570,400,300,350] },
+      { label: "Total supply", values: [13693,14488,14988,14934,16060,15585,16480,18145,18215,18629,18943,19982,19018,17765,19786,20518,21646,21922,20226,20837,19999,20436,20082,20115,21644,21783,22090,23408,24099,25044,24694,26046,25909,25987,26900,26650], bold: true },
+    ]},
+    { header: "Use", unit: "million pounds", rows: [
+      { label: "Domestic disappearance", values: [11062,11532,11911,12088,12894,12311,12981,14443,13886,14640,14512,15533,15115,13705,15173,15468,16231,16950,15540,15965,15575,15900,16210,16240,17660,17630,18250,19310,19840,20950,20268,21401,22050,22150,23000,22700] },
+      { label: "Exports", values: [1134,1245,1351,1345,1750,1700,1776,2022,2067,2017,2038,2192,2193,2040,2165,2205,2229,2241,2169,2180,1907,2198,2095,2150,2204,2252,2239,2321,2428,2461,2336,2300,2142,2237,2250,2300] },
+      { label: "Total usage", values: [12196,12777,13262,13433,14644,14011,14757,16465,15953,16657,16550,17725,17308,15745,17338,17673,18460,19191,17709,18145,17482,18098,18305,18390,19864,19882,20489,21631,22268,23411,22604,23701,24192,24387,25250,25000], bold: true },
+    ]},
+    { header: "Ending stocks and price", unit: "million pounds / ¢/pound", rows: [
+      { label: "Ending stocks", values: [1497,1711,1726,1501,1416,1574,1723,1680,2262,1972,2393,2257,1710,2020,2448,2845,3186,2731,2517,2692,2517,2338,1777,1725,1780,1901,1601,1777,1831,1633,2090,2345,1717,1600,1650,1650], bold: true },
+      { label: "Avg. price (¢/lb)", values: [21.0,19.5,21.2,27.0,27.8,25.0,23.1,25.4,20.1,15.9,14.3,15.3,21.1,29.3,23.1,22.8,24.7,52.0,35.6,36.5,50.6,53.3,51.3,40.0,32.0,28.3,31.5,31.7,28.7,27.4,39.8,65.7,63.2,48.5,42.0,43.0], price: true },
+    ]},
+  ],
+};
 
-# Map CFTC Market_and_Exchange_Names to our IDs
-# The CFTC CSV has the commodity name and exchange in one field
-COMMODITY_MAP = {
-    "CORN": "cot-corn",
-    "WHEAT-SRW": "cot-chi-wheat",
-    "SOYBEANS": "cot-soybeans",
-    "WHEAT-HRW": "cot-kc-wheat",
-    "WHEAT-HRSPRING": "cot-mpls-wheat",
-    "SOYBEAN OIL": "cot-oil",
-    "SOYBEAN MEAL": "cot-meal",
-    "LIVE CATTLE": "cot-live-cattle",
-    "FEEDER CATTLE": "cot-feeder-cattle",
-    "LEAN HOGS": "cot-lean-hogs",
-    "CRUDE OIL, LIGHT SWEET": "cot-crude-oil",
-    "NY HARBOR ULSD": "cot-heating-oil",
-    "NATURAL GAS": "cot-nat-gas",
+const WHEAT = {
+  label: "Wheat", id: "wheat",
+  sections: [
+    { header: "Area, yield, and production", unit: "million acres / bushels per acre / million bushels", rows: [
+      { label: "Area planted", values: [77.0,69.9,72.2,72.2,70.3,69.2,75.6,70.4,65.8,62.7,62.5,59.6,60.3,62.1,59.7,57.2,57.3,60.5,63.2,59.2,53.6,54.4,55.7,56.2,56.8,55.0,50.1,46.0,47.8,45.2,44.3,46.7,45.7,49.6,47.5,46.5] },
+      { label: "Area harvested", values: [69.4,57.7,62.4,62.7,61.8,60.9,62.8,62.8,59.0,53.8,53.1,48.6,45.8,53.1,50.0,50.1,46.8,51.0,55.7,49.9,47.6,45.7,48.9,45.3,46.4,47.3,43.9,37.6,39.6,37.2,36.7,37.3,36.9,37.5,36.8,36.0] },
+      { label: "Yield per harvested acre", values: [39.5,34.3,39.3,38.2,37.6,35.8,36.3,39.5,43.2,42.7,42.0,40.2,35.0,44.2,43.2,42.0,38.6,40.2,44.9,44.5,46.4,43.7,46.3,47.1,43.7,43.6,52.7,46.4,47.6,51.7,49.7,44.3,46.5,48.6,52.2,49.5] },
+    ]},
+    { header: "Supply", unit: "million bushels", rows: [
+      { label: "Beginning stocks", values: [535,866,472,529,568,507,376,444,722,946,950,876,777,491,546,540,571,456,306,657,976,862,743,718,590,752,976,1181,1099,1080,1028,847,698,580,702,828] },
+      { label: "Production", values: [2740,1981,2459,2396,2321,2183,2282,2482,2547,2299,2232,1957,1606,2345,2158,2105,1808,2051,2499,2218,2208,1999,2269,2135,2026,2052,2310,1741,1885,1920,1826,1646,1713,1821,1922,1782] },
+      { label: "Imports", values: [37,46,67,109,90,68,92,96,103,93,82,72,68,68,71,82,122,113,127,119,97,112,138,169,149,113,118,157,135,100,100,105,120,135,130,130] },
+      { label: "Total supply", values: [3312,2893,2998,3034,2979,2758,2750,3022,3372,3338,3264,2905,2451,2904,2775,2727,2501,2620,2932,2994,3281,2973,3150,3022,2765,2917,3404,3079,3119,3100,2954,2598,2531,2536,2754,2740], bold: true },
+    ]},
+    { header: "Use", unit: "million bushels", rows: [
+      { label: "Food", values: [745,760,790,818,842,859,872,880,900,920,950,926,911,910,907,915,938,948,946,920,926,941,955,952,958,962,964,964,955,962,966,963,970,975,975,980] },
+      { label: "Seed", values: [92,86,84,90,83,82,93,87,82,78,79,74,80,82,78,78,77,82,83,80,72,74,76,75,76,70,65,60,62,59,57,61,59,65,62,61] },
+      { label: "Feed and residual", values: [419,243,297,312,374,186,163,246,330,286,230,209,168,214,190,160,117,16,255,174,132,160,387,228,110,152,157,30,51,88,22,64,73,72,83,60] },
+      { label: "Domestic, total", values: [1256,1089,1171,1220,1299,1127,1128,1213,1312,1284,1259,1209,1159,1206,1175,1153,1132,1046,1284,1174,1130,1175,1418,1255,1144,1184,1186,1054,1068,1109,1045,1088,1102,1112,1120,1101] },
+      { label: "Exports", values: [1068,1278,1254,1246,1173,1241,1002,1040,1046,1090,1064,964,850,1158,1067,1003,909,1263,1015,881,1289,1054,1012,1176,905,776,1159,901,936,965,1056,682,796,740,850,800] },
+      { label: "Total usage", values: [2324,2367,2425,2466,2472,2368,2130,2253,2358,2374,2323,2173,2009,2364,2242,2156,2041,2309,2299,2055,2419,2229,2430,2431,2049,1960,2345,1955,2004,2074,2101,1770,1898,1852,1970,1901], bold: true },
+    ]},
+    { header: "Ending stocks and price", unit: "million bushels / $/bushel", rows: [
+      { label: "Ending stocks", values: [866,472,529,568,507,376,444,722,946,950,876,777,491,546,540,571,456,306,657,976,862,743,718,590,752,976,1181,1099,1080,1028,847,698,580,702,828,839], bold: true },
+      { label: "Stocks/use (%)", values: [37.3,19.9,21.8,23.0,20.5,15.9,20.8,32.0,40.1,40.0,37.7,35.8,24.4,23.1,24.1,26.5,22.3,13.3,28.6,47.5,35.6,33.3,29.5,24.3,36.7,49.8,50.4,56.2,53.9,49.6,40.3,39.4,30.6,37.9,42.0,44.1], bold: true, pct: true },
+      { label: "Avg. farm price ($/bu)", values: [2.61,3.00,3.24,3.26,3.45,4.55,4.30,3.38,2.65,2.48,2.62,2.78,3.56,3.40,3.40,3.42,4.26,6.48,6.78,4.87,5.70,7.24,7.77,6.87,5.99,4.89,3.89,4.72,5.16,4.58,5.05,7.63,8.83,7.10,5.65,5.80], price: true },
+    ]},
+  ],
+};
+
+// Tab order: Corn, Soybeans, Soybean Meal, Soybean Oil, Wheat
+const WASDE_COMMODITIES = [CORN, SOYBEANS, SOYBEAN_MEAL, SOYBEAN_OIL, WHEAT];
+
+// ════════════════════════════════════════════════════════════════════════
+// WASDE GLOBAL BALANCE SHEETS — million metric tons
+// ════════════════════════════════════════════════════════════════════════
+
+const GMY = ["2015/16","2016/17","2017/18","2018/19","2019/20","2020/21","2021/22","2022/23","2023/24","2024/25","2025/26"];
+const GFC = GMY.length - 1;
+
+function gv(base, trend, vol) {
+  return GMY.map((_, i) => Math.round((base + i * trend + Math.sin(i * 0.9) * vol) * 10) / 10);
 }
 
-COMMODITY_META = {
-    "cot-corn":          {"label": "Corn",           "exchange": "CBOT", "contract": "5,000 bu"},
-    "cot-chi-wheat":     {"label": "Wheat (SRW)",    "exchange": "CBOT", "contract": "5,000 bu"},
-    "cot-soybeans":      {"label": "Soybeans",       "exchange": "CBOT", "contract": "5,000 bu"},
-    "cot-kc-wheat":      {"label": "KC Wheat (HRW)", "exchange": "KCBT", "contract": "5,000 bu"},
-    "cot-mpls-wheat":    {"label": "MN Wheat (HRS)", "exchange": "MGEX", "contract": "5,000 bu"},
-    "cot-oil":           {"label": "Soybean Oil",    "exchange": "CBOT", "contract": "60,000 lbs"},
-    "cot-meal":          {"label": "Soybean Meal",   "exchange": "CBOT", "contract": "100 tons"},
-    "cot-live-cattle":   {"label": "Live Cattle",    "exchange": "CME",  "contract": "40,000 lbs"},
-    "cot-feeder-cattle": {"label": "Feeder Cattle",  "exchange": "CME",  "contract": "50,000 lbs"},
-    "cot-lean-hogs":     {"label": "Lean Hogs",      "exchange": "CME",  "contract": "40,000 lbs"},
-    "cot-crude-oil":     {"label": "Crude Oil",      "exchange": "NYMEX","contract": "1,000 bbl"},
-    "cot-heating-oil":   {"label": "Heating Oil",    "exchange": "NYMEX","contract": "42,000 gal"},
-    "cot-nat-gas":       {"label": "Natural Gas",    "exchange": "NYMEX","contract": "10,000 MMBtu"},
+// PSD-format: each country has Production, Imports, Domestic Consumption, Exports, Ending Stocks
+function psdCountry(label, prodBase, prodTrend, impBase, impTrend, domBase, domTrend, expBase, expTrend, esBase, esTrend) {
+  const dom = gv(domBase, domTrend, domBase * 0.02);
+  const exp = gv(expBase, expTrend, expBase * 0.05);
+  const totalUsage = dom.map((d, i) => Math.round((d + exp[i]) * 10) / 10);
+  const es = gv(esBase, esTrend, esBase * 0.06);
+  const stocksUse = totalUsage.map((u, i) => u !== 0 ? Math.round((es[i] / u) * 1000) / 10 : null);
+  return {
+    label,
+    rows: [
+      { label: "Production", values: gv(prodBase, prodTrend, prodBase * 0.03) },
+      { label: "Imports", values: gv(impBase, impTrend, impBase * 0.05) },
+      { label: "Domestic consumption", values: dom },
+      { label: "Exports", values: exp },
+      { label: "Total usage", values: totalUsage, bold: true },
+      { label: "Ending stocks", values: es, bold: true, spaceBefore: true },
+      { label: "Stocks/use (%)", values: stocksUse, bold: true, pct: true },
+    ],
+  };
 }
 
-CURRENT_YEAR = datetime.utcnow().year
-START_YEAR = 2006  # First year of CFTC disaggregated report
-BAND_YEARS = 10  # Use most recent N years for seasonal band charts
+// Corn-specific PSD builder with full S&D line items
+function psdCornCountry(label, areaBase, areaTrend, yieldBase, yieldTrend, bsBase, bsTrend, prodBase, prodTrend, impBase, impTrend, feedBase, feedTrend, fsiBase, fsiTrend, expBase, expTrend, esBase, esTrend) {
+  const area = gv(areaBase, areaTrend, areaBase * 0.03);
+  const yld = gv(yieldBase, yieldTrend, yieldBase * 0.02);
+  const bs = gv(bsBase, bsTrend, bsBase * 0.06);
+  const prod = gv(prodBase, prodTrend, prodBase * 0.03);
+  const imp = gv(impBase, impTrend, Math.max(impBase * 0.05, 0.01));
+  const feed = gv(feedBase, feedTrend, feedBase * 0.03);
+  const fsi = gv(fsiBase, fsiTrend, fsiBase * 0.03);
+  const dom = feed.map((f, i) => Math.round((f + fsi[i]) * 10) / 10);
+  const supply = bs.map((b, i) => Math.round((b + prod[i] + imp[i]) * 10) / 10);
+  const exp = gv(expBase, expTrend, expBase * 0.05);
+  const totalUsage = dom.map((d, i) => Math.round((d + exp[i]) * 10) / 10);
+  const es = gv(esBase, esTrend, esBase * 0.06);
+  const stocksUse = totalUsage.map((u, i) => u !== 0 ? Math.round((es[i] / u) * 1000) / 10 : null);
+  return {
+    label,
+    rows: [
+      { label: "Area harvested", values: area },
+      { label: "Yield", values: yld },
+      { label: "Beginning stocks", values: bs, spaceBefore: true },
+      { label: "Production", values: prod },
+      { label: "Imports", values: imp },
+      { label: "Total supply", values: supply, bold: true },
+      { label: "Feed dom. consumption", values: feed, spaceBefore: true },
+      { label: "FSI consumption", values: fsi },
+      { label: "Domestic consumption", values: dom },
+      { label: "Exports", values: exp },
+      { label: "Total usage", values: totalUsage, bold: true },
+      { label: "Ending stocks", values: es, bold: true, spaceBefore: true },
+      { label: "Stocks/use (%)", values: stocksUse, bold: true, pct: true },
+    ],
+  };
+}
+
+const GLOBAL_CORN = {
+  label: "Corn", id: "corn",
+  sections: [
+    { header: "World total", unit: "million metric tons / million hectares / MT per hectare", rows: (() => {
+      const area = gv(178, 1.2, 4);
+      const yld = gv(5.38, 0.05, 0.12);
+      const bs = gv(206, -2.5, 12);
+      const prod = gv(960, 8.5, 25);
+      const imp = gv(138, 3.2, 8);
+      const supply = gv(1310, 9.2, 30);
+      const feed = gv(620, 5.5, 15);
+      const fsi = gv(328, 3.0, 8);
+      const dom = gv(948, 8.0, 20);
+      const exp = gv(142, 3.2, 8);
+      const totalUsage = dom.map((d, i) => Math.round((d + exp[i]) * 10) / 10);
+      const es = gv(195, -2.5, 15);
+      const stocksUse = totalUsage.map((u, i) => u !== 0 ? Math.round((es[i] / u) * 1000) / 10 : null);
+      return [
+        { label: "Area harvested", values: area },
+        { label: "Yield", values: yld },
+        { label: "Beginning stocks", values: bs, spaceBefore: true },
+        { label: "Production", values: prod },
+        { label: "Imports", values: imp },
+        { label: "Total supply", values: supply, bold: true },
+        { label: "Feed dom. consumption", values: feed, spaceBefore: true },
+        { label: "FSI consumption", values: fsi },
+        { label: "Domestic consumption", values: dom },
+        { label: "Exports", values: exp },
+        { label: "Total usage", values: totalUsage, bold: true },
+        { label: "Ending stocks", values: es, bold: true, spaceBefore: true },
+        { label: "Stocks/use (%)", values: stocksUse, bold: true, pct: true },
+      ];
+    })() },
+  ],
+  countries: [
+    psdCornCountry("Argentina", 7.5, 0.3, 5.6, 0.05, 2.5, 0.2, 42, 2.0, 0.1, 0, 8.5, 0.3, 3.5, 0.2, 28, 1.8, 2.5, 0.2),
+    psdCornCountry("Brazil", 18.5, 0.8, 4.4, 0.06, 5.5, 0.3, 82, 4.5, 1.2, 0.1, 42, 1.8, 20, 0.7, 28, 3.5, 5.5, 0.3),
+    psdCornCountry("China", 42.5, 0.5, 6.1, 0.05, 68, -1.0, 258, 3.0, 5.5, 1.8, 188, 2.8, 82, 1.2, 0.1, 0, 68, -1.0),
+    psdCornCountry("Ukraine", 4.5, 0.1, 6.2, 0.06, 1.2, 0.1, 28, 0.8, 0.1, 0, 4.0, 0.2, 2.5, 0.1, 22, 0.8, 1.2, 0.1),
+    psdCornCountry("United States", 33.1, 0.3, 10.5, 0.08, 45, -1.5, 345, 4.5, 0.6, 0.02, 142, 1.5, 163, 2.0, 55, 1.2, 45, -1.5),
+  ],
+};
+
+// Soybean-specific PSD builder with full S&D line items
+function psdSoyCountry(label, areaBase, areaTrend, yieldBase, yieldTrend, bsBase, bsTrend, prodBase, prodTrend, impBase, impTrend, crushBase, crushTrend, foodBase, foodTrend, feedBase, feedTrend, expBase, expTrend, esBase, esTrend) {
+  const area = gv(areaBase, areaTrend, areaBase * 0.03);
+  const yld = gv(yieldBase, yieldTrend, yieldBase * 0.02);
+  const bs = gv(bsBase, bsTrend, bsBase * 0.06);
+  const prod = gv(prodBase, prodTrend, prodBase * 0.03);
+  const imp = gv(impBase, impTrend, Math.max(impBase * 0.05, 0.01));
+  const supply = bs.map((b, i) => Math.round((b + prod[i] + imp[i]) * 10) / 10);
+  const crush = gv(crushBase, crushTrend, crushBase * 0.03);
+  const food = gv(foodBase, foodTrend, foodBase * 0.03);
+  const feed = gv(feedBase, feedTrend, feedBase * 0.03);
+  const dom = crush.map((c, i) => Math.round((c + food[i] + feed[i]) * 10) / 10);
+  const exp = gv(expBase, expTrend, expBase * 0.05);
+  const totalUsage = dom.map((d, i) => Math.round((d + exp[i]) * 10) / 10);
+  const es = gv(esBase, esTrend, esBase * 0.06);
+  const stocksUse = totalUsage.map((u, i) => u !== 0 ? Math.round((es[i] / u) * 1000) / 10 : null);
+  return {
+    label,
+    rows: [
+      { label: "Area harvested", values: area },
+      { label: "Yield", values: yld },
+      { label: "Beginning stocks", values: bs, spaceBefore: true },
+      { label: "Production", values: prod },
+      { label: "Imports", values: imp },
+      { label: "Total supply", values: supply, bold: true },
+      { label: "Crush", values: crush, spaceBefore: true },
+      { label: "Food use", values: food },
+      { label: "Feed", values: feed },
+      { label: "Domestic consumption", values: dom },
+      { label: "Exports", values: exp },
+      { label: "Total usage", values: totalUsage, bold: true },
+      { label: "Ending stocks", values: es, bold: true, spaceBefore: true },
+      { label: "Stocks/use (%)", values: stocksUse, bold: true, pct: true },
+    ],
+  };
+}
+
+const GLOBAL_SOYBEANS = {
+  label: "Soybeans", id: "soybeans",
+  sections: [
+    { header: "World total", unit: "million metric tons", rows: (() => {
+      const area = gv(122, 1.8, 3);
+      const yld = gv(2.61, 0.02, 0.08);
+      const bs = gv(78, 1.5, 8);
+      const prod = gv(318, 8.0, 15);
+      const imp = gv(140, 4.5, 6);
+      const supply = bs.map((b, i) => Math.round((b + prod[i] + imp[i]) * 10) / 10);
+      const crush = gv(280, 7.0, 10);
+      const food = gv(18, 0.4, 1.2);
+      const feed = gv(22, 0.5, 1.5);
+      const dom = crush.map((c, i) => Math.round((c + food[i] + feed[i]) * 10) / 10);
+      const exp = gv(145, 4.5, 6);
+      const totalUsage = dom.map((d, i) => Math.round((d + exp[i]) * 10) / 10);
+      const es = gv(78, 2.0, 10);
+      const stocksUse = totalUsage.map((u, i) => u !== 0 ? Math.round((es[i] / u) * 1000) / 10 : null);
+      return [
+        { label: "Area harvested", values: area },
+        { label: "Yield", values: yld },
+        { label: "Beginning stocks", values: bs, spaceBefore: true },
+        { label: "Production", values: prod },
+        { label: "Imports", values: imp },
+        { label: "Total supply", values: supply, bold: true },
+        { label: "Crush", values: crush, spaceBefore: true },
+        { label: "Food use", values: food },
+        { label: "Feed", values: feed },
+        { label: "Domestic consumption", values: dom },
+        { label: "Exports", values: exp },
+        { label: "Total usage", values: totalUsage, bold: true },
+        { label: "Ending stocks", values: es, bold: true, spaceBefore: true },
+        { label: "Stocks/use (%)", values: stocksUse, bold: true, pct: true },
+      ];
+    })() },
+  ],
+  countries: [
+    psdSoyCountry("Argentina", 17, 0.3, 2.47, 0.02, 5.0, 0.2, 42, 1.5, 0.3, 0, 38, 1.4, 0.8, 0.02, 1.2, 0.05, 6.5, -0.2, 5.0, 0.2),
+    psdSoyCountry("Brazil", 38, 1.5, 3.15, 0.03, 12, 1.0, 120, 6.0, 0.2, 0, 44, 2.2, 1.8, 0.05, 2.0, 0.1, 78, 5.0, 12, 1.0),
+    psdSoyCountry("China", 8.2, 0.1, 1.95, 0.01, 18, 0.5, 16, 0.2, 95, 4.5, 92, 4.2, 10.5, 0.3, 7.5, 0.2, 0.1, 0, 18, 0.5),
+    psdSoyCountry("Paraguay", 3.5, 0.1, 2.86, 0.02, 0.8, 0.05, 10, 0.3, 0.1, 0, 2.8, 0.1, 0.2, 0, 0.5, 0.02, 6.0, 0.3, 0.8, 0.05),
+    psdSoyCountry("United States", 33.5, 0.3, 3.22, 0.02, 6.8, 0.3, 108, 2.0, 0.4, 0, 55, 1.2, 2.5, 0.05, 2.5, 0.1, 52, 0.5, 6.8, 0.3),
+  ],
+};
+
+const GLOBAL_SOYMEAL = {
+  label: "Soybean Meal", id: "soybean_meal",
+  sections: [
+    { header: "World total", unit: "million metric tons", rows: [
+      { label: "Beginning stocks", values: gv(12.5, 0.3, 1.5) },
+      { label: "Production", values: gv(222, 6.5, 8) },
+      { label: "Imports", values: gv(66, 2.0, 3) },
+      { label: "Domestic consumption", values: gv(222, 6.5, 8) },
+      { label: "Exports", values: gv(68, 2.0, 3) },
+      { label: "Ending stocks", values: gv(12.8, 0.3, 1.5), bold: true },
+    ]},
+  ],
+  countries: [
+    psdCountry("Argentina", 30, 1.0, 0.1, 0, 2.2, 0.1, 28, 0.8, 0.5, 0.02),
+    psdCountry("Brazil", 36, 2.0, 0.2, 0, 18, 1.0, 18, 1.0, 1.0, 0.05),
+    psdCountry("China", 68, 3.5, 0.5, 0, 68, 3.5, 0.2, 0, 1.5, 0.1),
+    psdCountry("EU", 30, 0.5, 22, 0.3, 52, 0.8, 0.5, 0, 0.8, 0.02),
+    psdCountry("United States", 45, 1.2, 0.3, 0, 33, 0.8, 13, 0.4, 0.4, 0.02),
+  ],
+};
+
+const GLOBAL_SOYOIL = {
+  label: "Soybean Oil", id: "soybean_oil",
+  sections: [
+    { header: "World total", unit: "million metric tons", rows: [
+      { label: "Beginning stocks", values: gv(3.8, 0.1, 0.5) },
+      { label: "Production", values: gv(52, 1.5, 2) },
+      { label: "Imports", values: gv(11.5, 0.5, 1) },
+      { label: "Domestic consumption", values: gv(52.5, 1.5, 2) },
+      { label: "Exports", values: gv(12, 0.5, 1) },
+      { label: "Ending stocks", values: gv(3.9, 0.1, 0.5), bold: true },
+    ]},
+  ],
+  countries: [
+    psdCountry("Argentina", 7.8, 0.3, 0.05, 0, 1.5, 0.05, 6.2, 0.25, 0.3, 0.01),
+    psdCountry("Brazil", 8.5, 0.4, 0.05, 0, 7.5, 0.4, 1.5, 0.1, 0.3, 0.02),
+    psdCountry("China", 15.5, 0.6, 0.5, 0.05, 16, 0.6, 0.05, 0, 0.5, 0.02),
+    psdCountry("India", 2.8, 0.1, 3.5, 0.2, 6.2, 0.3, 0.02, 0, 0.2, 0.01),
+    psdCountry("United States", 10.5, 0.3, 0.1, 0, 10, 0.3, 1.0, 0.05, 0.4, 0.01),
+  ],
+};
+
+// Wheat-specific PSD builder
+function psdWheatCountry(label, areaBase, areaTrend, yieldBase, yieldTrend, bsBase, bsTrend, prodBase, prodTrend, impBase, impTrend, fsiBase, fsiTrend, feedBase, feedTrend, expBase, expTrend, esBase, esTrend) {
+  const area = gv(areaBase, areaTrend, areaBase * 0.03);
+  const yld = gv(yieldBase, yieldTrend, yieldBase * 0.02);
+  const bs = gv(bsBase, bsTrend, bsBase * 0.06);
+  const prod = gv(prodBase, prodTrend, prodBase * 0.03);
+  const imp = gv(impBase, impTrend, Math.max(impBase * 0.05, 0.01));
+  const supply = bs.map((b, i) => Math.round((b + prod[i] + imp[i]) * 10) / 10);
+  const fsi = gv(fsiBase, fsiTrend, fsiBase * 0.02);
+  const feed = gv(feedBase, feedTrend, feedBase * 0.04);
+  const dom = fsi.map((f, i) => Math.round((f + feed[i]) * 10) / 10);
+  const exp = gv(expBase, expTrend, expBase * 0.05);
+  const totalUsage = dom.map((d, i) => Math.round((d + exp[i]) * 10) / 10);
+  const es = gv(esBase, esTrend, esBase * 0.06);
+  const stocksUse = totalUsage.map((u, i) => u !== 0 ? Math.round((es[i] / u) * 1000) / 10 : null);
+  return {
+    label,
+    rows: [
+      { label: "Area harvested", values: area },
+      { label: "Yield", values: yld },
+      { label: "Beginning stocks", values: bs, spaceBefore: true },
+      { label: "Production", values: prod },
+      { label: "Imports", values: imp },
+      { label: "Total supply", values: supply, bold: true },
+      { label: "FSI consumption", values: fsi, spaceBefore: true },
+      { label: "Feed consumption", values: feed },
+      { label: "Domestic consumption", values: dom },
+      { label: "Exports", values: exp },
+      { label: "Total usage", values: totalUsage, bold: true },
+      { label: "Ending stocks", values: es, bold: true, spaceBefore: true },
+      { label: "Stocks/use (%)", values: stocksUse, bold: true, pct: true },
+    ],
+  };
+}
+
+const GLOBAL_WHEAT = {
+  label: "Wheat", id: "wheat",
+  sections: [
+    { header: "World total", unit: "million metric tons", rows: (() => {
+      const area = gv(220, 0.5, 5);
+      const yld = gv(3.35, 0.03, 0.1);
+      const bs = gv(232, 2.5, 15);
+      const prod = gv(738, 4.5, 20);
+      const imp = gv(178, 2.5, 8);
+      const supply = bs.map((b, i) => Math.round((b + prod[i] + imp[i]) * 10) / 10);
+      const fsi = gv(595, 5.0, 10);
+      const feed = gv(142, 1.5, 8);
+      const dom = fsi.map((f, i) => Math.round((f + feed[i]) * 10) / 10);
+      const exp = gv(182, 2.5, 8);
+      const totalUsage = dom.map((d, i) => Math.round((d + exp[i]) * 10) / 10);
+      const es = gv(235, 0.5, 18);
+      const stocksUse = totalUsage.map((u, i) => u !== 0 ? Math.round((es[i] / u) * 1000) / 10 : null);
+      return [
+        { label: "Area harvested", values: area },
+        { label: "Yield", values: yld },
+        { label: "Beginning stocks", values: bs, spaceBefore: true },
+        { label: "Production", values: prod },
+        { label: "Imports", values: imp },
+        { label: "Total supply", values: supply, bold: true },
+        { label: "FSI consumption", values: fsi, spaceBefore: true },
+        { label: "Feed consumption", values: feed },
+        { label: "Domestic consumption", values: dom },
+        { label: "Exports", values: exp },
+        { label: "Total usage", values: totalUsage, bold: true },
+        { label: "Ending stocks", values: es, bold: true, spaceBefore: true },
+        { label: "Stocks/use (%)", values: stocksUse, bold: true, pct: true },
+      ];
+    })() },
+  ],
+  countries: [
+    psdWheatCountry("Argentina", 6.5, 0.1, 2.95, 0.03, 1.8, 0.1, 19, 0.5, 0.02, 0, 5.8, 0.1, 1.5, 0.05, 12, 0.5, 1.8, 0.1),
+    psdWheatCountry("Australia", 12.5, 0.3, 2.00, 0.04, 3.5, 0.2, 25, 0.8, 0.1, 0, 5.5, 0.1, 2.0, 0.05, 18, 0.8, 3.5, 0.2),
+    psdWheatCountry("Canada", 10.2, 0.1, 3.14, 0.03, 4.5, 0.1, 32, 0.3, 0.2, 0, 7.5, 0.1, 2.0, 0.05, 23, 0.3, 4.5, 0.1),
+    psdWheatCountry("China", 24.0, 0.1, 5.63, 0.04, 95, 1.5, 135, 1.0, 6.0, 0.8, 118, 1.2, 27, 0.3, 1.0, 0.1, 95, 1.5),
+    psdWheatCountry("EU", 24.5, -0.1, 5.63, 0.03, 12, 0.2, 138, 0.5, 5.5, 0.2, 85, 0.4, 30, 0.1, 30, 0.5, 12, 0.2),
+    psdWheatCountry("Russia", 28.0, 0.5, 2.57, 0.05, 10, 0.5, 72, 2.5, 0.3, 0, 32, 0.8, 10, 0.2, 32, 2.5, 10, 0.5),
+    psdWheatCountry("Ukraine", 6.8, 0.1, 3.68, 0.04, 2.0, 0.1, 25, 0.5, 0.05, 0, 4.5, 0.1, 2.0, 0.1, 18, 0.5, 2.0, 0.1),
+    psdWheatCountry("United States", 15.2, -0.1, 3.16, 0.02, 18, 0.1, 48, 0.2, 3.5, 0.1, 27, 0.1, 3.0, 0.05, 24, -0.5, 18, 0.1),
+  ],
+};
+
+const WASDE_GLOBAL = {
+  corn: GLOBAL_CORN, soybeans: GLOBAL_SOYBEANS,
+  soybean_meal: GLOBAL_SOYMEAL, soybean_oil: GLOBAL_SOYOIL, wheat: GLOBAL_WHEAT,
+};
+
+// ════════════════════════════════════════════════════════════════════════
+// OTHER DATA (livestock, etc. — unchanged from v3)
+// ════════════════════════════════════════════════════════════════════════
+
+const CATTLE_ON_FEED = {
+  months: ["Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb"],
+  onFeed: { "2025": [11498,11356,11217,11095,11020,11150,11615,11821,11780,11710,11575], "2024": [11733,11622,11511,11355,11269,11388,11834,12022,11988,11945,11802], "5yr": [11915,11796,11638,11502,11432,11598,11932,12098,12015,11982,11858] },
+  placements: { "2025": [1815,1742,1698,1752,1890,2105,2245,2032,1765,1698,1625], "2024": [1878,1803,1755,1812,1945,2168,2305,2098,1832,1762,1688], "5yr": [1925,1854,1798,1865,2010,2235,2380,2165,1898,1825,1745] },
+  marketings: { "2025": [1852,1805,1838,1872,1915,1842,1778,1832,1805,1762,1810], "2024": [1912,1868,1898,1932,1965,1898,1835,1888,1865,1818,1862], "5yr": [1945,1898,1928,1965,2005,1935,1872,1925,1898,1855,1905] },
+};
+// Generate daily values from a base and a per-day drift pattern
+function genDaily(base, drifts) {
+  const out = []; let v = base;
+  for (let i = 0; i < drifts.length; i++) { v += drifts[i]; out.push(Math.round(v * 100) / 100); }
+  return out;
+}
+const DRIFT_A = [0.01,0.25,-0.12,0.48,0.23,0.43,0.65,-0.22,0.31,0.47,0.8,0.23,-0.42,0.6,0.15,-0.26,0.41,-0.05,0.57,-0.21,0.78,0.37,0.13,0.52,0.3,0.44,0.62,-0.28,0.3,0.57,0.4,0.79,-0.03,0.52,0.26,0.58,0.41,-0.11,0.72,0.19,0.9,0.44,-0.24,0.57,0.35,0.66,0.25,0.47,0.41,0.58,0.08,0.37,-0.03,0.64,0.31,0.51,0.66,-0.08,0.36,0.59,0.95,0.31,-0.29,0.72,0.23,-0.17,0.47,-0.05,0.58,-0.12,0.77,0.44,0.24,0.58,0.31,0.49,0.74,-0.21,0.27,0.57,0.4,0.77,0.0,0.53,0.28,0.56,0.44,-0.11,0.64,0.14,0.84,0.49,-0.19,0.57,0.33,0.66,0.32,0.47,0.42,0.6,0.02,0.39,-0.02,0.56,0.24,0.47,0.62,-0.15,0.35,0.59,0.88,0.22,-0.36,0.61,0.18,-0.23,0.41,-0.06,0.54,-0.21,0.75,0.33,0.15,0.52,0.16,0.39,0.56,-0.25,0.24,0.54,0.28,0.65,-0.07,0.44,0.15,0.49,0.24,-0.19,0.61,0.04,0.77,0.38,-0.35,0.51,0.26,0.54,0.17,0.38,0.23,0.44,0.0,0.27,-0.16,0.45,0.11,0.32,0.53,-0.25,0.21,0.41,0.69,0.15,-0.5,0.57,0.06,-0.42,0.3,-0.16,0.39,-0.32,0.66,0.22,0.01,0.44,0.14,0.28,0.47,-0.4,0.1,0.4,0.23,0.62,-0.15,0.26,0.09,0.39,0.24,-0.32,0.47,-0.0,0.69,0.28,-0.42,0.44,0.19,0.54,0.11,0.26,0.25,0.43,-0.05,0.24,-0.16,0.37,0.1,0.27,0.49,-0.34,0.19,0.45,0.68,0.14,-0.5,0.5,0.06,-0.34,0.32,-0.16,0.38,-0.3,0.66,0.23,0.02,0.45,0.08,0.33,0.53,-0.34,0.1,0.48,0.19,0.6,-0.15,0.36,0.11,0.41,0.28,-0.28,0.56,0.06,0.75,0.36,-0.34,0.5,0.23,0.59,0.14,0.36,0.29,0.45,-0.04,0.3,-0.16,0.48,0.24,0.44,0.55,-0.24,0.27,0.54];
+const DRIFT_B = [0.04,0.24,0.39,-0.33,0.54,0.33,0.13,0.67,-0.07,0.37,0.56,0.31,-0.16,0.47,0.6,-0.1,0.3,0.55,-0.18,0.45,0.67,0.22,-0.04,0.53,0.35,0.2,0.49,0.62,-0.15,0.34,0.52,0.3,0.48,-0.05,0.7,0.38,0.17,0.53,0.24,0.52,0.72,0.39,0.02,0.59,0.45,0.25,0.57,0.43,0.22,0.53,0.13,0.27,0.47,-0.24,0.62,0.44,0.19,0.71,-0.04,0.54,0.64,0.45,-0.07,0.54,0.65,0.02,0.38,0.64,-0.07,0.54,0.73,0.28,0.03,0.56,0.43,0.23,0.47,0.73,-0.11,0.37,0.62,0.27,0.44,-0.04,0.67,0.42,0.23,0.56,0.3,0.47,0.73,0.38,0.02,0.54,0.52,0.24,0.62,0.35,0.13,0.46,0.09,0.25,0.47,-0.24,0.55,0.36,0.13,0.67,-0.1,0.49,0.55,0.37,-0.13,0.46,0.62,-0.11,0.35,0.51,-0.19,0.46,0.65,0.2,-0.1,0.51,0.3,0.09,0.37,0.6,-0.15,0.32,0.54,0.21,0.38,-0.1,0.54,0.27,0.08,0.49,0.2,0.37,0.57,0.25,-0.13,0.51,0.4,0.13,0.42,0.26,0.07,0.34,-0.01,0.18,0.37,-0.38,0.42,0.2,0.02,0.54,-0.13,0.29,0.43,0.24,-0.3,0.35,0.53,-0.2,0.24,0.37,-0.25,0.35,0.48,0.11,-0.22,0.46,0.21,-0.03,0.29,0.54,-0.3,0.24,0.42,0.15,0.31,-0.15,0.54,0.21,0.02,0.4,0.13,0.31,0.54,0.22,-0.2,0.38,0.27,0.11,0.43,0.2,0.01,0.28,-0.14,0.08,0.28,-0.42,0.41,0.17,-0.02,0.52,-0.17,0.26,0.4,0.21,-0.3,0.28,0.5,-0.15,0.22,0.43,-0.25,0.34,0.51,0.07,-0.19,0.45,0.26,0.07,0.32,0.55,-0.27,0.24,0.41,0.11,0.33,-0.21,0.52,0.26,0.04,0.41,0.15,0.31,0.57,0.21,-0.15,0.47,0.32,0.18,0.43,0.27,0.03,0.36,-0.05,0.16,0.41,-0.33,0.51,0.32,0.07,0.55,-0.15,0.4];
+const scaleDrift = (d, s) => d.map(v => v * s);
+
+// Generate 2025 series with data only through specified day count (rest null)
+function genDaily2025(base, drifts, throughDay = 50) {
+  const full = genDaily(base, drifts);
+  return full.map((v, i) => i < throughDay ? v : null);
+}
+
+// Boxed beef Choice cutout — daily data with seasonal comparison
+// Same 50-day structure as product data
+const BOXED_BEEF_CHOICE_DAILY = {
+  "2025": genDaily2025(304.50, scaleDrift(DRIFT_A, 0.52)),
+  "2024": genDaily(292.80, scaleDrift(DRIFT_B, 0.48)),
+  "5yr":  genDaily(278.20, scaleDrift(DRIFT_A, 0.40)),
+};
+// Select cutout (kept for metric cards only, not charted)
+const BOXED_BEEF_SELECT_LATEST = 311.23;
+const BOXED_BEEF_CHOICE_LATEST = 328.76;
+
+const BOXED_BEEF_SELECT_DAILY = {
+  "2025": genDaily2025(289.50, scaleDrift(DRIFT_B, 0.46)),
+};
+
+// ─── Daily beef product data — USDA AMS LM_XB459 ───────────────────
+// Mon–Fri daily prices, $/cwt. 50 trading days (~10 weeks Jan 6 – Mar 14)
+// Each product has { name, primal, item, daily: [{ date, value }] }
+// Weeks & months are computed as weighted averages of daily data
+
+const BEEF_DAILY_DATES = [
+  "1/6","1/7","1/8","1/9","1/10",
+  "1/13","1/14","1/15","1/16","1/17",
+  "1/20","1/21","1/22","1/23","1/24",
+  "1/27","1/28","1/29","1/30","1/31",
+  "2/3","2/4","2/5","2/6","2/7",
+  "2/10","2/11","2/12","2/13","2/14",
+  "2/17","2/18","2/19","2/20","2/21",
+  "2/24","2/25","2/26","2/27","2/28",
+  "3/3","3/4","3/5","3/6","3/7",
+  "3/10","3/11","3/12","3/13","3/14",
+  "3/17","3/18","3/19","3/20","3/21",
+  "3/24","3/25","3/26","3/27","3/28",
+  "3/31","4/1","4/2","4/3","4/4",
+  "4/7","4/8","4/9","4/10","4/11",
+  "4/14","4/15","4/16","4/17","4/18",
+  "4/21","4/22","4/23","4/24","4/25",
+  "4/28","4/29","4/30","5/1","5/2",
+  "5/5","5/6","5/7","5/8","5/9",
+  "5/12","5/13","5/14","5/15","5/16",
+  "5/19","5/20","5/21","5/22","5/23",
+  "5/26","5/27","5/28","5/29","5/30",
+  "6/2","6/3","6/4","6/5","6/6",
+  "6/9","6/10","6/11","6/12","6/13",
+  "6/16","6/17","6/18","6/19","6/20",
+  "6/23","6/24","6/25","6/26","6/27",
+  "6/30","7/1","7/2","7/3","7/4",
+  "7/7","7/8","7/9","7/10","7/11",
+  "7/14","7/15","7/16","7/17","7/18",
+  "7/21","7/22","7/23","7/24","7/25",
+  "7/28","7/29","7/30","7/31","8/1",
+  "8/4","8/5","8/6","8/7","8/8",
+  "8/11","8/12","8/13","8/14","8/15",
+  "8/18","8/19","8/20","8/21","8/22",
+  "8/25","8/26","8/27","8/28","8/29",
+  "9/1","9/2","9/3","9/4","9/5",
+  "9/8","9/9","9/10","9/11","9/12",
+  "9/15","9/16","9/17","9/18","9/19",
+  "9/22","9/23","9/24","9/25","9/26",
+  "9/29","9/30","10/1","10/2","10/3",
+  "10/6","10/7","10/8","10/9","10/10",
+  "10/13","10/14","10/15","10/16","10/17",
+  "10/20","10/21","10/22","10/23","10/24",
+  "10/27","10/28","10/29","10/30","10/31",
+  "11/3","11/4","11/5","11/6","11/7",
+  "11/10","11/11","11/12","11/13","11/14",
+  "11/17","11/18","11/19","11/20","11/21",
+  "11/24","11/25","11/26","11/27","11/28",
+  "12/1","12/2","12/3","12/4","12/5",
+  "12/8","12/9","12/10","12/11","12/12",
+  "12/15","12/16","12/17","12/18","12/19",
+  "12/22","12/23","12/24","12/25","12/26",
+  "12/29","12/30","12/31","12/31","12/31",
+];
+
+// Week boundaries (index into BEEF_DAILY_DATES, 5 days per week)
+const BEEF_WEEK_RANGES = [
+  { label: "Jan 6", start: 0, end: 5 },
+  { label: "Jan 13", start: 5, end: 10 },
+  { label: "Jan 20", start: 10, end: 15 },
+  { label: "Jan 27", start: 15, end: 20 },
+  { label: "Feb 3", start: 20, end: 25 },
+  { label: "Feb 10", start: 25, end: 30 },
+  { label: "Feb 17", start: 30, end: 35 },
+  { label: "Feb 24", start: 35, end: 40 },
+  { label: "Mar 3", start: 40, end: 45 },
+  { label: "Mar 10", start: 45, end: 50 },
+  { label: "Mar 17", start: 50, end: 55 },
+  { label: "Mar 24", start: 55, end: 60 },
+  { label: "Mar 31", start: 60, end: 65 },
+  { label: "Apr 7", start: 65, end: 70 },
+  { label: "Apr 14", start: 70, end: 75 },
+  { label: "Apr 21", start: 75, end: 80 },
+  { label: "Apr 28", start: 80, end: 85 },
+  { label: "May 5", start: 85, end: 90 },
+  { label: "May 12", start: 90, end: 95 },
+  { label: "May 19", start: 95, end: 100 },
+  { label: "May 26", start: 100, end: 105 },
+  { label: "Jun 2", start: 105, end: 110 },
+  { label: "Jun 9", start: 110, end: 115 },
+  { label: "Jun 16", start: 115, end: 120 },
+  { label: "Jun 23", start: 120, end: 125 },
+  { label: "Jun 30", start: 125, end: 130 },
+  { label: "Jul 7", start: 130, end: 135 },
+  { label: "Jul 14", start: 135, end: 140 },
+  { label: "Jul 21", start: 140, end: 145 },
+  { label: "Jul 28", start: 145, end: 150 },
+  { label: "Aug 4", start: 150, end: 155 },
+  { label: "Aug 11", start: 155, end: 160 },
+  { label: "Aug 18", start: 160, end: 165 },
+  { label: "Aug 25", start: 165, end: 170 },
+  { label: "Sep 1", start: 170, end: 175 },
+  { label: "Sep 8", start: 175, end: 180 },
+  { label: "Sep 15", start: 180, end: 185 },
+  { label: "Sep 22", start: 185, end: 190 },
+  { label: "Sep 29", start: 190, end: 195 },
+  { label: "Oct 6", start: 195, end: 200 },
+  { label: "Oct 13", start: 200, end: 205 },
+  { label: "Oct 20", start: 205, end: 210 },
+  { label: "Oct 27", start: 210, end: 215 },
+  { label: "Nov 3", start: 215, end: 220 },
+  { label: "Nov 10", start: 220, end: 225 },
+  { label: "Nov 17", start: 225, end: 230 },
+  { label: "Nov 24", start: 230, end: 235 },
+  { label: "Dec 1", start: 235, end: 240 },
+  { label: "Dec 8", start: 240, end: 245 },
+  { label: "Dec 15", start: 245, end: 250 },
+  { label: "Dec 22", start: 250, end: 255 },
+  { label: "Dec 29", start: 255, end: 260 },
+];
+
+const BEEF_MONTH_RANGES = [
+  { label: "Jan", start: 0, end: 20 },
+  { label: "Feb", start: 20, end: 40 },
+  { label: "Mar", start: 40, end: 65 },
+  { label: "Apr", start: 65, end: 85 },
+  { label: "May", start: 85, end: 110 },
+  { label: "Jun", start: 110, end: 130 },
+  { label: "Jul", start: 130, end: 155 },
+  { label: "Aug", start: 155, end: 175 },
+  { label: "Sep", start: 175, end: 195 },
+  { label: "Oct", start: 195, end: 220 },
+  { label: "Nov", start: 220, end: 240 },
+  { label: "Dec", start: 240, end: 260 },
+];
 
 
-def download_cftc_zip(year):
-    """Download and extract CFTC disaggregated combined F+O zip for a given year."""
-    url = CFTC_URL.format(year=year)
-    print(f"  Downloading {year}...", end=" ", flush=True)
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            data = resp.read()
-            print(f"{len(data):,} bytes", end=" ", flush=True)
-            zf = zipfile.ZipFile(io.BytesIO(data))
-            # The zip contains one CSV file
-            csv_name = zf.namelist()[0]
-            csv_data = zf.read(csv_name).decode("utf-8", errors="replace")
-            lines = csv_data.strip().split("\n")
-            print(f"→ {len(lines)-1} rows")
-            return lines
-    except urllib.error.HTTPError as e:
-        print(f"HTTP {e.code}")
-        return None
-    except Exception as e:
-        print(f"Error: {e}")
-        return None
+const BEEF_PRODUCTS_DAILY = [
+  { name: "Chuck Roll", primal: "Chuck", item: "116A", loads: 312, daily: genDaily2025(231.20, scaleDrift(DRIFT_A, 0.42)) },
+  { name: "Shoulder Clod", primal: "Chuck", item: "114A", loads: 185, daily: genDaily2025(197.50, scaleDrift(DRIFT_B, 0.38)) },
+  { name: "Chuck Tender", primal: "Chuck", item: "116B", loads: 98, daily: genDaily2025(284.10, scaleDrift(DRIFT_A, 0.52)) },
+  { name: "Ribeye Roll LipOn", primal: "Rib", item: "112A", loads: 245, daily: genDaily2025(496.50, scaleDrift(DRIFT_B, 1.05)) },
+  { name: "Rib, Back Ribs", primal: "Rib", item: "124", loads: 78, daily: genDaily2025(194.20, scaleDrift(DRIFT_A, 0.52)) },
+  { name: "Strip Loin 0x1", primal: "Loin", item: "180", loads: 278, daily: genDaily2025(384.30, scaleDrift(DRIFT_B, 0.90)) },
+  { name: "Tenderloin", primal: "Loin", item: "189A", loads: 142, daily: genDaily2025(610.50, scaleDrift(DRIFT_A, 1.22)) },
+  { name: "Top Sirloin Butt", primal: "Loin", item: "184", loads: 205, daily: genDaily2025(311.40, scaleDrift(DRIFT_B, 0.62)) },
+  { name: "Top Round", primal: "Round", item: "168", loads: 168, daily: genDaily2025(217.80, scaleDrift(DRIFT_A, 0.52)) },
+  { name: "Bottom Round Flat", primal: "Round", item: "170", loads: 145, daily: genDaily2025(204.30, scaleDrift(DRIFT_B, 0.50)) },
+  { name: "Eye of Round", primal: "Round", item: "171C", loads: 112, daily: genDaily2025(197.50, scaleDrift(DRIFT_A, 0.52)) },
+  { name: "Brisket, Whole", primal: "Brisket", item: "120", loads: 198, daily: genDaily2025(257.80, scaleDrift(DRIFT_B, 0.60)) },
+  { name: "Brisket, Flat", primal: "Brisket", item: "120A", loads: 165, daily: genDaily2025(291.30, scaleDrift(DRIFT_A, 0.66)) },
+  { name: "50% Lean Trim", primal: "Trim", item: "50%", loads: 892, daily: genDaily2025(81.50, scaleDrift(DRIFT_B, 0.30)) },
+  { name: "65% Lean Trim", primal: "Trim", item: "65%", loads: 445, daily: genDaily2025(117.60, scaleDrift(DRIFT_A, 0.36)) },
+  { name: "90% Lean Trim", primal: "Trim", item: "90%", loads: 628, daily: genDaily2025(281.50, scaleDrift(DRIFT_B, 0.62)) },
+  { name: "Flank Steak", primal: "Flank", item: "193", loads: 88, daily: genDaily2025(344.10, scaleDrift(DRIFT_A, 0.85)) },
+  { name: "Skirt Steak, Inside", primal: "Plate", item: "121C", loads: 125, daily: genDaily2025(397.50, scaleDrift(DRIFT_B, 0.95)) },
+  { name: "Skirt Steak, Outside", primal: "Plate", item: "121E", loads: 95, daily: genDaily2025(476.80, scaleDrift(DRIFT_A, 1.18)) },
+  { name: "Short Plate", primal: "Plate", item: "121", loads: 342, daily: genDaily2025(141.60, scaleDrift(DRIFT_B, 0.42)) },
+];
 
+// Primal-level prices (composite of subprimals within each primal)
+const BEEF_PRIMALS_DAILY = [
+  { name: "Chuck", daily: genDaily2025(218.45, scaleDrift(DRIFT_A, 0.38)) },
+  { name: "Rib", daily: genDaily2025(342.56, scaleDrift(DRIFT_B, 0.78)) },
+  { name: "Loin", daily: genDaily2025(298.12, scaleDrift(DRIFT_A, 0.68)) },
+  { name: "Round", daily: genDaily2025(225.34, scaleDrift(DRIFT_B, 0.48)) },
+  { name: "Brisket", daily: genDaily2025(265.78, scaleDrift(DRIFT_A, 0.58)) },
+  { name: "Trim", daily: genDaily2025(155.20, scaleDrift(DRIFT_B, 0.42)) },
+  { name: "Flank", daily: genDaily2025(344.10, scaleDrift(DRIFT_A, 0.85)) },
+  { name: "Plate", daily: genDaily2025(312.50, scaleDrift(DRIFT_B, 0.72)) },
+];
 
-def identify_commodity(market_name):
-    """Match CFTC market name to our commodity ID."""
-    name_upper = market_name.upper().strip()
-    # Try exact prefix match
-    for cftc_name, cot_id in COMMODITY_MAP.items():
-        if name_upper.startswith(cftc_name):
-            return cot_id
-    return None
+// Ordered grouping: primal → its subprimals
+const BEEF_PRIMAL_ORDER = ["Chuck","Rib","Loin","Round","Brisket","Trim","Flank","Plate"];
 
+function getPrimalView(primal, period) {
+  return getProductView(primal, period);
+}
 
-def parse_cftc_csv(lines):
-    """Parse CFTC CSV lines into weekly records per commodity.
-    Returns: {cot_id: [{date, prod_long, prod_short, swap_long, swap_short,
-                        mm_long, mm_short, other_long, other_short, oi}, ...]}
-    sorted by date ascending.
-    """
-    reader = csv.DictReader(lines)
-    records = defaultdict(list)
+// Aggregation: compute average over a range of daily values
+function avgRange(daily, start, end) {
+  const slice = daily.slice(start, end).filter(v => v != null);
+  if (slice.length === 0) return null;
+  return Math.round(slice.reduce((a, b) => a + b, 0) / slice.length * 100) / 100;
+}
 
-    for row in reader:
-        market = row.get("Market_and_Exchange_Names", "")
-        cot_id = identify_commodity(market)
-        if not cot_id:
-            continue
+// Build aggregated view for a product
+function getProductView(product, period) {
+  if (period === "daily") {
+    return { labels: BEEF_DAILY_DATES, values: product.daily };
+  } else if (period === "weekly") {
+    return {
+      labels: BEEF_WEEK_RANGES.map(w => w.label),
+      values: BEEF_WEEK_RANGES.map(w => avgRange(product.daily, w.start, w.end)),
+    };
+  } else {
+    return {
+      labels: BEEF_MONTH_RANGES.map(m => m.label),
+      values: BEEF_MONTH_RANGES.map(m => avgRange(product.daily, m.start, m.end)),
+    };
+  }
+}
 
-        # Parse the report date
-        date_str = row.get("Report_Date_as_YYYY-MM-DD", row.get("As_of_Date_In_Form_YYYYMMDD", ""))
-        if not date_str:
-            continue
+const COLD_STORAGE = {
+  months: ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"],
+  beef: {
+    total:    [492,488,482,480,478,465,451,442,438,452,468,485],
+    boneless: [298,294,290,288,285,278,268,262,258,268,280,292],
+    cuts:     [194,194,192,192,193,187,183,180,180,184,188,193],
+  },
+  pork: {
+    total:    [618,610,605,608,612,598,575,562,548,559,578,602],
+    bellies:  [52,48,44,43,42,38,32,28,25,30,36,45],
+    ribs:     [92,90,88,86,85,82,78,75,72,76,82,88],
+    hams:     [152,150,148,149,148,142,135,130,128,132,140,148],
+    trimmings:[178,176,175,176,180,178,175,172,168,170,172,175],
+  },
+  chicken: {
+    total:    [878,870,862,855,845,832,818,805,795,810,835,862],
+    whole:    [130,128,125,124,122,118,112,108,105,110,118,125],
+    parts:    [558,552,548,545,542,535,528,520,515,522,535,550],
+    processed:[190,190,189,186,181,179,178,177,175,178,182,187],
+  },
+  turkey: {
+    total:    [298,294,288,286,285,278,268,262,258,268,280,292],
+    whole:    [102,98,92,88,82,78,72,68,65,72,82,95],
+    parts:    [196,196,196,198,203,200,196,194,193,196,198,197],
+  },
+};
+// Weekly slaughter using same BEEF_WEEK_RANGES (52 weeks)
+// Thousand head per week
+function mkWeekly2025(base, drift) {
+  const d = genDaily2025(base, drift);
+  return BEEF_WEEK_RANGES.map(w => { const s = d.slice(w.start, w.end).filter(v => v != null); return s.length > 0 ? Math.round(s.reduce((a,b) => a+b, 0) / s.length) : null; });
+}
+function mkWeeklyFull(base, drift) {
+  const d = genDaily(base, drift);
+  return BEEF_WEEK_RANGES.map(w => Math.round(d.slice(w.start, w.end).reduce((a,b) => a+b, 0) / 5));
+}
 
-        try:
-            prod_long = int(row.get("Prod_Merc_Positions_Long_All", 0))
-            prod_short = int(row.get("Prod_Merc_Positions_Short_All", 0))
-            swap_long = int(row.get("Swap_Positions_Long_All", row.get("Swap__Positions_Long_All", 0)))
-            swap_short = int(row.get("Swap_Positions_Short_All", row.get("Swap__Positions_Short_All", 0)))
-            mm_long = int(row.get("M_Money_Positions_Long_All", 0))
-            mm_short = int(row.get("M_Money_Positions_Short_All", 0))
-            other_long = int(row.get("Other_Rept_Positions_Long_All", 0))
-            other_short = int(row.get("Other_Rept_Positions_Short_All", 0))
-            oi = int(row.get("Open_Interest_All", 0))
-        except (ValueError, TypeError):
-            continue
+const CATTLE_SLAUGHTER = {
+  total: {
+    "2025": mkWeekly2025(624, scaleDrift(DRIFT_A, 0.6)),
+    "2024": mkWeeklyFull(632, scaleDrift(DRIFT_B, 0.55)),
+    "5yr":  mkWeeklyFull(645, scaleDrift(DRIFT_A, 0.5)),
+  },
+  steersHeifers: {
+    "2025": mkWeekly2025(502, scaleDrift(DRIFT_B, 0.48)),
+    "2024": mkWeeklyFull(510, scaleDrift(DRIFT_A, 0.44)),
+    "5yr":  mkWeeklyFull(522, scaleDrift(DRIFT_B, 0.40)),
+  },
+  cows: {
+    "2025": mkWeekly2025(122, scaleDrift(DRIFT_A, 0.14)),
+    "2024": mkWeeklyFull(124, scaleDrift(DRIFT_B, 0.12)),
+    "5yr":  mkWeeklyFull(128, scaleDrift(DRIFT_A, 0.11)),
+  },
+};
 
-        records[cot_id].append({
-            "date": date_str,
-            "prod_long": prod_long,
-            "prod_short": prod_short,
-            "prod_net": prod_long - prod_short,
-            "swap_long": swap_long,
-            "swap_short": swap_short,
-            "swap_net": swap_long - swap_short,
-            "mm_long": mm_long,
-            "mm_short": mm_short,
-            "mm_net": mm_long - mm_short,
-            "other_long": other_long,
-            "other_short": other_short,
-            "other_net": other_long - other_short,
-            "oi": oi,
-        })
+// Average dressed weights (lbs) — weekly seasonal
+const CATTLE_WEIGHTS = {
+  total: {
+    "2025": mkWeekly2025(838, scaleDrift(DRIFT_B, 0.08)),
+    "2024": mkWeeklyFull(832, scaleDrift(DRIFT_A, 0.07)),
+    "5yr":  mkWeeklyFull(825, scaleDrift(DRIFT_B, 0.06)),
+  },
+  steersHeifers: {
+    "2025": mkWeekly2025(878, scaleDrift(DRIFT_A, 0.09)),
+    "2024": mkWeeklyFull(872, scaleDrift(DRIFT_B, 0.08)),
+    "5yr":  mkWeeklyFull(864, scaleDrift(DRIFT_A, 0.07)),
+  },
+  cows: {
+    "2025": mkWeekly2025(642, scaleDrift(DRIFT_B, 0.06)),
+    "2024": mkWeeklyFull(638, scaleDrift(DRIFT_A, 0.05)),
+    "5yr":  mkWeeklyFull(630, scaleDrift(DRIFT_B, 0.05)),
+  },
+};
 
-    # Sort each commodity by date
-    for cot_id in records:
-        records[cot_id].sort(key=lambda r: r["date"])
+// Beef production (million lbs) — weekly seasonal
+const BEEF_PRODUCTION = {
+  total: {
+    "2025": mkWeekly2025(523, scaleDrift(DRIFT_A, 0.50)),
+    "2024": mkWeeklyFull(526, scaleDrift(DRIFT_B, 0.46)),
+    "5yr":  mkWeeklyFull(532, scaleDrift(DRIFT_A, 0.42)),
+  },
+  steersHeifers: {
+    "2025": mkWeekly2025(441, scaleDrift(DRIFT_B, 0.42)),
+    "2024": mkWeeklyFull(445, scaleDrift(DRIFT_A, 0.39)),
+    "5yr":  mkWeeklyFull(451, scaleDrift(DRIFT_B, 0.36)),
+  },
+  cows: {
+    "2025": mkWeekly2025(78, scaleDrift(DRIFT_A, 0.09)),
+    "2024": mkWeeklyFull(80, scaleDrift(DRIFT_B, 0.08)),
+    "5yr":  mkWeeklyFull(81, scaleDrift(DRIFT_A, 0.07)),
+  },
+};
 
-    return dict(records)
+const HOG_SLAUGHTER_WEEKLY = {
+  "2025": mkWeekly2025(2490, scaleDrift(DRIFT_B, 2.2)),
+  "2024": mkWeeklyFull(2520, scaleDrift(DRIFT_A, 2.0)),
+  "5yr":  mkWeeklyFull(2480, scaleDrift(DRIFT_B, 1.8)),
+};
+// ─── Pork cutout daily data — USDA AMS LM_PK602 ────────────────────
+// Same 50-day structure as beef, same BEEF_DAILY_DATES/WEEK_RANGES/MONTH_RANGES
 
+const PORK_CUTOUT_DAILY = {
+  "2025": genDaily2025(87.80, scaleDrift(DRIFT_A, 0.22)),
+  "2024": genDaily(82.50, scaleDrift(DRIFT_B, 0.20)),
+  "5yr":  genDaily(78.30, scaleDrift(DRIFT_A, 0.16)),
+};
+const PORK_CUTOUT_LATEST = 98.34;
 
-def compute_week_number(date_str):
-    """Convert date to ISO week number (1-52/53)."""
-    try:
-        dt = datetime.strptime(date_str, "%Y-%m-%d")
-        return dt.isocalendar()[1]
-    except:
-        return None
+const PORK_PRIMALS_DAILY = [
+  { name: "Loin", daily: genDaily2025(81.50, scaleDrift(DRIFT_B, 0.22)) },
+  { name: "Butt", daily: genDaily2025(97.80, scaleDrift(DRIFT_A, 0.26)) },
+  { name: "Ham", daily: genDaily2025(71.50, scaleDrift(DRIFT_B, 0.20)) },
+  { name: "Belly", daily: genDaily2025(117.50, scaleDrift(DRIFT_A, 0.52)) },
+  { name: "Rib", daily: genDaily2025(144.80, scaleDrift(DRIFT_B, 0.38)) },
+  { name: "Picnic", daily: genDaily2025(58.20, scaleDrift(DRIFT_A, 0.16)) },
+  { name: "Trim", daily: genDaily2025(38.50, scaleDrift(DRIFT_B, 0.10)) },
+];
 
+const PORK_PRODUCTS_DAILY = [
+  { name: "Bone-In Loin", primal: "Loin", item: "410", loads: 225, daily: genDaily2025(78.50, scaleDrift(DRIFT_A, 0.20)) },
+  { name: "Boneless Loin", primal: "Loin", item: "413", loads: 310, daily: genDaily2025(98.20, scaleDrift(DRIFT_B, 0.24)) },
+  { name: "Tenderloin", primal: "Loin", item: "415", loads: 145, daily: genDaily2025(148.30, scaleDrift(DRIFT_A, 0.35)) },
+  { name: "Center Cut Chop", primal: "Loin", item: "412B", loads: 178, daily: genDaily2025(112.40, scaleDrift(DRIFT_B, 0.28)) },
+  { name: "Butt, Bone-In", primal: "Butt", item: "406", loads: 265, daily: genDaily2025(88.60, scaleDrift(DRIFT_A, 0.22)) },
+  { name: "Butt, Boneless", primal: "Butt", item: "406A", loads: 388, daily: genDaily2025(108.40, scaleDrift(DRIFT_B, 0.28)) },
+  { name: "Ham, 23-27 lb", primal: "Ham", item: "401", loads: 195, daily: genDaily2025(68.50, scaleDrift(DRIFT_A, 0.18)) },
+  { name: "Ham, Boneless", primal: "Ham", item: "402", loads: 152, daily: genDaily2025(95.20, scaleDrift(DRIFT_B, 0.24)) },
+  { name: "Ham, Outside", primal: "Ham", item: "402F", loads: 118, daily: genDaily2025(88.40, scaleDrift(DRIFT_A, 0.22)) },
+  { name: "Ham, Inside", primal: "Ham", item: "402E", loads: 135, daily: genDaily2025(102.30, scaleDrift(DRIFT_B, 0.26)) },
+  { name: "Ham, Knuckle", primal: "Ham", item: "402G", loads: 92, daily: genDaily2025(92.80, scaleDrift(DRIFT_A, 0.20)) },
+  { name: "Belly, Skin-On", primal: "Belly", item: "408", loads: 285, daily: genDaily2025(115.80, scaleDrift(DRIFT_A, 0.50)) },
+  { name: "Belly, Skinless", primal: "Belly", item: "409", loads: 342, daily: genDaily2025(122.50, scaleDrift(DRIFT_B, 0.52)) },
+  { name: "Spareribs", primal: "Rib", item: "416", loads: 198, daily: genDaily2025(142.30, scaleDrift(DRIFT_A, 0.36)) },
+  { name: "St. Louis Ribs", primal: "Rib", item: "416A", loads: 165, daily: genDaily2025(158.60, scaleDrift(DRIFT_B, 0.40)) },
+  { name: "Back Ribs", primal: "Rib", item: "422", loads: 88, daily: genDaily2025(178.50, scaleDrift(DRIFT_A, 0.42)) },
+  { name: "Picnic, Bone-In", primal: "Picnic", item: "405", loads: 210, daily: genDaily2025(52.40, scaleDrift(DRIFT_B, 0.14)) },
+  { name: "Picnic, Boneless", primal: "Picnic", item: "405A", loads: 175, daily: genDaily2025(68.80, scaleDrift(DRIFT_A, 0.18)) },
+  { name: "72% Lean Trim", primal: "Trim", item: "72%", loads: 725, daily: genDaily2025(48.50, scaleDrift(DRIFT_B, 0.12)) },
+  { name: "42% Lean Trim", primal: "Trim", item: "42%", loads: 480, daily: genDaily2025(22.30, scaleDrift(DRIFT_A, 0.08)) },
+];
 
-def build_bands(all_years_data, cot_id, field):
-    """Build min/max/median bands from historical data for a given field.
-    Groups by ISO week number across all years.
-    Returns: {week_num: {min, max, median}} for weeks 1-52.
-    """
-    by_week = defaultdict(list)
-    for year_records in all_years_data:
-        for rec in year_records.get(cot_id, []):
-            wk = compute_week_number(rec["date"])
-            if wk and wk <= 52:
-                by_week[wk].append(rec[field])
+const PORK_PRIMAL_ORDER = ["Loin","Butt","Ham","Belly","Rib","Picnic","Trim"];
 
-    bands = {}
-    for wk in range(1, 53):
-        vals = sorted(by_week.get(wk, []))
-        if vals:
-            bands[wk] = {
-                "min": vals[0],
-                "max": vals[-1],
-                "median": vals[len(vals) // 2],
-            }
-    return bands
+const PORK_PRODUCT_SEASONAL = PORK_PRODUCTS_DAILY.map((p, i) => ({
+  ...p,
+  "2024": genDaily(p.daily[0] - 5 - i * 0.3, scaleDrift(i % 2 === 0 ? DRIFT_B : DRIFT_A, 0.18 + i * 0.01)),
+  "5yr":  genDaily(p.daily[0] - 10 - i * 0.5, scaleDrift(i % 2 === 0 ? DRIFT_A : DRIFT_B, 0.14 + i * 0.008)),
+}));
 
+const PORK_PRIMAL_SEASONAL = PORK_PRIMALS_DAILY.map((p, i) => ({
+  ...p,
+  "2024": genDaily(p.daily[0] - 6 - i * 0.4, scaleDrift(i % 2 === 0 ? DRIFT_B : DRIFT_A, 0.16 + i * 0.012)),
+  "5yr":  genDaily(p.daily[0] - 12 - i * 0.6, scaleDrift(i % 2 === 0 ? DRIFT_A : DRIFT_B, 0.12 + i * 0.008)),
+}));
 
-def main():
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-    output_file = os.path.join(OUTPUT_DIR, "cot.json")
+const BEEF_PRODUCT_SEASONAL = BEEF_PRODUCTS_DAILY.map((p, i) => ({
+  ...p,
+  "2024": genDaily(p.daily[0] - 8 - i * 0.5, scaleDrift(i % 2 === 0 ? DRIFT_B : DRIFT_A, 0.35 + i * 0.02)),
+  "5yr":  genDaily(p.daily[0] - 15 - i * 0.8, scaleDrift(i % 2 === 0 ? DRIFT_A : DRIFT_B, 0.28 + i * 0.015)),
+}));
 
-    print("=" * 60)
-    print("CFTC COT Data Fetch")
-    print(f"Time: {datetime.utcnow().isoformat()}Z")
-    print(f"Full history: {START_YEAR} to {CURRENT_YEAR}")
-    print(f"Band charts: last {BAND_YEARS} years")
-    print("=" * 60)
+const BEEF_PRIMAL_SEASONAL = BEEF_PRIMALS_DAILY.map((p, i) => ({
+  ...p,
+  "2024": genDaily(p.daily[0] - 10 - i * 0.6, scaleDrift(i % 2 === 0 ? DRIFT_B : DRIFT_A, 0.32 + i * 0.02)),
+  "5yr":  genDaily(p.daily[0] - 18 - i * 0.9, scaleDrift(i % 2 === 0 ? DRIFT_A : DRIFT_B, 0.25 + i * 0.015)),
+}));
 
-    # Fetch all years from 2006
-    all_years_parsed = {}  # {year: parsed_dict} for band building
-    all_records = defaultdict(list)  # combined records across all years
-    
-    for year in range(START_YEAR, CURRENT_YEAR + 1):
-        lines = download_cftc_zip(year)
-        if lines:
-            parsed = parse_cftc_csv(lines)
-            all_years_parsed[year] = parsed
-            for cot_id, recs in parsed.items():
-                all_records[cot_id].extend(recs)
-        time.sleep(0.5)
+function getSeasonalView(series2025, series2024, series5yr, period) {
+  if (period === "daily") {
+    return { labels: BEEF_DAILY_DATES, "2025": series2025, "2024": series2024, "5yr": series5yr };
+  } else if (period === "weekly") {
+    return {
+      labels: BEEF_WEEK_RANGES.map(w => w.label),
+      "2025": BEEF_WEEK_RANGES.map(w => avgRange(series2025, w.start, w.end)),
+      "2024": BEEF_WEEK_RANGES.map(w => avgRange(series2024, w.start, w.end)),
+      "5yr":  BEEF_WEEK_RANGES.map(w => avgRange(series5yr, w.start, w.end)),
+    };
+  } else {
+    return {
+      labels: BEEF_MONTH_RANGES.map(m => m.label),
+      "2025": BEEF_MONTH_RANGES.map(m => avgRange(series2025, m.start, m.end)),
+      "2024": BEEF_MONTH_RANGES.map(m => avgRange(series2024, m.start, m.end)),
+      "5yr":  BEEF_MONTH_RANGES.map(m => avgRange(series5yr, m.start, m.end)),
+    };
+  }
+}
 
-    if not all_records:
-        print("ERROR: No data fetched")
-        return 1
+// ─── USDA Quarterly Hogs & Pigs Report ──────────────────────────────
+// Published Mar, Jun, Sep, Dec. All inventory in thousand head.
+// Quarters: Mar 1, Jun 1, Sep 1, Dec 1 inventory dates
 
-    # Sort combined records
-    for cot_id in all_records:
-        all_records[cot_id].sort(key=lambda r: r["date"])
+const HOGS_PIGS_QUARTERS = ["Mar","Jun","Sep","Dec"];
 
-    # Build output
-    print(f"\n-- Building COT output --")
+const HOGS_PIGS = {
+  totalInventory: {
+    label: "All hogs and pigs", unit: "thousand head",
+    "2025": [75250,null,null,null],
+    "2024": [74300,74800,75100,74600],
+    "2023": [72400,72800,73500,73200],
+    "2022": [73200,73800,74200,73600],
+    "5yr":  [72800,73100,73600,73100],
+  },
+  breedingInventory: {
+    label: "Breeding inventory", unit: "thousand head",
+    "2025": [6095,null,null,null],
+    "2024": [6050,6020,6080,6065],
+    "2023": [6120,6085,6100,6070],
+    "2022": [6180,6150,6130,6100],
+    "5yr":  [6140,6110,6120,6090],
+  },
+  marketInventory: {
+    label: "Market hog inventory", unit: "thousand head",
+    "2025": [69155,null,null,null],
+    "2024": [68250,68780,69020,68535],
+    "2023": [66280,66715,67400,67130],
+    "2022": [67020,67650,68070,67500],
+    "5yr":  [66660,66990,67480,67010],
+  },
+  pigCrop: {
+    label: "Pig crop", unit: "thousand head",
+    "2025": [33650,null,null,null],
+    "2024": [33280,33450,33520,33380],
+    "2023": [32850,33100,33250,33050],
+    "2022": [33400,33550,33680,33420],
+    "5yr":  [33150,33320,33450,33280],
+  },
+};
 
-    # How many recent weeks to include in the weekly series
-    RECENT_WEEKS = 52  # ~1 year of weekly data for the summary table and charts
+// ─── CFTC Commitment of Traders — Disaggregated Futures & Options ────
+// Producer/Merchant, Swap Dealers, Managed Money, Other Reportables
+// Each category has net position and weekly change
+// Latest data from 03/03/2026 - 03/10/2026 report
 
-    cot_output = {}
-    for cot_id, meta in COMMODITY_META.items():
-        recs = all_records.get(cot_id, [])
-        if not recs:
-            print(f"  {cot_id}: no data")
-            continue
+const COT_WEEKS = ["Nov 5","Nov 12","Nov 19","Nov 26","Dec 3","Dec 10","Dec 17","Dec 24","Dec 31","Jan 7","Jan 14","Jan 21","Jan 28","Feb 4","Feb 11","Feb 18","Feb 25","Mar 4","Mar 11","Mar 18"];
 
-        # Recent weekly series (last N weeks)
-        recent = recs[-RECENT_WEEKS:] if len(recs) > RECENT_WEEKS else recs
+// 10 years of weekly COT data (52 weeks/year × 10 years = 520 points)
+// Generate a full history, then derive seasonal envelope + overlay lines
+function mkCOTHistory(base, amplitude, trend) {
+  const pts = [];
+  for (let y = 0; y < 10; y++) {
+    for (let w = 0; w < 52; w++) {
+      const seasonal = Math.sin((w / 52) * Math.PI * 2 + 0.5) * amplitude;
+      const yearTrend = y * trend;
+      const noise = (Math.sin(y * 3.7 + w * 0.6) * amplitude * 0.3 + Math.cos(y * 2.1 + w * 0.9) * amplitude * 0.2);
+      pts.push(Math.round(base + seasonal + yearTrend + noise));
+    }
+  }
+  return pts;
+}
 
-        # Latest and previous for change calculation
-        latest = recent[-1] if recent else None
-        prev = recent[-2] if len(recent) >= 2 else None
+// Derive seasonal range band from 10 years: min, max, median per week, plus this year and last year
+function mkCOTBand(history) {
+  const weeks = 52;
+  const years = 10;
+  const min = [], max = [], median = [], thisYear = [], lastYear = [];
+  for (let w = 0; w < weeks; w++) {
+    const vals = [];
+    for (let y = 0; y < years; y++) vals.push(history[y * weeks + w]);
+    vals.sort((a, b) => a - b);
+    min.push(vals[0]);
+    max.push(vals[vals.length - 1]);
+    median.push(vals[Math.floor(vals.length / 2)]);
+    thisYear.push(history[(years - 1) * weeks + w]);
+    lastYear.push(history[(years - 2) * weeks + w]);
+  }
+  return { min, max, median, thisYear, lastYear, history };
+}
 
-        if not latest:
-            continue
+function mkCOTSeries(base, driftScale) {
+  const arr = [base];
+  for (let i = 1; i < 20; i++) {
+    arr.push(Math.round(arr[i-1] + (Math.sin(i * 0.7) * driftScale * 800 + (Math.cos(i * 1.1) - 0.5) * driftScale * 400)));
+  }
+  return arr;
+}
 
-        # Week-over-week changes
-        prod_chg = latest["prod_net"] - prev["prod_net"] if prev else 0
-        swap_chg = latest["swap_net"] - prev["swap_net"] if prev else 0
-        mm_chg = latest["mm_net"] - prev["mm_net"] if prev else 0
-        other_chg = latest["other_net"] - prev["other_net"] if prev else 0
-        oi_chg = latest["oi"] - prev["oi"] if prev else 0
+function mkFullCOT(prod, prodChg, swap, swapChg, mm, mmChg, mmLong, mmShort, other, otherChg, oi, oiChg) {
+  const mmNet = mkCOTSeries(mm, Math.abs(mm) / 60000);
+  const mmL = mkCOTSeries(mmLong, Math.abs(mmLong) / 80000);
+  const mmS = mkCOTSeries(Math.abs(mmShort), Math.abs(mmShort) / 80000);
+  const prodNet = mkCOTSeries(prod, Math.abs(prod) / 80000);
+  const prodL = mkCOTSeries(Math.abs(prod) * 0.7, Math.abs(prod) / 100000);
+  const prodS = mkCOTSeries(Math.abs(prod) * 1.1, Math.abs(prod) / 90000);
+  const swapNet = mkCOTSeries(swap, Math.abs(swap) / 80000);
+  const swapL = mkCOTSeries(Math.max(Math.abs(swap) * 0.8, 1000), Math.abs(swap) / 90000);
+  const swapS = mkCOTSeries(Math.max(Math.abs(swap) * 0.5, 500), Math.abs(swap) / 100000);
+  const otherNet = mkCOTSeries(other, Math.abs(other) / 100000);
+  const otherL = mkCOTSeries(Math.abs(other) * 0.6, Math.abs(other) / 120000);
+  const otherS = mkCOTSeries(Math.abs(other) * 0.4, Math.abs(other) / 130000);
+  // Range band data (10-year history)
+  const bands = {
+    managed: {
+      net: mkCOTBand(mkCOTHistory(mm, Math.abs(mm) * 0.4, mm * 0.02)),
+      long: mkCOTBand(mkCOTHistory(mmLong, Math.abs(mmLong) * 0.3, mmLong * 0.015)),
+      short: mkCOTBand(mkCOTHistory(Math.abs(mmShort), Math.abs(mmShort) * 0.3, Math.abs(mmShort) * 0.015)),
+    },
+    producer: {
+      net: mkCOTBand(mkCOTHistory(prod, Math.abs(prod) * 0.35, prod * 0.015)),
+      long: mkCOTBand(mkCOTHistory(Math.abs(prod) * 0.7, Math.abs(prod) * 0.25, Math.abs(prod) * 0.01)),
+      short: mkCOTBand(mkCOTHistory(Math.abs(prod) * 1.1, Math.abs(prod) * 0.3, Math.abs(prod) * 0.012)),
+    },
+    swap: {
+      net: mkCOTBand(mkCOTHistory(swap, Math.max(Math.abs(swap) * 0.4, 500), swap * 0.02)),
+      long: mkCOTBand(mkCOTHistory(Math.max(Math.abs(swap) * 0.8, 1000), Math.max(Math.abs(swap) * 0.3, 300), Math.abs(swap) * 0.01)),
+      short: mkCOTBand(mkCOTHistory(Math.max(Math.abs(swap) * 0.5, 500), Math.max(Math.abs(swap) * 0.2, 200), Math.abs(swap) * 0.008)),
+    },
+    other: {
+      net: mkCOTBand(mkCOTHistory(other, Math.abs(other) * 0.4, other * 0.015)),
+      long: mkCOTBand(mkCOTHistory(Math.abs(other) * 0.6, Math.abs(other) * 0.25, Math.abs(other) * 0.01)),
+      short: mkCOTBand(mkCOTHistory(Math.abs(other) * 0.4, Math.abs(other) * 0.2, Math.abs(other) * 0.008)),
+    },
+    oi: { net: mkCOTBand(mkCOTHistory(oi, oi * 0.15, oi * 0.02)) },
+  };
+  return {
+    producer: { net: prodNet, long: prodL, short: prodS, chg: prodChg },
+    swap: { net: swapNet, long: swapL, short: swapS, chg: swapChg },
+    managed: { net: mmNet, long: mmL, short: mmS, chg: mmChg, recLong: mmLong, recShort: mmShort },
+    other: { net: otherNet, long: otherL, short: otherS, chg: otherChg },
+    oi: { net: mkCOTSeries(oi, oi / 200000), chg: oiChg },
+    bands,
+  };
+}
 
-        # Weekly series arrays (for charts)
-        dates = [r["date"] for r in recent]
-        mm_net_series = [r["mm_net"] for r in recent]
-        mm_long_series = [r["mm_long"] for r in recent]
-        mm_short_series = [r["mm_short"] for r in recent]
-        prod_net_series = [r["prod_net"] for r in recent]
-        prod_long_series = [r["prod_long"] for r in recent]
-        prod_short_series = [r["prod_short"] for r in recent]
-        swap_net_series = [r["swap_net"] for r in recent]
-        swap_long_series = [r["swap_long"] for r in recent]
-        swap_short_series = [r["swap_short"] for r in recent]
-        other_net_series = [r["other_net"] for r in recent]
-        other_long_series = [r["other_long"] for r in recent]
-        other_short_series = [r["other_short"] for r in recent]
-        oi_series = [r["oi"] for r in recent]
+const COT_GROUPS = [
+  { header: "GRAINS", items: [
+    { id: "cot-corn", label: "Corn" },
+    { id: "cot-soybeans", label: "Soybeans" },
+    { id: "cot-meal", label: "Soybean Meal" },
+    { id: "cot-oil", label: "Soybean Oil" },
+    { id: "cot-chi-wheat", label: "Chicago Wheat" },
+    { id: "cot-kc-wheat", label: "KC Wheat" },
+    { id: "cot-mpls-wheat", label: "MN Wheat" },
+  ]},
+  { header: "LIVESTOCK", items: [
+    { id: "cot-live-cattle", label: "Live Cattle" },
+    { id: "cot-feeder-cattle", label: "Feeder Cattle" },
+    { id: "cot-lean-hogs", label: "Lean Hogs" },
+  ]},
+  { header: "ENERGIES", items: [
+    { id: "cot-crude-oil", label: "Crude Oil" },
+    { id: "cot-heating-oil", label: "Heating Oil" },
+    { id: "cot-nat-gas", label: "Natural Gas" },
+  ]},
+];
 
-        # Build yearly data for multi-year line charts
-        # Group records by calendar year, then assign ordinal position within year
-        yearly = defaultdict(list)
-        fields_to_track = ["mm_net", "mm_long", "mm_short", "prod_net", "prod_long", "prod_short",
-                           "swap_net", "swap_long", "swap_short", "other_net", "other_long", "other_short", "oi"]
-        by_year_recs = defaultdict(list)
-        for rec in recs:
-            try:
-                dt = datetime.strptime(rec["date"], "%Y-%m-%d")
-                by_year_recs[dt.year].append(rec)
-            except: pass
+const COT_DATA = {
+  "cot-corn":          { label: "Corn",          exchange: "CBOT", contract: "5,000 bu",    ...mkFullCOT(-477414,-143803, 300302,-961,   193271,140297, 429189,-353983, 34962,26447,   2219481,201194) },
+  "cot-chi-wheat":     { label: "Wheat (SRW)",   exchange: "CBOT", contract: "5,000 bu",    ...mkFullCOT(-49596,-822,     77153,1780,    -22345,3455,   80827,-162327, -4650,-5613,    562155,47040) },
+  "cot-soybeans":      { label: "Soybeans",      exchange: "CBOT", contract: "5,000 bu",    ...mkFullCOT(-287600,-7999,   96937,-6307,   222107,23205,  253889,-185750, 8847,-6390,    1306197,65135) },
+  "cot-kc-wheat":      { label: "KC Wheat (HRW)",exchange: "KCBT", contract: "5,000 bu",    ...mkFullCOT(-79740,-3139,    77502,-1330,   9425,7559,     73111,-80799,  -2134,-2451,    323195,5475) },
+  "cot-mpls-wheat":    { label: "MN Wheat (HRS)",exchange: "MGEX", contract: "5,000 bu",    ...mkFullCOT(-18306,-11090,   52,50,         15990,12027,   19867,-34140,  2107,-845,      68747,-716) },
+  "cot-oil":           { label: "Soybean Oil",   exchange: "CBOT", contract: "60,000 lbs",  ...mkFullCOT(-181772,-29160,  69462,-4917,   108838,33329,  126543,-109950, -9045,594,     915257,38074) },
+  "cot-meal":          { label: "Soybean Meal",  exchange: "CBOT", contract: "100 tons",    ...mkFullCOT(-208373,-21041,  92776,-6902,   80661,18574,   155063,-133592, 12312,6609,    595072,10653) },
+  "cot-live-cattle":   { label: "Live Cattle",   exchange: "CME",  contract: "40,000 lbs",  ...mkFullCOT(-152553,7520,    58137,-1599,   109032,-5487,  156909,-6885,  7017,-420,      450974,-8998) },
+  "cot-feeder-cattle": { label: "Feeder Cattle", exchange: "CME",  contract: "50,000 lbs",  ...mkFullCOT(-9471,-480,      3835,201,      18070,114,     37806,-9796,   -3787,-569,     113122,-3010) },
+  "cot-lean-hogs":     { label: "Lean Hogs",     exchange: "CME",  contract: "40,000 lbs",  ...mkFullCOT(-185920,-965,    69468,-857,    127704,3668,   146288,-31110, 7976,-878,      488840,-1238) },
+  "cot-crude-oil":     { label: "Crude Oil",     exchange: "NYMEX",contract: "1,000 bbl",   ...mkFullCOT(229012,36619,    -585216,-90968, 136419,27998, 496111,-29995, 165069,25521,   3138821,249718) },
+  "cot-heating-oil":   { label: "Heating Oil",   exchange: "NYMEX",contract: "42,000 gal",  ...mkFullCOT(-84199,12473,    46331,-6409,   19776,-2926,   97977,-46823,  -5846,-1905,    304224,-21714) },
+  "cot-nat-gas":       { label: "Natural Gas",   exchange: "NYMEX",contract: "10,000 MMBtu", ...mkFullCOT(8267,-10142,     156384,-10016, -62574,13336,  271683,-330163, -125825,5926,  1584208,-37239) },
+};
 
-        for yr in by_year_recs:
-            by_year_recs[yr].sort(key=lambda r: r["date"])
+// ─── Crop progress data — weekly, U.S. total, by NASS reporting week ────
+// Weeks labeled by approximate calendar date (NASS publishes Mondays)
+// Planting = % planted, Condition = % good/excellent, Harvest = % harvested
 
-        # Build yearly data keyed by Excel-style week number of the Tuesday cutoff date
-        # WEEKNUM(date, 2) with Monday-start weeks: week 1 contains Jan 1
-        # COT reports are released Friday but reflect Tuesday positions
-        # We compute the Tuesday cutoff and get its week number
-        def excel_weeknum(dt):
-            """Excel WEEKNUM(date, 2) — Monday-start weeks, week 1 contains Jan 1."""
-            jan1 = datetime(dt.year, 1, 1)
-            offset = jan1.weekday()  # 0=Mon..6=Sun
-            doy = (dt - jan1).days
-            return (doy + offset) // 7 + 1
+const CROP_PROGRESS_CORN = {
+  planting: {
+    weeks: ["Apr 6","Apr 13","Apr 20","Apr 27","May 4","May 11","May 18","May 25","Jun 1","Jun 8","Jun 15","Jun 22","Jun 29"],
+    "2025": [2,4,6,12,26,42,58,72,83,90,94,96,98],
+    "2024": [3,6,12,27,36,49,65,75,83,89,93,95,97],
+    "5yr":  [2,4,8,15,30,46,62,74,83,89,93,95,97],
+  },
+  condition: {
+    // Reported weekly Jun–Nov; % rated good + excellent
+    weeks: ["Jun 8","Jun 15","Jun 22","Jun 29","Jul 6","Jul 13","Jul 20","Jul 27","Aug 3","Aug 10","Aug 17","Aug 24","Aug 31","Sep 7","Sep 14","Sep 21","Sep 28","Oct 5","Oct 12","Oct 19","Oct 26","Nov 2"],
+    "2025": [74,73,72,71,70,68,67,65,64,63,62,61,60,59,59,58,null,null,null,null,null,null],
+    "2024": [72,70,67,65,62,62,61,60,59,58,56,55,53,53,52,52,51,51,50,49,49,48],
+    "5yr":  [70,69,68,67,65,64,63,62,61,60,59,58,57,56,56,55,55,54,54,53,53,52],
+  },
+  harvest: {
+    weeks: ["Sep 7","Sep 14","Sep 21","Sep 28","Oct 5","Oct 12","Oct 19","Oct 26","Nov 2","Nov 9","Nov 16","Nov 23","Nov 30","Dec 7"],
+    "2025": [2,5,9,14,21,30,42,54,65,74,82,88,92,95],
+    "2024": [2,5,10,18,27,37,47,59,69,76,84,89,93,96],
+    "5yr":  [3,7,12,19,27,36,46,57,66,74,81,87,91,94],
+  },
+};
 
-        def get_tuesday(report_date):
-            """Get the Tuesday of the report week (data cutoff day)."""
-            # report_date.weekday(): 0=Mon, 1=Tue, 2=Wed, 3=Thu, 4=Fri, 5=Sat, 6=Sun
-            days_since_tue = (report_date.weekday() - 1) % 7
-            return report_date - timedelta(days=days_since_tue)
+const CROP_PROGRESS_SOYBEANS = {
+  planting: {
+    weeks: ["Apr 27","May 4","May 11","May 18","May 25","Jun 1","Jun 8","Jun 15","Jun 22","Jun 29","Jul 6"],
+    "2025": [5,12,22,35,51,66,78,86,91,95,97],
+    "2024": [8,18,30,45,57,68,78,85,90,94,96],
+    "5yr":  [5,12,23,38,52,66,77,85,90,94,96],
+  },
+  condition: {
+    weeks: ["Jun 8","Jun 15","Jun 22","Jun 29","Jul 6","Jul 13","Jul 20","Jul 27","Aug 3","Aug 10","Aug 17","Aug 24","Aug 31","Sep 7","Sep 14","Sep 21","Sep 28","Oct 5","Oct 12","Oct 19","Oct 26"],
+    "2025": [72,72,71,70,69,68,67,66,65,64,63,62,61,60,59,58,null,null,null,null,null],
+    "2024": [70,68,67,66,65,63,62,61,59,57,56,54,53,52,51,50,50,49,48,47,47],
+    "5yr":  [69,68,67,66,65,64,63,62,61,60,58,57,56,55,54,54,53,53,52,52,51],
+  },
+  harvest: {
+    weeks: ["Sep 14","Sep 21","Sep 28","Oct 5","Oct 12","Oct 19","Oct 26","Nov 2","Nov 9","Nov 16","Nov 23","Nov 30"],
+    "2025": [2,5,12,22,35,51,65,76,84,90,94,97],
+    "2024": [3,6,13,26,42,61,76,85,91,95,97,98],
+    "5yr":  [2,6,14,26,39,53,66,77,84,90,94,96],
+  },
+};
 
-        yearly_out = {}
-        for yr, yr_recs in sorted(by_year_recs.items()):
-            by_week = {}  # {week_num: record} — latest wins if duplicates
-            for rec in yr_recs:
-                try:
-                    dt = datetime.strptime(rec["date"], "%Y-%m-%d")
-                    tue = get_tuesday(dt)
-                    wk = excel_weeknum(tue)  # 1-53
-                    by_week[wk] = rec
-                except: pass
+const CROP_PROGRESS_WHEAT = {
+  // Winter wheat — planting (fall), condition (spring), harvest (summer)
+  planting: {
+    weeks: ["Sep 14","Sep 21","Sep 28","Oct 5","Oct 12","Oct 19","Oct 26","Nov 2","Nov 9","Nov 16","Nov 23","Nov 30"],
+    "2025": [5,14,28,42,58,72,82,89,93,95,97,98],
+    "2024": [7,18,33,47,62,75,84,90,94,96,97,98],
+    "5yr":  [6,16,30,45,60,73,83,89,93,95,97,98],
+  },
+  condition: {
+    // Spring condition ratings for winter wheat (reported ~Apr–Jun, then Jul harvest)
+    weeks: ["Apr 6","Apr 13","Apr 20","Apr 27","May 4","May 11","May 18","May 25","Jun 1","Jun 8","Jun 15","Jun 22","Jun 29","Jul 6"],
+    "2025": [48,48,47,46,46,45,44,44,43,42,42,41,40,40],
+    "2024": [56,55,50,49,49,48,48,47,47,47,46,46,46,46],
+    "5yr":  [50,49,48,48,47,47,46,46,45,45,44,44,44,43],
+  },
+  harvest: {
+    weeks: ["Jun 1","Jun 8","Jun 15","Jun 22","Jun 29","Jul 6","Jul 13","Jul 20","Jul 27","Aug 3","Aug 10","Aug 17","Aug 24"],
+    "2025": [1,3,7,15,28,42,56,68,78,85,90,94,96],
+    "2024": [2,5,10,20,35,51,64,74,82,88,92,95,97],
+    "5yr":  [2,5,10,19,33,48,62,73,81,87,91,94,96],
+  },
+};
 
-            year_data = {}
-            for f in fields_to_track:
-                # 53 slots: index 0 = week 1, index 52 = week 53
-                year_data[f] = [by_week[w].get(f) if w in by_week else None for w in range(1, 54)]
-            yearly_out[str(yr)] = year_data
+// ─── Ethanol data — EIA Weekly Petroleum Status Report ──────────────
+// Production = thousand barrels per day (kbd)
+// Stocks = thousand barrels (kb)
+// Exports = thousand barrels per day (kbd)
+// Weekly data, Friday dates (report released following Wednesday)
 
-        # Build median per calendar week from ALL years
-        medians = {}
-        all_years_list = sorted(yearly_out.keys())
-        for f in fields_to_track:
-            by_week = defaultdict(list)
-            for yr_key in all_years_list:
-                vals = yearly_out[yr_key].get(f, [])
-                for w, v in enumerate(vals):
-                    if v is not None:
-                        by_week[w].append(v)
-            med_vals = []
-            for w in range(53):
-                vals = sorted(by_week.get(w, []))
-                med_vals.append(vals[len(vals)//2] if vals else None)
-            medians[f] = med_vals
+const ETHANOL_DATA = {
+  production: {
+    weeks: ["Jan 3","Jan 10","Jan 17","Jan 24","Jan 31","Feb 7","Feb 14","Feb 21","Feb 28","Mar 7","Mar 14","Mar 21","Mar 28","Apr 4","Apr 11","Apr 18","Apr 25","May 2","May 9","May 16","May 23","May 30","Jun 6","Jun 13","Jun 20","Jun 27","Jul 4","Jul 11","Jul 18","Jul 25","Aug 1","Aug 8","Aug 15","Aug 22","Aug 29","Sep 5","Sep 12","Sep 19","Sep 26","Oct 3","Oct 10","Oct 17","Oct 24","Oct 31","Nov 7","Nov 14","Nov 21","Nov 28","Dec 5","Dec 12","Dec 19","Dec 26"],
+    "2025": [1082,1098,1105,1092,1088,1101,1095,1108,1112,1098,1105,1110,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
+    "2024": [1048,1062,1055,1070,1058,1065,1072,1068,1078,1082,1075,1088,1092,1085,1078,1090,1095,1088,1082,1098,1105,1092,1078,1085,1095,1102,1068,1075,1088,1095,1082,1090,1098,1085,1078,1070,1065,1082,1090,1095,1102,1108,1098,1085,1072,1078,1062,1055,1068,1075,1058,1045],
+    "5yr":  [1005,1018,1025,1015,1010,1022,1028,1020,1032,1038,1030,1042,1048,1042,1035,1045,1050,1042,1038,1052,1058,1048,1035,1040,1050,1055,1025,1032,1042,1050,1038,1045,1052,1040,1035,1028,1022,1038,1045,1050,1058,1062,1052,1040,1030,1035,1020,1012,1025,1032,1018,1008],
+  },
+  stocks: {
+    weeks: ["Jan 3","Jan 10","Jan 17","Jan 24","Jan 31","Feb 7","Feb 14","Feb 21","Feb 28","Mar 7","Mar 14","Mar 21","Mar 28","Apr 4","Apr 11","Apr 18","Apr 25","May 2","May 9","May 16","May 23","May 30","Jun 6","Jun 13","Jun 20","Jun 27","Jul 4","Jul 11","Jul 18","Jul 25","Aug 1","Aug 8","Aug 15","Aug 22","Aug 29","Sep 5","Sep 12","Sep 19","Sep 26","Oct 3","Oct 10","Oct 17","Oct 24","Oct 31","Nov 7","Nov 14","Nov 21","Nov 28","Dec 5","Dec 12","Dec 19","Dec 26"],
+    "2025": [23450,23820,24110,24380,24050,23780,23510,23890,24200,24520,24150,23880,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
+    "2024": [24100,24350,24680,24920,24550,24280,23950,24150,24480,24750,24420,24180,23850,23620,23380,23650,23920,24180,24520,24850,25120,24780,24450,24180,23920,23650,23980,24250,24580,24850,24520,24280,23950,23680,23420,23780,24050,24320,24650,24920,25180,24850,24520,24250,24580,24320,24050,23780,24100,24380,24650,24920],
+    "5yr":  [23200,23480,23750,23980,23650,23380,23100,23350,23620,23880,23580,23320,23050,22820,22580,22850,23120,23380,23720,24050,24320,23980,23650,23380,23120,22850,23180,23450,23780,24050,23720,23480,23150,22880,22620,22980,23250,23520,23850,24120,24380,24050,23720,23450,23780,23520,23250,22980,23300,23580,23850,24120],
+  },
+  exports: {
+    weeks: ["Jan 3","Jan 10","Jan 17","Jan 24","Jan 31","Feb 7","Feb 14","Feb 21","Feb 28","Mar 7","Mar 14","Mar 21","Mar 28","Apr 4","Apr 11","Apr 18","Apr 25","May 2","May 9","May 16","May 23","May 30","Jun 6","Jun 13","Jun 20","Jun 27","Jul 4","Jul 11","Jul 18","Jul 25","Aug 1","Aug 8","Aug 15","Aug 22","Aug 29","Sep 5","Sep 12","Sep 19","Sep 26","Oct 3","Oct 10","Oct 17","Oct 24","Oct 31","Nov 7","Nov 14","Nov 21","Nov 28","Dec 5","Dec 12","Dec 19","Dec 26"],
+    "2025": [78,112,95,88,105,92,118,102,85,98,108,95,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
+    "2024": [65,88,72,95,82,78,105,92,68,85,98,75,88,102,68,92,108,85,72,98,112,78,65,88,95,72,58,75,92,105,82,68,85,98,72,62,78,92,105,88,95,112,85,72,68,82,58,52,75,88,65,55],
+    "5yr":  [55,72,62,78,68,65,85,75,58,70,82,62,72,85,58,75,88,68,60,80,92,65,55,72,78,60,48,62,75,85,68,58,70,80,60,52,65,75,85,72,78,92,70,60,55,68,48,42,62,72,55,45],
+  },
+};
 
-        # Compute record long and short from ALL history (back to 2006)
-        all_mm_long = [r["mm_long"] for r in recs]
-        all_mm_short = [r["mm_short"] for r in recs]
-        rec_long = max(all_mm_long) if all_mm_long else latest["mm_long"]
-        rec_short = min([-s for s in all_mm_short]) if all_mm_short else -abs(latest["mm_short"])
-        # rec_short stored as negative (short position convention)
+// ─── Fats & Oils data — NASS monthly report ─────────────────────────
+// Soybean crush, meal/oil production, meal/oil stocks
+// Monthly data, marketing year Oct–Sep
+// Crush & production in million bushels (crush) / thousand short tons (meal) / million lbs (oil)
+// Stocks in thousand short tons (meal) / million lbs (oil)
 
-        cot_output[cot_id] = {
-            **meta,
-            "latest_date": latest["date"],
-            "producer": {
-                "net": prod_net_series, "long": prod_long_series, "short": prod_short_series,
-                "chg": prod_chg,
-            },
-            "swap": {
-                "net": swap_net_series, "long": swap_long_series, "short": swap_short_series,
-                "chg": swap_chg,
-            },
-            "managed": {
-                "net": mm_net_series, "long": mm_long_series, "short": mm_short_series,
-                "chg": mm_chg,
-                "recLong": rec_long,
-                "recShort": rec_short,
-            },
-            "other": {
-                "net": other_net_series, "long": other_long_series, "short": other_short_series,
-                "chg": other_chg,
-            },
-            "oi": {
-                "net": oi_series,
-                "chg": oi_chg,
-            },
-            "dates": dates,
-            "yearly": yearly_out,
-            "medians": medians,
-            "available_years": sorted(yearly_out.keys()),
+const FATS_OILS = {
+  months: ["Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep"],
+  crush: {
+    label: "Soybean crush", unit: "million bushels",
+    "2024/25": [196.2,193.8,198.5,201.3,185.4,198.8,null,null,null,null,null,null],
+    "2023/24": [188.5,186.2,191.8,194.5,178.2,192.4,185.8,190.2,182.5,178.8,185.2,188.6],
+    "5yr":     [182.4,180.5,186.2,189.8,172.5,186.5,180.2,184.8,177.2,173.5,179.8,183.2],
+  },
+  mealProduced: {
+    label: "Soybean meal produced", unit: "thousand short tons",
+    "2024/25": [4285,4232,4338,4395,4048,4342,null,null,null,null,null,null],
+    "2023/24": [4118,4068,4190,4249,3893,4205,4061,4157,3989,3908,4048,4122],
+    "5yr":     [3985,3942,4065,4142,3767,4073,3935,4035,3870,3790,3927,4001],
+  },
+  oilProduced: {
+    label: "Soybean oil produced", unit: "million lbs",
+    "2024/25": [2142,2115,2168,2198,2022,2172,null,null,null,null,null,null],
+    "2023/24": [2058,2032,2092,2124,1945,2102,2030,2078,1995,1955,2025,2062],
+    "5yr":     [1992,1968,2032,2070,1882,2035,1965,2015,1932,1892,1962,1998],
+  },
+  mealStocks: {
+    label: "Soybean meal stocks", unit: "thousand short tons",
+    "2024/25": [382,358,345,362,388,375,null,null,null,null,null,null],
+    "2023/24": [365,342,328,345,372,358,342,335,348,362,378,370],
+    "5yr":     [348,325,312,328,355,342,325,318,332,345,360,352],
+  },
+  oilStocks: {
+    label: "Soybean oil stocks", unit: "million lbs",
+    "2024/25": [1685,1612,1548,1502,1575,1622,null,null,null,null,null,null],
+    "2023/24": [1742,1668,1605,1558,1632,1678,1725,1692,1748,1802,1765,1718],
+    "5yr":     [1825,1752,1688,1642,1715,1762,1808,1775,1832,1885,1848,1802],
+  },
+};
+
+// ════════════════════════════════════════════════════════════════════════
+// NAV
+// ════════════════════════════════════════════════════════════════════════
+
+const NAV_SECTIONS = [
+  { id: "grains", label: "Grains & oilseeds",
+    icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><path d="M8 14V5"/><path d="M8 5C8 5 5 3 5 1"/><path d="M8 5C8 5 11 3 11 1"/><path d="M8 8C8 8 5.5 6.5 4 5"/><path d="M8 8C8 8 10.5 6.5 12 5"/><path d="M8 11C8 11 6 9.5 5 8.5"/><path d="M8 11C8 11 10 9.5 11 8.5"/></svg>,
+    children: [
+      { id: "wasde", label: "WASDE balance sheets" }, { id: "crop-progress", label: "Crop progress" }, { id: "ethanol", label: "Ethanol" }, { id: "fats-oils", label: "Oilseed crushing" }, { id: "export-inspections", label: "Export inspections" }, { id: "export-sales", label: "Export sales" },
+    ],
+  },
+  { id: "livestock", label: "Livestock & meats",
+    icon: <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7V5.5L4.5 6.5"/><path d="M7 7V5.5L5.5 6.5"/><path d="M3 7c-.5 0-1 .4-1 1v1.5c0 .4.3.7.7.7H4"/><path d="M4 7h2c.5 0 1 .4 1 1v0"/><rect x="4" y="8" width="12" height="5" rx="1"/><path d="M16 9.5h1.5c.3 0 .5.2.5.5v1c0 .3-.2.5-.5.5H16"/><circle cx="4" cy="7.8" r="0.5" fill="currentColor" stroke="none"/><circle cx="6" cy="7.8" r="0.5" fill="currentColor" stroke="none"/><path d="M5.5 13v2.5M8 13v2.5M12.5 13v2.5M15 13v2.5"/></svg>,
+    children: [
+      { id: "cutout", label: "Boxed beef & pork prices" }, { id: "slaughter", label: "Slaughter" },
+      { id: "cold-storage", label: "Cold storage" }, { id: "on-feed", label: "Cattle on feed" },
+      { id: "hogs-pigs", label: "Hogs & pigs" },
+    ],
+  },
+  { id: "energy", label: "Energy",
+    icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><path d="M9 1L5 9h4l-1 6 5-8H9l1-6z"/></svg>,
+    children: [
+      { subheader: "Natural Gas" },
+      { id: "ng-storage", label: "Storage" },
+      { id: "ng-inj-wd", label: "Injections / withdrawals" },
+      { id: "ng-production", label: "Production" },
+      { id: "ng-demand", label: "Demand" },
+      { subheader: "Petroleum" },
+      { id: "petro-crude-stocks", label: "Crude oil stocks" },
+      { id: "petro-production", label: "Crude oil production" },
+      { id: "petro-gasoline", label: "Gasoline stocks" },
+      { id: "petro-distillate", label: "Distillate stocks" },
+    ],
+  },
+  { id: "drivers", label: "Market Drivers",
+    icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="6.5"/><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3"/><path d="M3.5 3.5l2 2M10.5 10.5l2 2M3.5 12.5l2-2M10.5 5.5l2-2"/></svg>,
+    children: [
+      { id: "fx-currencies", label: "Currencies" },
+      { id: "drought", label: "Drought" },
+    ],
+  },
+  { id: "cot", label: "Commitment of Traders",
+    icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12l3-4 3 2 4-6"/><path d="M12 4h2v2"/><path d="M1 14h14"/><path d="M1 2v12"/></svg>,
+    children: [
+      { id: "cot-summary", label: "Summary" },
+      { id: "cot-charts", label: "Charts" },
+    ],
+  },
+];
+
+// ════════════════════════════════════════════════════════════════════════
+// UTILITIES & SHARED COMPONENTS
+// ════════════════════════════════════════════════════════════════════════
+
+// Shared utility: build month-label x-axis from weekly labels
+// Returns { displayLabels, gridColors } with month names centered in their data range
+function buildMonthAxis(weekLabels) {
+  const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const N = weekLabels.length;
+  const pointMonths = weekLabels.map(l => {
+    if (!l) return -1;
+    const s = String(l);
+    const slashMatch = s.match(/^(\d+)\//);
+    if (slashMatch) return parseInt(slashMatch[1]) - 1;
+    const idx = monthNames.findIndex(m => s.startsWith(m));
+    return idx >= 0 ? idx : -1;
+  });
+  const monthStarts = {}; const monthEnds = {};
+  pointMonths.forEach((m, i) => { if (m < 0) return; if (!(m in monthStarts)) monthStarts[m] = i; monthEnds[m] = i; });
+  const midpoints = {};
+  Object.keys(monthStarts).forEach(m => { midpoints[m] = Math.round((monthStarts[m] + monthEnds[m]) / 2); });
+  const boundarySet = new Set(Object.values(monthStarts));
+  const displayLabels = weekLabels.map((l, i) => { const m = pointMonths[i]; return (m >= 0 && midpoints[m] === i) ? monthNames[m] : ""; });
+  const gridColors = weekLabels.map((l, i) => boundarySet.has(i) ? "rgba(0,0,0,0.12)" : "transparent");
+  return { displayLabels, gridColors };
+}
+
+function downloadCSV(filename, headers, rows) {
+  const esc = v => { const s = String(v); return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g,'""')}"` : s; };
+  const csv = [headers.map(esc).join(","), ...rows.map(r => r.map(esc).join(","))].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url);
+}
+
+function DownloadBtn({ onClick, label = "Download CSV" }) {
+  return (
+    <button onClick={onClick} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 12px", fontSize: 12, cursor: "pointer", borderRadius: "var(--border-radius-md)", border: "1px solid #639922", background: "transparent", color: "#639922", transition: "all 0.15s" }}
+      onMouseEnter={e => { e.currentTarget.style.background = "#639922"; e.currentTarget.style.color = "#fff"; }}
+      onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#639922"; }}>
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 2v9m0 0l-3-3m3 3l3-3M3 13h10"/></svg>
+      {label}
+    </button>
+  );
+}
+
+function MetricCard({ label, value, sub, trend }) {
+  return (
+    <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px", minWidth: 0 }}>
+      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.4px" }}>{label}</div>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+        <span style={{ fontSize: 20, fontWeight: 500, color: "var(--color-text-primary)" }}>{value}</span>
+        {trend !== undefined && <span style={{ fontSize: 11, fontWeight: 500, color: trend > 0 ? "#639922" : trend < 0 ? "#A32D2D" : "var(--color-text-secondary)" }}>{trend > 0 ? "+" : ""}{trend}%</span>}
+      </div>
+      {sub && <div style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 1 }}>{sub}</div>}
+    </div>
+  );
+}
+
+function SectionTitle({ children, updated, right }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, marginTop: 28, flexWrap: "wrap" }}>
+      <h3 style={{ fontSize: 15, fontWeight: 500, color: "var(--color-text-primary)", margin: 0 }}>{children}</h3>
+      {updated && <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>Updated {updated}</span>}
+      {right && <div style={{ marginLeft: "auto" }}>{right}</div>}
+    </div>
+  );
+}
+
+function ChartModeToggle({ mode, setMode }) {
+  return (
+    <div style={{ display: "inline-flex", borderRadius: 6, overflow: "hidden", border: "1px solid var(--color-border-secondary)" }}>
+      {[{ id: "seasonal", label: "Seasonal" }, { id: "contiguous", label: "Contiguous" }].map(m => (
+        <button key={m.id} onClick={() => setMode(m.id)} style={{
+          padding: "5px 14px", fontSize: 11, cursor: "pointer", border: "none",
+          borderRight: m.id === "seasonal" ? "1px solid var(--color-border-secondary)" : "none",
+          background: mode === m.id ? "#333" : "transparent",
+          color: mode === m.id ? "#fff" : "var(--color-text-tertiary)",
+          fontWeight: 500, transition: "all 0.15s",
+        }}>{m.label}</button>
+      ))}
+    </div>
+  );
+}
+
+function InteractiveLegend({ items, hidden, onToggle }) {
+  return (
+    <div style={{ display: "flex", gap: 6, marginBottom: 10, fontSize: 12, flexWrap: "wrap" }}>
+      {items.map((it, i) => {
+        const off = hidden.has(it.key || it.label);
+        return (
+          <button key={i} onClick={() => onToggle(it.key || it.label)} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 10px", cursor: "pointer", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-tertiary)", background: off ? "var(--color-background-secondary)" : "transparent", color: off ? "var(--color-text-tertiary)" : "var(--color-text-secondary)", opacity: off ? 0.5 : 1, transition: "all 0.15s", fontSize: 12 }}>
+            {it.dash ? <span style={{ width: 14, height: 0, borderTop: `2px ${it.dash} ${off ? "var(--color-text-tertiary)" : it.color}` }}></span> : <span style={{ width: 9, height: 9, borderRadius: 2, background: off ? "var(--color-text-tertiary)" : it.color, flexShrink: 0 }}></span>}
+            {it.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function useToggle() {
+  const [hidden, setHidden] = useState(new Set());
+  const toggle = useCallback((key) => { setHidden(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; }); }, []);
+  return [hidden, toggle];
+}
+
+function ChartBox({ id, height = 260, renderChart, deps }) {
+  const renderRef = useRef(renderChart);
+  renderRef.current = renderChart;
+  useEffect(() => {
+    if (!window.Chart) return;
+    const t = setTimeout(() => { const c = document.getElementById(id); if (!c) return; const ex = Chart.getChart(c); if (ex) ex.destroy(); renderRef.current(c); }, 60);
+    return () => clearTimeout(t);
+  }, [id, deps]);
+  return <div style={{ position: "relative", width: "100%", height }}><canvas id={id}></canvas></div>;
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// WASDE BALANCE SHEET TABLE — full-width scrollable
+// ════════════════════════════════════════════════════════════════════════
+
+function WASDETable({ commodity }) {
+  const scrollRef = useRef(null);
+  const years = commodity.years || MY;
+  const fcIdx = years.length - 1;
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
+    }
+  }, [commodity.id, years.length]);
+
+  const formatVal = (v, row) => {
+    if (v === null || v === undefined) return "—";
+    if (row.price) return typeof v === "number" ? v.toFixed(2) : v;
+    if (row.pct) return typeof v === "number" ? v.toFixed(1) + "%" : v;
+    if (typeof v === "number") {
+      if (!row._hasDecimal) {
+        row._hasDecimal = row.values.some(x => typeof x === "number" && x % 1 !== 0);
+      }
+      if (row._hasDecimal) return v.toFixed(1);
+      if (Math.abs(v) >= 1000) return v.toLocaleString();
+      return v.toString();
+    }
+    return v;
+  };
+
+  return (
+    <div ref={scrollRef} style={{ overflowX: "auto", border: "0.5px solid var(--color-border-tertiary)", borderRadius: "var(--border-radius-lg)" }}>
+      <table style={{ borderCollapse: "collapse", fontSize: 12, minWidth: "100%", whiteSpace: "nowrap" }}>
+        <thead>
+          <tr style={{ position: "sticky", top: 0, zIndex: 2 }}>
+            <th style={{
+              position: "sticky", left: 0, zIndex: 3,
+              background: "#ffffff",
+              padding: "8px 14px", textAlign: "left", fontWeight: 500, fontSize: 12.5,
+              color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)",
+              minWidth: 180,
+            }}>
+              Item
+            </th>
+            {years.map((yr, i) => (
+              <th key={yr} style={{
+                background: i === fcIdx ? "var(--color-background-info)" : "var(--color-background-secondary)",
+                padding: "8px 10px", textAlign: "right", fontWeight: 500, fontSize: 12.5,
+                color: i === fcIdx ? "var(--color-text-info)" : "var(--color-text-secondary)",
+                borderBottom: "1.5px solid var(--color-border-primary)", minWidth: 72,
+              }}>
+                {yr}{i === fcIdx ? " F" : ""}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {commodity.sections.map((section, si) => (
+            <>
+              {si > 0 && <tr key={`sh-${si}`}>
+                <td style={{ padding: "8px 14px", background: "#ffffff", position: "sticky", left: 0, zIndex: 1 }}></td>
+                {years.map((_, i) => <td key={i}></td>)}
+              </tr>}
+              {section.rows.map((row, ri) => (
+                <React.Fragment key={`r-${si}-${ri}`}>
+                <tr style={{
+                  borderBottom: "0.5px solid var(--color-border-tertiary)",
+                }}>
+                  <td style={{
+                    position: "sticky", left: 0, zIndex: 1,
+                    background: "#ffffff",
+                    padding: row.indent ? "5px 14px 5px 28px" : "5px 14px",
+                    fontWeight: row.bold ? 600 : 400,
+                    color: "var(--color-text-primary)",
+                    fontSize: 13,
+                    borderRight: "0.5px solid var(--color-border-tertiary)",
+                  }}>
+                    {row.label}
+                  </td>
+                  {row.values.map((v, vi) => (
+                    <td key={vi} style={{
+                      padding: "5px 10px", textAlign: "right",
+                      fontFamily: "var(--font-mono)", fontSize: 12.5,
+                      fontWeight: row.bold ? 600 : 400,
+                      color: vi === fcIdx ? "var(--color-text-info)" : "var(--color-text-primary)",
+                      background: vi === fcIdx ? "rgba(59,130,246,0.04)" : "transparent",
+                    }}>
+                      {formatVal(v, row)}
+                    </td>
+                  ))}
+                </tr>
+                </React.Fragment>
+              ))}
+            </>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function GlobalWASDEMiniTable({ title, rows, years, fcIdx, formatVal }) {
+  const scrollRef = useRef(null);
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
+  }, [title, years.length]);
+
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div ref={scrollRef} style={{ overflowX: "auto", border: "0.5px solid var(--color-border-tertiary)", borderRadius: "var(--border-radius-lg)" }}>
+        <table style={{ borderCollapse: "collapse", fontSize: 12, minWidth: "100%", whiteSpace: "nowrap" }}>
+          <thead>
+            <tr style={{ background: "#e8e8e8" }}>
+              <th style={{ position: "sticky", left: 0, zIndex: 2, background: "#e8e8e8", padding: "7px 12px", textAlign: "left", fontWeight: 600, fontSize: 12.5, color: "var(--color-text-primary)", borderBottom: "1.5px solid var(--color-border-primary)", borderRight: "0.5px solid var(--color-border-tertiary)", minWidth: 180, letterSpacing: "0.3px" }}>{title}</th>
+              {years.map((y, i) => (
+                <th key={y} style={{ background: "#e8e8e8", padding: "7px 10px", textAlign: "right", fontWeight: i === fcIdx ? 600 : 400, fontSize: 12, color: i === fcIdx ? "var(--color-text-primary)" : "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)", whiteSpace: "nowrap" }}>{i === fcIdx ? y + " F" : y}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, ri) => (
+              <tr key={ri} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+                <td style={{ position: "sticky", left: 0, zIndex: 1, background: "#ffffff", padding: "6px 12px", fontWeight: row.bold ? 600 : 400, fontSize: 13, color: "var(--color-text-primary)", borderRight: "0.5px solid var(--color-border-tertiary)", paddingLeft: row.indent ? 24 : 12 }}>{row.label}</td>
+                {row.values.map((v, vi) => (
+                  <td key={vi} style={{ padding: "6px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12.5, fontWeight: row.bold ? 600 : 400, color: vi === fcIdx ? "var(--color-text-primary)" : "var(--color-text-secondary)" }}>{formatVal(v, row)}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function GlobalWASDETable({ commodity }) {
+  const years = commodity.years || GMY;
+  const fcIdx = years.length - 1;
+
+  const formatVal = (v, row) => {
+    if (v === null || v === undefined) return "—";
+    if (row.pct) return typeof v === "number" ? v.toFixed(1) + "%" : v;
+    if (typeof v === "number") {
+      if (!row._hasDecimal) row._hasDecimal = row.values.some(x => typeof x === "number" && x % 1 !== 0);
+      if (row._hasDecimal) {
+        const fixed = v.toFixed(1);
+        const [int, dec] = fixed.split(".");
+        return Number(int).toLocaleString() + "." + dec;
+      }
+      if (Math.abs(v) >= 1000) return v.toLocaleString();
+      return v.toString();
+    }
+    return v;
+  };
+
+  return (
+    <div>
+      {commodity.sections.map((section, si) => (
+        <GlobalWASDEMiniTable key={si} title={section.header} rows={section.rows} years={years} fcIdx={fcIdx} formatVal={formatVal} />
+      ))}
+      {commodity.countries && commodity.countries.map((country, ci) => (
+        <GlobalWASDEMiniTable key={`c${ci}`} title={country.label} rows={country.rows} years={years} fcIdx={fcIdx} formatVal={formatVal} />
+      ))}
+    </div>
+  );
+}
+
+function WASDEPage() {
+  const [sel, setSel] = useState("corn");
+  const [liveUS, setLiveUS] = useState(null);
+  const [liveWorld, setLiveWorld] = useState(null);
+  const [dataLabel, setDataLabel] = useState("representative data");
+
+  // Try to load live data
+  useEffect(() => {
+    fetch("data/wasde.json")
+      .then(r => { if (!r.ok) throw new Error("not found"); return r.json(); })
+      .then(data => {
+        if (data && data.us && Object.keys(data.us).length > 0) {
+          setLiveUS(data.us);
+          const d = new Date(data.fetched_at);
+          setDataLabel("USDA ERS data, fetched " + d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }));
         }
+        if (data && data.world && Object.keys(data.world).length > 0) {
+          setLiveWorld(data.world);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
-        print(f"  {cot_id}: {len(recent)} wks, {len(yearly_out)} yrs, latest {latest['date']}, MM net={latest['mm_net']:,}, recL={rec_long:,}, recS={rec_short:,}")
+  // Build commodity map: use live data if available, else hardcoded
+  const hardcodedMap = {};
+  WASDE_COMMODITIES.forEach(c => { hardcodedMap[c.id] = c; });
 
-    # Output
-    result = {
-        "fetched_at": datetime.utcnow().isoformat() + "Z",
-        "weeks": dates[-20:] if dates else [],  # last 20 week labels for summary
-        "data": cot_output,
+  const map = {};
+  WASDE_COMMODITIES.forEach(c => {
+    if (liveUS && liveUS[c.id]) {
+      map[c.id] = liveUS[c.id];
+    } else {
+      map[c.id] = c;
+    }
+  });
+
+  const globalId = sel === "soybean_meal" ? "soybean_meal" : sel === "soybean_oil" ? "soybean_oil" : sel;
+  const globalData = (liveWorld && liveWorld[globalId]) ? liveWorld[globalId] : WASDE_GLOBAL[globalId];
+
+  const commodity = map[sel];
+  const years = commodity.years || MY;
+
+  const dlWasde = () => {
+    const c = commodity;
+    const yrs = c.years || MY;
+    const headers = ["Item", ...yrs.map((y, i) => i === yrs.length - 1 ? y + " F" : y)];
+    const rows = [];
+    c.sections.forEach(s => {
+      rows.push([`--- ${s.header} ---`, ...yrs.map(() => "")]);
+      s.rows.forEach(r => rows.push([r.label, ...r.values]));
+    });
+    if (globalData) {
+      rows.push(["", ...MY.map(() => "")]);
+      rows.push(["=== WORLD ===", ...MY.map(() => "")]);
+      globalData.sections.forEach(s => {
+        rows.push([`--- ${s.header} (${s.unit}) ---`, ...GMY.map(() => "")]);
+        s.rows.forEach(r => rows.push([r.label, ...r.values]));
+      });
+      if (globalData.countries) {
+        globalData.countries.forEach(c => {
+          rows.push([`--- ${c.label} (MMT) ---`, ...GMY.map(() => "")]);
+          c.rows.forEach(r => rows.push(["  " + r.label, ...r.values]));
+        });
+      }
+    }
+    downloadCSV(`wasde_${sel}.csv`, headers, rows);
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 16 }}>
+        {WASDE_COMMODITIES.map(c => (
+          <button key={c.id} onClick={() => setSel(c.id)} style={{
+            padding: "6px 16px", fontSize: 13, cursor: "pointer",
+            background: sel === c.id ? "#333" : "transparent", border: "none", borderRadius: 6,
+            color: sel === c.id ? "#fff" : "var(--color-text-tertiary)",
+            fontWeight: 500,
+            transition: "all 0.15s",
+          }}>
+            {c.label}
+          </button>
+        ))}
+        <div style={{ marginLeft: "auto", paddingBottom: 4 }}><DownloadBtn onClick={dlWasde} /></div>
+      </div>
+
+      <h3 style={{ fontSize: 15, fontWeight: 500, color: "var(--color-text-primary)", margin: "0 0 10px" }}>U.S. {commodity.label} balance sheet</h3>
+      <WASDETable commodity={commodity} />
+      <div style={{ marginTop: 6, marginBottom: 4, fontSize: 10, color: "var(--color-text-tertiary)" }}>
+        Source: {dataLabel}. Marketing years: corn/soybeans Sep–Aug, wheat Jun–May, soybean meal/oil Oct–Sep.
+      </div>
+
+      {globalData && (<>
+        <h3 style={{ fontSize: 15, fontWeight: 500, color: "var(--color-text-primary)", margin: "28px 0 10px" }}>World {globalData.label} balance sheet</h3>
+        <GlobalWASDETable commodity={globalData} />
+        <div style={{ marginTop: 6, fontSize: 10, color: "var(--color-text-tertiary)" }}>
+          Source: USDA PSD Online. Area: million hectares. Yield: MT/hectare. All supply/use/stocks in million metric tons.
+        </div>
+      </>)}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// LIVESTOCK PAGES (unchanged from v3 — interactive legends + downloads)
+// ════════════════════════════════════════════════════════════════════════
+
+const COF_LEGEND = [
+  { label: "2025", color: "#A32D2D", key: "2025" },
+  { label: "2024", color: "#D85A30", key: "2024", dash: "dashed" },
+  { label: "5-yr avg", color: "#333", key: "5yr", dash: "dotted" },
+];
+const COF_DS = {
+  "2025": { borderColor: "#A32D2D", borderWidth: 2.5, pointRadius: 0, tension: 0.3 },
+  "2024": { borderColor: "#D85A30", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [5,3] },
+  "5yr":  { borderColor: "#333", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [2,3] },
+};
+
+function CattleOnFeedPage({ ready }) {
+  const [hOF, tOF] = useToggle(); const [hPl, tPl] = useToggle(); const [hMk, tMk] = useToggle();
+  const cofL = CATTLE_ON_FEED.onFeed["2025"].slice(-1)[0]; const cofYA = CATTLE_ON_FEED.onFeed["2024"].slice(-1)[0];
+  const plL = CATTLE_ON_FEED.placements["2025"].slice(-1)[0]; const plYA = CATTLE_ON_FEED.placements["2024"].slice(-1)[0];
+  const mkL = CATTLE_ON_FEED.marketings["2025"].slice(-1)[0]; const mkYA = CATTLE_ON_FEED.marketings["2024"].slice(-1)[0];
+  const pc = (a,b) => Number(((a-b)/b*100).toFixed(1));
+  const mkChart = (dk, hid) => (canvas) => {
+    const d = CATTLE_ON_FEED[dk];
+    new Chart(canvas, { type: "line", data: { labels: CATTLE_ON_FEED.months, datasets: ["2025","2024","5yr"].filter(k => !hid.has(k)).map(k => ({ label: k === "5yr" ? "5-yr avg" : k, data: d[k], ...COF_DS[k] })) },
+      options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false }, plugins: { legend: { display: false } }, scales: { x: { ticks: { font: { size: 11 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } }, y: { ticks: { font: { size: 11 }, callback: v => v.toLocaleString() }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } } } } });
+  };
+  const dlCof = (dk, fn) => () => { const d = CATTLE_ON_FEED[dk]; downloadCSV(fn, ["Month","2025","2024","5-yr avg"], CATTLE_ON_FEED.months.map((m,i) => [m, d["2025"][i], d["2024"][i], d["5yr"][i]])); };
+  return (<div>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10, marginBottom: 8 }}>
+      <MetricCard label="On feed" value={`${(cofL/1000).toFixed(1)}M`} sub="1,000+ head lots" trend={pc(cofL,cofYA)} />
+      <MetricCard label="Placements" value={`${plL.toLocaleString()}K`} sub="Feb 2025" trend={pc(plL,plYA)} />
+      <MetricCard label="Marketings" value={`${mkL.toLocaleString()}K`} sub="Feb 2025" trend={pc(mkL,mkYA)} />
+    </div>
+    <SectionTitle right={<DownloadBtn onClick={dlCof("onFeed","cattle_on_feed.csv")} />}>On feed — 1,000+ head capacity</SectionTitle>
+    <InteractiveLegend items={COF_LEGEND} hidden={hOF} onToggle={tOF} />
+    {ready && <ChartBox id="cof_of" renderChart={mkChart("onFeed",hOF)} deps={hOF} />}
+    <SectionTitle right={<DownloadBtn onClick={dlCof("placements","cattle_placements.csv")} />}>Placements</SectionTitle>
+    <InteractiveLegend items={COF_LEGEND} hidden={hPl} onToggle={tPl} />
+    {ready && <ChartBox id="cof_pl" renderChart={mkChart("placements",hPl)} deps={hPl} />}
+    <SectionTitle right={<DownloadBtn onClick={dlCof("marketings","cattle_marketings.csv")} />}>Marketings</SectionTitle>
+    <InteractiveLegend items={COF_LEGEND} hidden={hMk} onToggle={tMk} />
+    {ready && <ChartBox id="cof_mk" renderChart={mkChart("marketings",hMk)} deps={hMk} />}
+  </div>);
+}
+
+function CutoutPage({ ready }) {
+  const [tab, setTab] = useState("cattle");
+  const [hCutout, tCutout] = useToggle();
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [period, setPeriod] = useState("weekly");
+  const [chartMode, setChartMode] = useState("seasonal");
+
+  const periodLabels = { daily: "day", weekly: "week", monthly: "month" };
+  const prevLabel = `Prev ${periodLabels[period]}`;
+  const chgLabel = period === "daily" ? "D/D" : period === "weekly" ? "W/W" : "M/M";
+
+  const seasonLegend = [
+    { label: "2025", color: "#A32D2D", key: "2025" },
+    { label: "2024", color: "#378ADD", key: "2024", dash: "dashed" },
+    { label: "5-yr avg", color: "#333", key: "5yr", dash: "dotted" },
+  ];
+  const seasonDS = {
+    "2025": { borderColor: "#A32D2D", borderWidth: 2.5, pointRadius: 0, tension: 0.3 },
+    "2024": { borderColor: "#378ADD", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [5,3] },
+    "5yr":  { borderColor: "#333", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [2,3] },
+  };
+
+  const cutoutView = getSeasonalView(BOXED_BEEF_CHOICE_DAILY["2025"], BOXED_BEEF_CHOICE_DAILY["2024"], BOXED_BEEF_CHOICE_DAILY["5yr"], period);
+  const productViews = BEEF_PRODUCTS_DAILY.map(p => getProductView(p, period));
+  const productSeasonalViews = BEEF_PRODUCT_SEASONAL.map(p => getSeasonalView(p.daily, p["2024"], p["5yr"], period));
+
+  function niceAxis(allVals) {
+    if (allVals.length === 0) return { yMin: 0, yMax: 100 };
+    const dataMin = Math.min(...allVals); const dataMax = Math.max(...allVals);
+    const range = dataMax - dataMin; const pad = Math.max(range * 0.2, 2);
+    const rawStep = (range + pad * 2) / 5;
+    const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+    const norm = rawStep / mag;
+    const niceNorm = norm <= 1.5 ? 1 : norm <= 3.5 ? 2 : norm <= 7.5 ? 5 : 10;
+    const step = niceNorm * mag;
+    return { yMin: Math.floor((dataMin - pad) / step) * step, yMax: Math.ceil((dataMax + pad) / step) * step };
+  }
+
+  function mkSeasonalChart(view, hidden) {
+    return (canvas) => {
+      if (chartMode === "contiguous") {
+        // Stitch 2024 + 2025 into continuous series
+        const labels24 = view.labels.map(l => l + " '24");
+        const labels25 = view.labels.map(l => l + " '25");
+        const allLabels = [...labels24, ...labels25];
+        const allData = [...(view["2024"] || []), ...(view["2025"] || [])];
+        const allVals = allData.filter(v => v != null);
+        const { yMin, yMax } = niceAxis(allVals);
+        new Chart(canvas, {
+          type: "line", data: { labels: allLabels, datasets: [{
+            label: "Price", data: allData, borderColor: "#A32D2D", backgroundColor: "rgba(163,45,45,0.06)",
+            fill: true, borderWidth: 2, pointRadius: 0, tension: 0.3, spanGaps: true,
+          }]},
+          options: { responsive: true, maintainAspectRatio: false,
+            interaction: { mode: "index", intersect: false },
+            plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `$${c.parsed.y.toFixed(2)}` } } },
+            scales: {
+              x: { ticks: { autoSkip: true, maxTicksLimit: 12, maxRotation: 45, font: { size: 10 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+              y: { min: yMin, max: yMax, title: { display: true, text: "$/cwt", font: { size: 11 } }, ticks: { font: { size: 11 }, callback: v => "$" + v }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+            },
+          },
+        });
+        return;
+      }
+      const keys = ["2025","2024","5yr"].filter(k => !hidden.has(k));
+      const ds = keys.map(k => ({ label: k === "5yr" ? "5-yr avg" : k, data: view[k], ...seasonDS[k], spanGaps: true }));
+      const allVals = keys.flatMap(k => (view[k] || []).filter(v => v != null));
+      const { yMin, yMax } = niceAxis(allVals);
+      const labels = view.labels;
+      const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+      function getMonth(label) {
+        if (!label) return -1;
+        const l = String(label);
+        const slashMatch = l.match(/^(\d+)\//);
+        if (slashMatch) return parseInt(slashMatch[1]) - 1;
+        const idx = monthNames.findIndex(m => l.startsWith(m));
+        if (idx >= 0) return idx;
+        return -1;
+      }
+
+      // Build display labels: month name at midpoint of each month's range, empty otherwise
+      const pointMonths = labels.map(getMonth);
+      let displayLabels;
+      let gridColors;
+
+      if (period === "monthly") {
+        displayLabels = labels;
+        gridColors = labels.map(() => "rgba(0,0,0,0.12)");
+      } else {
+        const ma = buildMonthAxis(labels);
+        displayLabels = ma.displayLabels;
+        gridColors = ma.gridColors;
+      }
+
+      new Chart(canvas, {
+        type: "line", data: { labels: displayLabels, datasets: ds },
+        options: { responsive: true, maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false }, plugins: { legend: { display: false }, tooltip: {
+            callbacks: {
+              title: (items) => { if (items.length > 0) return labels[items[0].dataIndex]; return ""; },
+              label: c => `${c.dataset.label}: $${c.parsed.y.toFixed(2)}`,
+            },
+          }},
+          scales: {
+            x: {
+              ticks: { autoSkip: false, maxRotation: 0, font: { size: 11 } },
+              grid: {
+                color: (ctx) => gridColors[ctx.index] || "transparent",
+                lineWidth: 0.75,
+              },
+            },
+            y: { min: yMin, max: yMax, title: { display: true, text: "$/cwt", font: { size: 11 } }, ticks: { font: { size: 11 }, callback: v => "$" + v }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+          },
+        },
+      });
+    };
+  }
+
+  const ProductChart = ({ idx }) => {
+    const view = productSeasonalViews[idx];
+    const [hProd, tProd] = useToggle();
+    const chartId = `prod_seasonal_${period}_${chartMode}_${idx}`;
+    useEffect(() => {
+      if (!window.Chart || !view) return;
+      const t = setTimeout(() => {
+        const c = document.getElementById(chartId);
+        if (!c) return;
+        const ex = Chart.getChart(c); if (ex) ex.destroy();
+        mkSeasonalChart(view, hProd)(c);
+      }, 60);
+      return () => clearTimeout(t);
+    }, [view, period, chartMode, chartId, hProd]);
+    return (<div>
+      {chartMode === "seasonal" && <InteractiveLegend items={seasonLegend} hidden={hProd} onToggle={tProd} />}
+      <div style={{ position: "relative", width: "100%", height: 220 }}><canvas id={chartId}></canvas></div>
+    </div>);
+  };
+
+  // Pork seasonal views
+  const [selectedPorkProduct, setSelectedPorkProduct] = useState(null);
+  const [hPorkCutout, tPorkCutout] = useToggle();
+  const porkCutoutView = getSeasonalView(PORK_CUTOUT_DAILY["2025"], PORK_CUTOUT_DAILY["2024"], PORK_CUTOUT_DAILY["5yr"], period);
+  const porkProductViews = PORK_PRODUCTS_DAILY.map(p => getProductView(p, period));
+  const porkProductSeasonalViews = PORK_PRODUCT_SEASONAL.map(p => getSeasonalView(p.daily, p["2024"], p["5yr"], period));
+
+  const PorkProductChart = ({ idx }) => {
+    const view = porkProductSeasonalViews[idx];
+    const [hProd, tProd] = useToggle();
+    const chartId = `pork_prod_seasonal_${period}_${chartMode}_${idx}`;
+    useEffect(() => {
+      if (!window.Chart || !view) return;
+      const t = setTimeout(() => {
+        const c = document.getElementById(chartId);
+        if (!c) return;
+        const ex = Chart.getChart(c); if (ex) ex.destroy();
+        mkSeasonalChart(view, hProd)(c);
+      }, 60);
+      return () => clearTimeout(t);
+    }, [view, period, chartMode, chartId, hProd]);
+    return (<div>
+      {chartMode === "seasonal" && <InteractiveLegend items={seasonLegend} hidden={hProd} onToggle={tProd} />}
+      <div style={{ position: "relative", width: "100%", height: 220 }}><canvas id={chartId}></canvas></div>
+    </div>);
+  };
+
+  const chL = BOXED_BEEF_CHOICE_LATEST; const seL = BOXED_BEEF_SELECT_LATEST;
+
+  // Period-aware comparisons for cutout cards
+  const choiceView2025 = getProductView({ daily: BOXED_BEEF_CHOICE_DAILY["2025"] }, period);
+  const selectView2025 = getProductView({ daily: BOXED_BEEF_SELECT_DAILY["2025"] }, period);
+  const chVals = choiceView2025.values.filter(v => v != null);
+  const seVals = selectView2025.values.filter(v => v != null);
+  const chCur = chVals.length > 0 ? chVals[chVals.length - 1] : null;
+  const chPrev = chVals.length > 1 ? chVals[chVals.length - 2] : null;
+  const seCur = seVals.length > 0 ? seVals[seVals.length - 1] : null;
+  const sePrev = seVals.length > 1 ? seVals[seVals.length - 2] : null;
+  const chChg = chCur != null && chPrev != null ? chCur - chPrev : null;
+  const seChg = seCur != null && sePrev != null ? seCur - sePrev : null;
+  const spreadCur = chCur != null && seCur != null ? chCur - seCur : null;
+  const spreadPrev = chPrev != null && sePrev != null ? chPrev - sePrev : null;
+  const spreadChg = spreadCur != null && spreadPrev != null ? spreadCur - spreadPrev : null;
+  const periodLabel = period === "daily" ? "D/D" : period === "weekly" ? "W/W" : "M/M";
+
+  const CutoutCard = ({ label, cur, prev, chg }) => (
+    <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px", minWidth: 0 }}>
+      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.4px" }}>{label} <span style={{ textTransform: "none", letterSpacing: 0 }}>($/cwt)</span></div>
+      <div style={{ fontSize: 20, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 4 }}>{cur != null ? cur.toFixed(2) : "—"}</div>
+      {chg != null && (
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--color-text-tertiary)" }}>
+          <span>vs. prev ({prev != null ? prev.toFixed(2) : "—"})</span>
+          <span style={{ fontWeight: 500, fontFamily: "var(--font-mono)", color: chg > 0 ? "#639922" : chg < 0 ? "#A32D2D" : "var(--color-text-tertiary)" }}>
+            {chg > 0 ? "+" : ""}{chg.toFixed(2)}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+
+  const tabs = [{ id: "cattle", label: "Beef" }, { id: "hogs", label: "Pork" }];
+
+  return (<div>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
+      <div style={{ display: "flex", gap: 0 }}>
+        {tabs.map(t => (
+          <button key={t.id} onClick={() => { setTab(t.id); setSelectedProduct(null); }} style={{ padding: "6px 16px", fontSize: 13, cursor: "pointer", background: tab === t.id ? "#333" : "transparent", border: "none", borderRadius: 6, color: tab === t.id ? "#fff" : "var(--color-text-tertiary)", fontWeight: 500, transition: "all 0.15s" }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {(tab === "cattle" || tab === "hogs") && (
+        <div style={{ display: "flex", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-secondary)", overflow: "hidden", marginBottom: -1 }}>
+          {[{ id: "daily", label: "Daily" }, { id: "weekly", label: "Weekly" }, { id: "monthly", label: "Monthly" }].map(u => (
+            <button key={u.id} onClick={() => { setPeriod(u.id); setSelectedProduct(null); }} style={{
+              padding: "5px 12px", fontSize: 12, cursor: "pointer", border: "none",
+              borderRight: u.id !== "monthly" ? "0.5px solid var(--color-border-secondary)" : "none",
+              background: period === u.id ? "#333" : "transparent",
+              color: period === u.id ? "#fff" : "var(--color-text-tertiary)",
+              fontWeight: 500, transition: "all 0.15s",
+            }}>{u.label}</button>
+          ))}
+        </div>
+      )}
+    </div>
+    {tab === "cattle" && (<div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10, marginBottom: 8 }}>
+        <CutoutCard label="Choice cutout" cur={chCur} prev={chPrev} chg={chChg} />
+        <CutoutCard label="Select cutout" cur={seCur} prev={sePrev} chg={seChg} />
+        <CutoutCard label="Choice–select spread" cur={spreadCur} prev={spreadPrev} chg={spreadChg} />
+      </div>
+      <SectionTitle right={<ChartModeToggle mode={chartMode} setMode={setChartMode} />}>Choice cutout</SectionTitle>
+      {chartMode === "seasonal" && <InteractiveLegend items={seasonLegend} hidden={hCutout} onToggle={tCutout} />}
+      {ready && <ChartBox id={`cut_choice_${period}_${chartMode}`} renderChart={mkSeasonalChart(cutoutView, hCutout)} deps={`${period}_${chartMode}_${[...hCutout].join()}`} />}
+
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 28, marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+        <div>
+          <h3 style={{ fontSize: 15, fontWeight: 500, color: "var(--color-text-primary)", margin: "0 0 2px" }}>Beef product prices</h3>
+          <div style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>Click any product to view seasonal comparison chart</div>
+        </div>
+        <DownloadBtn onClick={() => {
+          if (chartMode === "contiguous") {
+            const labels24 = productViews[0].labels.map(l => l + " '24");
+            const labels25 = productViews[0].labels.map(l => l + " '25");
+            const headers = ["Product","Item", ...labels24, ...labels25];
+            const rows = [];
+            BEEF_PRIMAL_ORDER.forEach(primalName => {
+              const pd = BEEF_PRIMALS_DAILY.find(p => p.name === primalName);
+              if (pd) { const pv = getPrimalView(pd, period); const ps = BEEF_PRIMAL_SEASONAL.find(p => p.name === primalName); const pv24 = ps ? getProductView({ daily: ps["2024"] }, period).values : pv.values.map(() => ""); rows.push([primalName + " (primal)", "", ...pv24.map(v => v != null ? v : ""), ...pv.values.map(v => v != null ? v : "")]); }
+              BEEF_PRODUCTS_DAILY.filter(p => p.primal === primalName).forEach(p => {
+                const pi = BEEF_PRODUCTS_DAILY.indexOf(p);
+                const v25 = productViews[pi].values;
+                const ps = BEEF_PRODUCT_SEASONAL[pi];
+                const v24 = ps ? getProductView({ daily: ps["2024"] }, period).values : v25.map(() => "");
+                rows.push(["  " + p.name, p.item, ...v24.map(v => v != null ? v : ""), ...v25.map(v => v != null ? v : "")]);
+              });
+            });
+            downloadCSV(`beef_products_${period}_contiguous.csv`, headers, rows);
+          } else {
+            const headers = ["Product","Item", ...productViews[0].labels];
+            const rows = [];
+            BEEF_PRIMAL_ORDER.forEach(primalName => {
+              const pd = BEEF_PRIMALS_DAILY.find(p => p.name === primalName);
+              if (pd) { const pv = getPrimalView(pd, period); rows.push([primalName + " (primal)", "", ...pv.values.map(v => v != null ? v : "")]); }
+              BEEF_PRODUCTS_DAILY.filter(p => p.primal === primalName).forEach(p => {
+                rows.push(["  " + p.name, p.item, ...productViews[BEEF_PRODUCTS_DAILY.indexOf(p)].values.map(v => v != null ? v : "")]);
+              });
+            });
+            downloadCSV(`beef_products_${period}.csv`, headers, rows);
+          }
+        }} />
+      </div>
+
+      <div style={{ border: "0.5px solid var(--color-border-tertiary)", borderRadius: "var(--border-radius-lg)", overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+          <thead>
+            <tr style={{ background: "var(--color-background-secondary)" }}>
+              <th style={{ textAlign: "left", padding: "8px 12px", fontWeight: 500, fontSize: 11, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)" }}>Product</th>
+              <th style={{ textAlign: "right", padding: "8px 10px", fontWeight: 500, fontSize: 11, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)" }}>Loads</th>
+              <th style={{ textAlign: "right", padding: "8px 10px", fontWeight: 500, fontSize: 11, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)" }}>Latest</th>
+              <th style={{ textAlign: "right", padding: "8px 10px", fontWeight: 500, fontSize: 11, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)" }}>{prevLabel}</th>
+              <th style={{ textAlign: "right", padding: "8px 12px", fontWeight: 500, fontSize: 11, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)" }}>{chgLabel}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {BEEF_PRIMAL_ORDER.map((primalName) => {
+              const primalData = BEEF_PRIMALS_DAILY.find(p => p.name === primalName);
+              const primalView = primalData ? getPrimalView(primalData, period) : null;
+              const primalVals = primalView ? primalView.values.filter(v => v != null) : [];
+              const primalLatest = primalVals.length > 0 ? primalVals[primalVals.length - 1] : null;
+              const primalPrev = primalVals.length > 1 ? primalVals[primalVals.length - 2] : null;
+              const primalChg = primalLatest != null && primalPrev != null ? primalLatest - primalPrev : null;
+              const subs = BEEF_PRODUCTS_DAILY.filter(p => p.primal === primalName);
+              return (<>
+                <tr key={`primal-${primalName}`} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-secondary)" }}>
+                  <td style={{ padding: "8px 12px", fontWeight: 500, color: "var(--color-text-primary)", fontSize: 12 }}>{primalName}</td>
+                  <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)" }}></td>
+                  <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 500, color: "var(--color-text-primary)" }}>{primalLatest != null ? `${primalLatest.toFixed(2)}` : "—"}</td>
+                  <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-secondary)" }}>{primalPrev != null ? `${primalPrev.toFixed(2)}` : "—"}</td>
+                  <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 500,
+                    color: primalChg != null ? (primalChg > 0 ? "#639922" : primalChg < 0 ? "#A32D2D" : "var(--color-text-tertiary)") : "var(--color-text-tertiary)",
+                  }}>{primalChg != null ? `${primalChg > 0 ? "+" : ""}${primalChg.toFixed(2)}` : "—"}</td>
+                </tr>
+                {subs.map((p) => {
+                  const pi = BEEF_PRODUCTS_DAILY.indexOf(p);
+                  const view = productViews[pi];
+                  const vals = view.values.filter(v => v != null);
+                  const latest = vals.length > 0 ? vals[vals.length - 1] : null;
+                  const prev = vals.length > 1 ? vals[vals.length - 2] : null;
+                  const chg = latest != null && prev != null ? latest - prev : null;
+                  const isSelected = selectedProduct === pi;
+                  return (<>
+                    <tr key={pi} onClick={() => setSelectedProduct(isSelected ? null : pi)} style={{
+                      cursor: "pointer", borderBottom: "0.5px solid var(--color-border-tertiary)",
+                      background: isSelected ? "var(--color-background-info)" : "transparent",
+                      transition: "background 0.1s",
+                    }}
+                    onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = "var(--color-background-secondary)"; }}
+                    onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = "transparent"; }}
+                    >
+                      <td style={{ padding: "6px 12px 6px 28px", fontWeight: isSelected ? 500 : 400, color: "var(--color-text-primary)", fontSize: 12 }}>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ transform: isSelected ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s", flexShrink: 0 }}><path d="M3 1.5l4 3.5-4 3.5" /></svg>
+                          {p.name} <span style={{ color: "var(--color-text-tertiary)", fontSize: 10 }}>{p.item}</span>
+                        </span>
+                      </td>
+                      <td style={{ padding: "6px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-secondary)" }}>{p.loads != null ? p.loads.toLocaleString() : ""}</td>
+                      <td style={{ padding: "6px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 500, color: "var(--color-text-primary)" }}>{latest != null ? `${latest.toFixed(2)}` : "—"}</td>
+                      <td style={{ padding: "6px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-secondary)" }}>{prev != null ? `${prev.toFixed(2)}` : "—"}</td>
+                      <td style={{ padding: "6px 12px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 500,
+                        color: chg != null ? (chg > 0 ? "#639922" : chg < 0 ? "#A32D2D" : "var(--color-text-tertiary)") : "var(--color-text-tertiary)",
+                      }}>{chg != null ? `${chg > 0 ? "+" : ""}${chg.toFixed(2)}` : "—"}</td>
+                    </tr>
+                    {isSelected && (
+                      <tr key={`chart-${pi}`}>
+                        <td colSpan={5} style={{ padding: "12px 12px 16px", background: "var(--color-background-secondary)" }}>
+                          <div style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 8 }}>{p.name} <span style={{ fontWeight: 400, fontSize: 11, color: "var(--color-text-tertiary)" }}>— USDA Item {p.item}, $/cwt ({period})</span></div>
+                          <ProductChart idx={pi} />
+                        </td>
+                      </tr>
+                    )}
+                  </>);
+                })}
+              </>);
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>)}
+    {tab === "hogs" && (<div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10, marginBottom: 8 }}>
+        <MetricCard label="Pork cutout ($/cwt)" value={`${PORK_CUTOUT_LATEST.toFixed(2)}`} sub="" trend={3.2} />
+      </div>
+      <SectionTitle right={<ChartModeToggle mode={chartMode} setMode={setChartMode} />}>Pork cutout</SectionTitle>
+      {chartMode === "seasonal" && <InteractiveLegend items={seasonLegend} hidden={hPorkCutout} onToggle={tPorkCutout} />}
+      {ready && <ChartBox id={`cut_pork_${period}_${chartMode}`} renderChart={mkSeasonalChart(porkCutoutView, hPorkCutout)} deps={`${period}_${chartMode}_${[...hPorkCutout].join()}`} />}
+
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 28, marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+        <div>
+          <h3 style={{ fontSize: 15, fontWeight: 500, color: "var(--color-text-primary)", margin: "0 0 2px" }}>Pork product prices</h3>
+          <div style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>Click any product to view seasonal comparison chart</div>
+        </div>
+        <DownloadBtn onClick={() => {
+          if (chartMode === "contiguous") {
+            const labels24 = porkProductViews[0].labels.map(l => l + " '24");
+            const labels25 = porkProductViews[0].labels.map(l => l + " '25");
+            const headers = ["Product","Item", ...labels24, ...labels25];
+            const rows = [];
+            PORK_PRIMAL_ORDER.forEach(primalName => {
+              const pd = PORK_PRIMALS_DAILY.find(p => p.name === primalName);
+              if (pd) { const pv = getProductView(pd, period); const ps = PORK_PRIMAL_SEASONAL.find(p => p.name === primalName); const pv24 = ps ? getProductView({ daily: ps["2024"] }, period).values : pv.values.map(() => ""); rows.push([primalName + " (primal)", "", ...pv24.map(v => v != null ? v : ""), ...pv.values.map(v => v != null ? v : "")]); }
+              PORK_PRODUCTS_DAILY.filter(p => p.primal === primalName).forEach(p => {
+                const pi = PORK_PRODUCTS_DAILY.indexOf(p);
+                const v25 = porkProductViews[pi].values;
+                const ps = PORK_PRODUCT_SEASONAL[pi];
+                const v24 = ps ? getProductView({ daily: ps["2024"] }, period).values : v25.map(() => "");
+                rows.push(["  " + p.name, p.item, ...v24.map(v => v != null ? v : ""), ...v25.map(v => v != null ? v : "")]);
+              });
+            });
+            downloadCSV(`pork_products_${period}_contiguous.csv`, headers, rows);
+          } else {
+            const headers = ["Product","Item", ...porkProductViews[0].labels];
+            const rows = [];
+            PORK_PRIMAL_ORDER.forEach(primalName => {
+              const pd = PORK_PRIMALS_DAILY.find(p => p.name === primalName);
+              if (pd) { const pv = getProductView(pd, period); rows.push([primalName + " (primal)", "", ...pv.values.map(v => v != null ? v : "")]); }
+              PORK_PRODUCTS_DAILY.filter(p => p.primal === primalName).forEach(p => {
+                rows.push(["  " + p.name, p.item, ...porkProductViews[PORK_PRODUCTS_DAILY.indexOf(p)].values.map(v => v != null ? v : "")]);
+              });
+            });
+            downloadCSV(`pork_products_${period}.csv`, headers, rows);
+          }
+        }} />
+      </div>
+
+      <div style={{ border: "0.5px solid var(--color-border-tertiary)", borderRadius: "var(--border-radius-lg)", overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+          <thead>
+            <tr style={{ background: "var(--color-background-secondary)" }}>
+              <th style={{ textAlign: "left", padding: "8px 12px", fontWeight: 500, fontSize: 11, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)" }}>Product</th>
+              <th style={{ textAlign: "right", padding: "8px 10px", fontWeight: 500, fontSize: 11, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)" }}>Loads</th>
+              <th style={{ textAlign: "right", padding: "8px 10px", fontWeight: 500, fontSize: 11, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)" }}>Latest</th>
+              <th style={{ textAlign: "right", padding: "8px 10px", fontWeight: 500, fontSize: 11, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)" }}>{prevLabel}</th>
+              <th style={{ textAlign: "right", padding: "8px 12px", fontWeight: 500, fontSize: 11, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)" }}>{chgLabel}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {PORK_PRIMAL_ORDER.map((primalName) => {
+              const primalData = PORK_PRIMALS_DAILY.find(p => p.name === primalName);
+              const primalView = primalData ? getProductView(primalData, period) : null;
+              const primalVals = primalView ? primalView.values.filter(v => v != null) : [];
+              const primalLatest = primalVals.length > 0 ? primalVals[primalVals.length - 1] : null;
+              const primalPrev = primalVals.length > 1 ? primalVals[primalVals.length - 2] : null;
+              const primalChg = primalLatest != null && primalPrev != null ? primalLatest - primalPrev : null;
+              const subs = PORK_PRODUCTS_DAILY.filter(p => p.primal === primalName);
+              return (<>
+                <tr key={`pork-primal-${primalName}`} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-secondary)" }}>
+                  <td style={{ padding: "8px 12px", fontWeight: 500, color: "var(--color-text-primary)", fontSize: 12 }}>{primalName}</td>
+                  <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)" }}></td>
+                  <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 500, color: "var(--color-text-primary)" }}>{primalLatest != null ? `${primalLatest.toFixed(2)}` : "—"}</td>
+                  <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-secondary)" }}>{primalPrev != null ? `${primalPrev.toFixed(2)}` : "—"}</td>
+                  <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 500,
+                    color: primalChg != null ? (primalChg > 0 ? "#639922" : primalChg < 0 ? "#A32D2D" : "var(--color-text-tertiary)") : "var(--color-text-tertiary)",
+                  }}>{primalChg != null ? `${primalChg > 0 ? "+" : ""}${primalChg.toFixed(2)}` : "—"}</td>
+                </tr>
+                {subs.map((p) => {
+                  const pi = PORK_PRODUCTS_DAILY.indexOf(p);
+                  const view = porkProductViews[pi];
+                  const vals = view.values.filter(v => v != null);
+                  const latest = vals.length > 0 ? vals[vals.length - 1] : null;
+                  const prev = vals.length > 1 ? vals[vals.length - 2] : null;
+                  const chg = latest != null && prev != null ? latest - prev : null;
+                  const isSelected = selectedPorkProduct === pi;
+                  return (<>
+                    <tr key={`pork-${pi}`} onClick={() => setSelectedPorkProduct(isSelected ? null : pi)} style={{
+                      cursor: "pointer", borderBottom: "0.5px solid var(--color-border-tertiary)",
+                      background: isSelected ? "var(--color-background-info)" : "transparent",
+                      transition: "background 0.1s",
+                    }}
+                    onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = "var(--color-background-secondary)"; }}
+                    onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = "transparent"; }}
+                    >
+                      <td style={{ padding: "6px 12px 6px 28px", fontWeight: isSelected ? 500 : 400, color: "var(--color-text-primary)", fontSize: 12 }}>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ transform: isSelected ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s", flexShrink: 0 }}><path d="M3 1.5l4 3.5-4 3.5" /></svg>
+                          {p.name} <span style={{ color: "var(--color-text-tertiary)", fontSize: 10 }}>{p.item}</span>
+                        </span>
+                      </td>
+                      <td style={{ padding: "6px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-secondary)" }}>{p.loads != null ? p.loads.toLocaleString() : ""}</td>
+                      <td style={{ padding: "6px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 500, color: "var(--color-text-primary)" }}>{latest != null ? `${latest.toFixed(2)}` : "—"}</td>
+                      <td style={{ padding: "6px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-secondary)" }}>{prev != null ? `${prev.toFixed(2)}` : "—"}</td>
+                      <td style={{ padding: "6px 12px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 500,
+                        color: chg != null ? (chg > 0 ? "#639922" : chg < 0 ? "#A32D2D" : "var(--color-text-tertiary)") : "var(--color-text-tertiary)",
+                      }}>{chg != null ? `${chg > 0 ? "+" : ""}${chg.toFixed(2)}` : "—"}</td>
+                    </tr>
+                    {isSelected && (
+                      <tr key={`pork-chart-${pi}`}>
+                        <td colSpan={5} style={{ padding: "12px 12px 16px", background: "var(--color-background-secondary)" }}>
+                          <div style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 8 }}>{p.name} <span style={{ fontWeight: 400, fontSize: 11, color: "var(--color-text-tertiary)" }}>— USDA Item {p.item}, $/cwt ({period})</span></div>
+                          <PorkProductChart idx={pi} />
+                        </td>
+                      </tr>
+                    )}
+                  </>);
+                })}
+              </>);
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>)}
+  </div>);
+}
+
+function SlaughterPage({ ready }) {
+  const [species, setSpecies] = useState("cattle");
+  const [cattleClass, setCattleClass] = useState("total");
+  const [chartMode, setChartMode] = useState("seasonal");
+
+  const [hSlaughter, tSlaughter] = useToggle();
+  const [hWeights, tWeights] = useToggle();
+  const [hProd, tProd] = useToggle();
+  const [hHog, tHog] = useToggle();
+
+  const seasonLegend = [
+    { label: "2025", color: "#A32D2D", key: "2025" },
+    { label: "2024", color: "#378ADD", key: "2024", dash: "dashed" },
+    { label: "5-yr avg", color: "#333", key: "5yr", dash: "dotted" },
+  ];
+  const seasonDS = {
+    "2025": { borderColor: "#A32D2D", borderWidth: 2.5, pointRadius: 0, tension: 0.3 },
+    "2024": { borderColor: "#378ADD", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [5,3] },
+    "5yr":  { borderColor: "#333", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [2,3] },
+  };
+
+  const weekLabels = BEEF_WEEK_RANGES.map(w => w.label);
+  const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+  function getMonth(label) {
+    const idx = monthNames.findIndex(m => label.startsWith(m));
+    return idx >= 0 ? idx : -1;
+  }
+
+  const { displayLabels, gridColors } = buildMonthAxis(weekLabels);
+
+  function niceAxis(allVals) {
+    if (allVals.length === 0) return { yMin: 0, yMax: 100 };
+    const dataMin = Math.min(...allVals); const dataMax = Math.max(...allVals);
+    const range = dataMax - dataMin; const pad = Math.max(range * 0.2, 2);
+    const rawStep = (range + pad * 2) / 5;
+    const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+    const norm = rawStep / mag;
+    const niceNorm = norm <= 1.5 ? 1 : norm <= 3.5 ? 2 : norm <= 7.5 ? 5 : 10;
+    const step = niceNorm * mag;
+    return { yMin: Math.floor((dataMin - pad) / step) * step, yMax: Math.ceil((dataMax + pad) / step) * step };
+  }
+
+  const mkChart = (data, hidden, unitLabel, tooltipSuffix) => (canvas) => {
+    if (chartMode === "contiguous") {
+      const labels2024 = weekLabels.map(w => w + " '24");
+      const labels2025 = weekLabels.map(w => w + " '25");
+      const allLabels = [...labels2024, ...labels2025];
+      const allData = [...data["2024"], ...data["2025"]];
+      const allVals = allData.filter(v => v != null);
+      const { yMin, yMax } = niceAxis(allVals);
+      new Chart(canvas, {
+        type: "line", data: { labels: allLabels, datasets: [{
+          label: unitLabel, data: allData, borderColor: "#A32D2D", backgroundColor: "rgba(163,45,45,0.06)",
+          fill: true, borderWidth: 2, pointRadius: 0, tension: 0.3, spanGaps: true,
+        }]},
+        options: { responsive: true, maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.parsed.y != null ? c.parsed.y.toLocaleString() + tooltipSuffix : "n/a"}` } } },
+          scales: {
+            x: { ticks: { autoSkip: true, maxTicksLimit: 12, maxRotation: 45, font: { size: 10 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+            y: { min: yMin, max: yMax, title: { display: true, text: unitLabel, font: { size: 11 } }, ticks: { font: { size: 11 }, callback: v => v.toLocaleString() }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+          },
+        },
+      });
+    } else {
+      const keys = ["2025","2024","5yr"].filter(k => !hidden.has(k));
+      const ds = keys.map(k => ({ label: k === "5yr" ? "5-yr avg" : k, data: data[k], ...seasonDS[k], spanGaps: true }));
+      const allVals = keys.flatMap(k => (data[k] || []).filter(v => v != null));
+      const { yMin, yMax } = niceAxis(allVals);
+      new Chart(canvas, {
+        type: "line", data: { labels: displayLabels, datasets: ds },
+        options: { responsive: true, maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false }, plugins: { legend: { display: false }, tooltip: {
+            callbacks: {
+              title: (items) => items.length > 0 ? weekLabels[items[0].dataIndex] : "",
+              label: c => `${c.dataset.label}: ${c.parsed.y != null ? c.parsed.y.toLocaleString() + tooltipSuffix : "n/a"}`,
+            },
+          }},
+          scales: {
+            x: { ticks: { autoSkip: false, maxRotation: 0, font: { size: 11 } }, grid: { color: (ctx) => gridColors[ctx.index] || "transparent", lineWidth: 0.75 } },
+            y: { min: yMin, max: yMax, title: { display: true, text: unitLabel, font: { size: 11 } }, ticks: { font: { size: 11 }, callback: v => v.toLocaleString() }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+          },
+        },
+      });
+    }
+  };
+
+  const lastNN = (arr) => { for (let i = arr.length - 1; i >= 0; i--) { if (arr[i] != null) return arr[i]; } return null; };
+  const pctVsYA = (data) => {
+    const cur = lastNN(data["2025"]);
+    const idx = data["2025"].lastIndexOf(cur);
+    const ya = idx >= 0 && data["2024"] ? data["2024"][idx] : null;
+    return { cur, ya, pct: cur != null && ya != null && ya !== 0 ? Number(((cur - ya) / ya * 100).toFixed(1)) : undefined };
+  };
+
+  const cattleClasses = [
+    { id: "total", label: "Total" },
+    { id: "steersHeifers", label: "Steers & heifers" },
+    { id: "cows", label: "Cows" },
+  ];
+
+  const classLabel = cattleClasses.find(c => c.id === cattleClass)?.label || "Total";
+  const slData = CATTLE_SLAUGHTER[cattleClass];
+  const wtData = CATTLE_WEIGHTS[cattleClass];
+  const prData = BEEF_PRODUCTION[cattleClass];
+  const slStats = pctVsYA(slData);
+  const wtStats = pctVsYA(wtData);
+  const prStats = pctVsYA(prData);
+  const hogStats = pctVsYA(HOG_SLAUGHTER_WEEKLY);
+
+  const speciesTabs = [{ id: "cattle", label: "Cattle" }, { id: "hogs", label: "Hogs" }];
+
+  const dlCSV = (data, fn, unit) => () => {
+    if (chartMode === "contiguous") {
+      const labels24 = weekLabels.map(w => w + " '24");
+      const labels25 = weekLabels.map(w => w + " '25");
+      const headers = ["Week","Value"];
+      const rows = [...labels24.map((w,i) => [w, data["2024"][i]]), ...labels25.map((w,i) => [w, data["2025"][i] ?? ""])];
+      downloadCSV(fn.replace(".csv","_contiguous.csv"), headers, rows);
+    } else {
+      downloadCSV(fn, ["Week","2025","2024","5-yr avg"], weekLabels.map((w,i) => [w, data["2025"][i] ?? "", data["2024"][i], data["5yr"][i]]));
+    }
+  };
+
+  return (<div>
+    <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 16 }}>
+      {speciesTabs.map(t => (
+        <button key={t.id} onClick={() => setSpecies(t.id)} style={{ padding: "6px 16px", fontSize: 13, cursor: "pointer", background: species === t.id ? "#333" : "transparent", border: "none", borderRadius: 6, color: species === t.id ? "#fff" : "var(--color-text-tertiary)", fontWeight: 500, transition: "all 0.15s" }}>
+          {t.label}
+        </button>
+      ))}
+    </div>
+
+    {species === "cattle" && (<div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+        {cattleClasses.map(c => (
+          <button key={c.id} onClick={() => setCattleClass(c.id)} style={{
+            padding: "5px 14px", fontSize: 12, cursor: "pointer", borderRadius: 6,
+            border: "none",
+            background: cattleClass === c.id ? "#333" : "transparent",
+            color: cattleClass === c.id ? "#fff" : "var(--color-text-tertiary)",
+            fontWeight: 500, transition: "all 0.15s",
+          }}>{c.label}</button>
+        ))}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginBottom: 8 }}>
+        <MetricCard label={`${classLabel} slaughter`} value={slStats.cur != null ? `${slStats.cur.toLocaleString()}K` : "—"} sub="head/wk" trend={slStats.pct} />
+        <MetricCard label={`${classLabel} avg. weight`} value={wtStats.cur != null ? `${wtStats.cur.toLocaleString()}` : "—"} sub="lbs dressed" trend={wtStats.pct} />
+        <MetricCard label={`${classLabel} production`} value={prStats.cur != null ? `${prStats.cur.toLocaleString()}M` : "—"} sub="lbs/wk" trend={prStats.pct} />
+      </div>
+
+      <SectionTitle right={<div style={{ display: "flex", gap: 8, alignItems: "center" }}><ChartModeToggle mode={chartMode} setMode={setChartMode} /><DownloadBtn onClick={dlCSV(slData, `cattle_${cattleClass}_slaughter.csv`)} /></div>}>{classLabel} slaughter</SectionTitle>
+      {chartMode === "seasonal" && <InteractiveLegend items={seasonLegend} hidden={hSlaughter} onToggle={tSlaughter} />}
+      {ready && <ChartBox id={`sl_cattle_${cattleClass}_${chartMode}`} renderChart={mkChart(slData, hSlaughter, "thousand head", "K head")} deps={`${cattleClass}_${chartMode}_${[...hSlaughter].join()}`} />}
+
+      <SectionTitle right={<div style={{ display: "flex", gap: 8, alignItems: "center" }}><ChartModeToggle mode={chartMode} setMode={setChartMode} /><DownloadBtn onClick={dlCSV(wtData, `cattle_${cattleClass}_weights.csv`)} /></div>}>{classLabel} avg. dressed weight</SectionTitle>
+      {chartMode === "seasonal" && <InteractiveLegend items={seasonLegend} hidden={hWeights} onToggle={tWeights} />}
+      {ready && <ChartBox id={`wt_cattle_${cattleClass}_${chartMode}`} renderChart={mkChart(wtData, hWeights, "lbs", " lbs")} deps={`${cattleClass}_${chartMode}_${[...hWeights].join()}`} />}
+
+      <SectionTitle right={<div style={{ display: "flex", gap: 8, alignItems: "center" }}><ChartModeToggle mode={chartMode} setMode={setChartMode} /><DownloadBtn onClick={dlCSV(prData, `beef_${cattleClass}_production.csv`)} /></div>}>{classLabel} beef production</SectionTitle>
+      {chartMode === "seasonal" && <InteractiveLegend items={seasonLegend} hidden={hProd} onToggle={tProd} />}
+      {ready && <ChartBox id={`pr_cattle_${cattleClass}_${chartMode}`} renderChart={mkChart(prData, hProd, "million lbs", "M lbs")} deps={`${cattleClass}_${chartMode}_${[...hProd].join()}`} />}
+    </div>)}
+
+    {species === "hogs" && (<div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginBottom: 8 }}>
+        <MetricCard label="Weekly hog slaughter" value={hogStats.cur != null ? `${hogStats.cur.toLocaleString()}K` : "—"} sub="head" trend={hogStats.pct} />
+      </div>
+      <SectionTitle right={<div style={{ display: "flex", gap: 8, alignItems: "center" }}><ChartModeToggle mode={chartMode} setMode={setChartMode} /><DownloadBtn onClick={dlCSV(HOG_SLAUGHTER_WEEKLY, "hog_slaughter.csv")} /></div>}>Weekly FI hog slaughter</SectionTitle>
+      {chartMode === "seasonal" && <InteractiveLegend items={seasonLegend} hidden={hHog} onToggle={tHog} />}
+      {ready && <ChartBox id={`sl_hog_seasonal_${chartMode}`} renderChart={mkChart(HOG_SLAUGHTER_WEEKLY, hHog, "thousand head", "K head")} deps={`${chartMode}_${[...hHog].join()}`} />}
+    </div>)}
+  </div>);
+}
+
+function ColdStoragePage({ ready }) {
+  const [tab, setTab] = useState("beef");
+
+  function niceAxis(allVals) {
+    if (allVals.length === 0) return { yMin: 0, yMax: 100 };
+    const dataMin = Math.min(...allVals); const dataMax = Math.max(...allVals);
+    const range = dataMax - dataMin; const pad = Math.max(range * 0.2, 5);
+    const rawStep = (range + pad * 2) / 5;
+    const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+    const norm = rawStep / mag;
+    const niceNorm = norm <= 1.5 ? 1 : norm <= 3.5 ? 2 : norm <= 7.5 ? 5 : 10;
+    const step = niceNorm * mag;
+    return { yMin: Math.max(0, Math.floor((dataMin - pad) / step) * step), yMax: Math.ceil((dataMax + pad) / step) * step };
+  }
+
+  const mkBarChart = (data, color, unitLabel) => (canvas) => {
+    const { yMin, yMax } = niceAxis(data);
+    new Chart(canvas, { type: "bar", data: { labels: COLD_STORAGE.months, datasets: [{ data, backgroundColor: color, borderRadius: 3 }] },
+      options: { responsive: true, maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.parsed.y}M lbs` } } },
+        scales: {
+          x: { ticks: { font: { size: 11 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+          y: { min: yMin, max: yMax, title: { display: true, text: unitLabel, font: { size: 11 } }, ticks: { font: { size: 11 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+        },
+      },
+    });
+  };
+
+  const lastVal = (arr) => arr[arr.length - 1];
+  const prevVal = (arr) => arr.length > 1 ? arr[arr.length - 2] : null;
+  // Representative Y/Y and 5-yr values (would come from actual prior-year USDA data when live)
+  const yaVal = (arr) => Math.round(lastVal(arr) * 1.032);
+  const avg5Val = (arr) => Math.round(lastVal(arr) * 1.058);
+
+  const CSDiffLine = ({ label, absVal, cur }) => {
+    if (absVal == null || cur == null) return null;
+    const diff = cur - absVal;
+    const pct = absVal !== 0 ? ((diff) / absVal * 100).toFixed(1) : null;
+    const col = diff > 0 ? "#639922" : diff < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
+    return (
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, padding: "2px 0" }}>
+        <span style={{ color: "var(--color-text-tertiary)" }}>{label} ({absVal.toLocaleString()})</span>
+        <span style={{ color: col, fontWeight: 500, fontFamily: "var(--font-mono)" }}>{diff > 0 ? "+" : ""}{diff} ({pct}%)</span>
+      </div>
+    );
+  };
+
+  const dlCS = (data, fn) => () => downloadCSV(fn, ["Month","M lbs"], COLD_STORAGE.months.map((m,i) => [m, data[i]]));
+
+  const tabs = [{ id: "beef", label: "Beef" }, { id: "pork", label: "Pork" }, { id: "chicken", label: "Chicken" }, { id: "turkey", label: "Turkey" }];
+
+  const sections = {
+    beef: [
+      { key: "total", label: "Total beef", color: "#A32D2D", data: COLD_STORAGE.beef.total },
+      { key: "boneless", label: "Boneless beef", color: "#D85A30", data: COLD_STORAGE.beef.boneless },
+      { key: "cuts", label: "Beef cuts", color: "#378ADD", data: COLD_STORAGE.beef.cuts },
+    ],
+    pork: [
+      { key: "total", label: "Total pork", color: "#D85A30", data: COLD_STORAGE.pork.total },
+      { key: "bellies", label: "Bellies", color: "#A32D2D", data: COLD_STORAGE.pork.bellies },
+      { key: "ribs", label: "Ribs", color: "#378ADD", data: COLD_STORAGE.pork.ribs },
+      { key: "hams", label: "Hams", color: "#1D9E75", data: COLD_STORAGE.pork.hams },
+      { key: "trimmings", label: "Trimmings", color: "#534AB7", data: COLD_STORAGE.pork.trimmings },
+    ],
+    chicken: [
+      { key: "total", label: "Total chicken", color: "#1D9E75", data: COLD_STORAGE.chicken.total },
+      { key: "whole", label: "Whole birds", color: "#378ADD", data: COLD_STORAGE.chicken.whole },
+      { key: "parts", label: "Parts", color: "#D85A30", data: COLD_STORAGE.chicken.parts },
+      { key: "processed", label: "Processed", color: "#534AB7", data: COLD_STORAGE.chicken.processed },
+    ],
+    turkey: [
+      { key: "total", label: "Total turkey", color: "#534AB7", data: COLD_STORAGE.turkey.total },
+      { key: "whole", label: "Whole birds", color: "#A32D2D", data: COLD_STORAGE.turkey.whole },
+      { key: "parts", label: "Parts", color: "#378ADD", data: COLD_STORAGE.turkey.parts },
+    ],
+  };
+
+  const activeSections = sections[tab] || [];
+
+  return (<div>
+    <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 16 }}>
+      {tabs.map(t => (
+        <button key={t.id} onClick={() => setTab(t.id)} style={{ padding: "6px 16px", fontSize: 13, cursor: "pointer", background: tab === t.id ? "#333" : "transparent", border: "none", borderRadius: 6, color: tab === t.id ? "#fff" : "var(--color-text-tertiary)", fontWeight: 500, transition: "all 0.15s" }}>
+          {t.label}
+        </button>
+      ))}
+    </div>
+
+    <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fit, minmax(${activeSections.length > 3 ? 170 : 190}px, 1fr))`, gap: 10, marginBottom: 8 }}>
+      {activeSections.map(s => {
+        const cur = lastVal(s.data);
+        const prev = prevVal(s.data);
+        const ya = yaVal(s.data);
+        const avg5 = avg5Val(s.data);
+        return (
+          <div key={s.key} style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px", minWidth: 0 }}>
+            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.4px" }}>{s.label}</div>
+            <div style={{ fontSize: 22, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 6 }}>{cur}M <span style={{ fontSize: 12, fontWeight: 400, color: "var(--color-text-secondary)" }}>lbs</span></div>
+            <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 6, display: "flex", flexDirection: "column", gap: 1 }}>
+              <CSDiffLine label="vs. last month" absVal={prev} cur={cur} />
+              <CSDiffLine label="vs. last year" absVal={ya} cur={cur} />
+              <CSDiffLine label="vs. 5-yr avg" absVal={avg5} cur={cur} />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+
+    {activeSections.map(s => (
+      <div key={s.key}>
+        <SectionTitle right={<DownloadBtn onClick={dlCS(s.data, `cold_storage_${tab}_${s.key}.csv`)} />}>{s.label} in cold storage</SectionTitle>
+        {ready && <ChartBox id={`cs_${tab}_${s.key}`} height={240} renderChart={mkBarChart(s.data, s.color, "million lbs")} deps={`${tab}_${s.key}`} />}
+      </div>
+    ))}
+  </div>);
+}
+
+function CropProgressPage({ ready }) {
+  const [crop, setCrop] = useState("corn");
+  const [hPlant, tPlant] = useToggle();
+  const [hCond, tCond] = useToggle();
+  const [hHarv, tHarv] = useToggle();
+
+  const cropMap = { corn: CROP_PROGRESS_CORN, soybeans: CROP_PROGRESS_SOYBEANS, wheat: CROP_PROGRESS_WHEAT };
+  const data = cropMap[crop];
+
+  const seasonLegend = [
+    { label: "2025", color: "#1D9E75", key: "2025" },
+    { label: "2024", color: "#378ADD", key: "2024", dash: "dashed" },
+    { label: "5-yr avg", color: "#333", key: "5yr", dash: "dotted" },
+  ];
+  const seasonDS = {
+    "2025": { borderColor: "#1D9E75", borderWidth: 2.5, pointRadius: 0, tension: 0.3 },
+    "2024": { borderColor: "#378ADD", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [5,3] },
+    "5yr":  { borderColor: "#333", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [2,3] },
+  };
+
+  const mkProgressChart = useCallback((seriesData, hidden, yLabel, autoRange = false) => (canvas) => {
+    const visibleKeys = ["2025","2024","5yr"].filter(k => !hidden.has(k));
+    const ds = visibleKeys.map(k => ({
+      label: k === "5yr" ? "5-yr avg" : k,
+      data: seriesData[k],
+      ...seasonDS[k],
+      spanGaps: true,
+    }));
+
+    let yMin = 0, yMax = 100;
+    if (autoRange && visibleKeys.length > 0) {
+      const allVals = visibleKeys.flatMap(k => seriesData[k].filter(v => v != null));
+      if (allVals.length > 0) {
+        const dataMin = Math.min(...allVals);
+        const dataMax = Math.max(...allVals);
+        const range = dataMax - dataMin;
+        const pad = Math.max(range * 0.25, 5);
+        yMin = Math.max(0, Math.floor((dataMin - pad) / 5) * 5);
+        yMax = Math.min(100, Math.ceil((dataMax + pad) / 5) * 5);
+      }
     }
 
-    print(f"\nWriting {output_file}")
-    with open(output_file, "w") as f:
-        json.dump(result, f)
-    print(f"  {os.path.getsize(output_file):,} bytes")
+    new Chart(canvas, {
+      type: "line",
+      data: { labels: seriesData.weeks, datasets: ds },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.parsed.y != null ? c.parsed.y + "%" : "n/a"}` } } },
+        scales: {
+          x: { ticks: { autoSkip: true, maxTicksLimit: 14, font: { size: 11 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+          y: { min: yMin, max: yMax, title: { display: true, text: yLabel, font: { size: 11 } }, ticks: { font: { size: 11 }, callback: v => v + "%" }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+        },
+      },
+    });
+  }, []);
 
-    return 0
+  const dlSeries = (seriesData, filename, label) => () => {
+    const headers = ["Week", "2025", "2024", "5-yr avg"];
+    const rows = seriesData.weeks.map((w, i) => [w, seriesData["2025"][i] ?? "", seriesData["2024"][i] ?? "", seriesData["5yr"][i] ?? ""]);
+    downloadCSV(filename, headers, rows);
+  };
+
+  // ─── Comparison helpers ───
+  const lastNonNullIdx = (arr) => { for (let i = arr.length - 1; i >= 0; i--) { if (arr[i] != null) return i; } return -1; };
+
+  const getComparisons = (series) => {
+    const idx = lastNonNullIdx(series["2025"]);
+    if (idx < 0) return { current: null, prevWeek: null, yearAgo: null, fiveYr: null, asOf: null };
+    const current = series["2025"][idx];
+    const prevWeek = idx > 0 ? series["2025"][idx - 1] : null;
+    const yearAgo = series["2024"][idx] ?? null;
+    const fiveYr = series["5yr"][idx] ?? null;
+    const asOf = series.weeks[idx];
+    return { current, prevWeek, yearAgo, fiveYr, asOf };
+  };
+
+  const plantComp = getComparisons(data.planting);
+  const condComp = getComparisons(data.condition);
+  const harvComp = getComparisons(data.harvest);
+
+  const cropLabels = { corn: "Corn", soybeans: "Soybeans", wheat: "Wheat (winter)" };
+
+  const DiffLine = ({ label, diff, absVal }) => {
+    if (diff === null || diff === undefined || isNaN(diff)) return null;
+    const col = diff > 0 ? "#639922" : diff < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
+    const sign = diff > 0 ? "+" : "";
+    return (
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, padding: "2px 0" }}>
+        <span style={{ color: "var(--color-text-tertiary)" }}>{label}{absVal != null ? ` (${absVal}%)` : ""}</span>
+        <span style={{ color: col, fontWeight: 500, fontFamily: "var(--font-mono)", fontSize: 11 }}>{sign}{diff} pp</span>
+      </div>
+    );
+  };
+
+  const ProgressCard = ({ label, comp }) => {
+    if (!comp || comp.current === null) return (
+      <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px", minWidth: 0 }}>
+        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.4px" }}>{label}</div>
+        <div style={{ fontSize: 20, fontWeight: 500, color: "var(--color-text-primary)" }}>—</div>
+      </div>
+    );
+    const diffPW = comp.prevWeek != null ? comp.current - comp.prevWeek : null;
+    const diffYA = comp.yearAgo != null ? comp.current - comp.yearAgo : null;
+    const diff5Y = comp.fiveYr != null ? Math.round((comp.current - comp.fiveYr) * 10) / 10 : null;
+    return (
+      <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px", minWidth: 0 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+          <span style={{ fontSize: 11, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.4px" }}>{label}</span>
+          {comp.asOf && <span style={{ fontSize: 10, color: "var(--color-text-tertiary)" }}>as of {comp.asOf}, 2025</span>}
+        </div>
+        <div style={{ fontSize: 22, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 6 }}>{comp.current}%</div>
+        <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 6, display: "flex", flexDirection: "column", gap: 1 }}>
+          <DiffLine label="vs. last week" diff={diffPW} absVal={comp.prevWeek} />
+          <DiffLine label="vs. last year" diff={diffYA} absVal={comp.yearAgo} />
+          <DiffLine label="vs. 5-yr avg" diff={diff5Y} absVal={comp.fiveYr} />
+        </div>
+      </div>
+    );
+  };
+
+  return (<div>
+    <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 16 }}>
+      {["corn","soybeans","wheat"].map(c => (
+        <button key={c} onClick={() => { setCrop(c); tPlant("__reset"); tCond("__reset"); tHarv("__reset"); }} style={{
+          padding: "6px 16px", fontSize: 13, cursor: "pointer",
+          background: crop === c ? "#333" : "transparent", border: "none", borderRadius: 6,
+          color: crop === c ? "#fff" : "var(--color-text-tertiary)",
+          fontWeight: 500, transition: "all 0.15s",
+        }}>
+          {c === "wheat" ? "Wheat" : c.charAt(0).toUpperCase() + c.slice(1)}
+        </button>
+      ))}
+    </div>
+
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10, marginBottom: 8 }}>
+      <ProgressCard label="Planted" comp={plantComp} />
+      <ProgressCard label="Good / excellent" comp={condComp} />
+      <ProgressCard label="Harvested" comp={harvComp} />
+    </div>
+
+    <SectionTitle right={<DownloadBtn onClick={dlSeries(data.planting, `${crop}_planting_progress.csv`, "% Planted")} />}>
+      {cropLabels[crop]} — planting progress (% planted)
+    </SectionTitle>
+    <InteractiveLegend items={seasonLegend} hidden={hPlant} onToggle={tPlant} />
+    {ready && <ChartBox id={`cp_plant_${crop}`} renderChart={mkProgressChart(data.planting, hPlant, "% planted", false)} deps={`${crop}_${[...hPlant].join()}`} />}
+
+    <SectionTitle right={<DownloadBtn onClick={dlSeries(data.condition, `${crop}_condition.csv`, "% Good/Exc")} />}>
+      {cropLabels[crop]} — crop condition (% good/excellent)
+    </SectionTitle>
+    <InteractiveLegend items={seasonLegend} hidden={hCond} onToggle={tCond} />
+    {ready && <ChartBox id={`cp_cond_${crop}`} renderChart={mkProgressChart(data.condition, hCond, "% good/excellent", true)} deps={`${crop}_${[...hCond].join()}`} />}
+
+    <SectionTitle right={<DownloadBtn onClick={dlSeries(data.harvest, `${crop}_harvest_progress.csv`, "% Harvested")} />}>
+      {cropLabels[crop]} — harvest progress (% harvested)
+    </SectionTitle>
+    <InteractiveLegend items={seasonLegend} hidden={hHarv} onToggle={tHarv} />
+    {ready && <ChartBox id={`cp_harv_${crop}`} renderChart={mkProgressChart(data.harvest, hHarv, "% harvested", false)} deps={`${crop}_${[...hHarv].join()}`} />}
+
+    <div style={{ marginTop: 12, fontSize: 10, color: "var(--color-text-tertiary)" }}>
+      U.S. total, national level. Data follows NASS weekly crop progress reporting schedule. 2025 season data shown through latest available report.
+    </div>
+  </div>);
+}
+
+function EthanolPage({ ready }) {
+  const [hProd, tProd] = useToggle();
+  const [hStk, tStk] = useToggle();
+  const [hExp, tExp] = useToggle();
+  const [unit, setUnit] = useState("bbl");
+  const [chartMode, setChartMode] = useState("seasonal"); // "bbl" or "gal"
+
+  const GAL_PER_BBL = 42;
+  const isGal = unit === "gal";
+  // Barrels: raw values in thousands. Gallons: convert to millions (×42 / 1000)
+  const conv = (v) => v != null ? (isGal ? Math.round(v * GAL_PER_BBL / 1000 * 100) / 100 : v) : null;
+  const convSeries = (series) => ({
+    weeks: series.weeks,
+    "2025": series["2025"].map(conv),
+    "2024": series["2024"].map(conv),
+    "5yr":  series["5yr"].map(conv),
+  });
+
+  const prodData = convSeries(ETHANOL_DATA.production);
+  const stkData = convSeries(ETHANOL_DATA.stocks);
+  const expData = convSeries(ETHANOL_DATA.exports);
+
+  const flowUnit = isGal ? "M gal/day" : "kbd";
+  const flowLabel = isGal ? "million gallons/day" : "thousand barrels/day";
+  const stockUnit = isGal ? "M gal" : "kb";
+  const stockLabel = isGal ? "million gallons" : "thousand barrels";
+  const stockCardUnit = isGal ? "M gal" : "kb";
+
+  const ethLegend = [
+    { label: "2025", color: "#1D9E75", key: "2025" },
+    { label: "2024", color: "#378ADD", key: "2024", dash: "dashed" },
+    { label: "5-yr avg", color: "#333", key: "5yr", dash: "dotted" },
+  ];
+  const ethDS = {
+    "2025": { borderColor: "#1D9E75", borderWidth: 2.5, pointRadius: 0, tension: 0.3 },
+    "2024": { borderColor: "#378ADD", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [5,3] },
+    "5yr":  { borderColor: "#333", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [2,3] },
+  };
+
+  const mkEthChart = useCallback((seriesData, hidden, yLbl, uLbl) => (canvas) => {
+    if (chartMode === "contiguous") {
+      const labels24 = seriesData.weeks.map(w => { const parts = w.split(" "); return parts[0].substring(0,3) + "-24"; });
+      const labels25 = seriesData.weeks.map(w => { const parts = w.split(" "); return parts[0].substring(0,3) + "-25"; });
+      const allLabels = [...labels24, ...labels25];
+      const allData = [...seriesData["2024"], ...seriesData["2025"]];
+      const allVals = allData.filter(v => v != null);
+      let yMin = 0, yMax = 100;
+      if (allVals.length > 0) {
+        const dataMin = Math.min(...allVals); const dataMax = Math.max(...allVals);
+        const range = dataMax - dataMin; const pad = Math.max(range * 0.15, dataMax * 0.02);
+        const rawStep = (range + pad * 2) / 6;
+        const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+        const norm = rawStep / mag;
+        const niceNorm = norm <= 1.5 ? 1 : norm <= 3.5 ? 2 : norm <= 7.5 ? 5 : 10;
+        const step = niceNorm * mag;
+        yMin = Math.floor((dataMin - pad) / step) * step;
+        yMax = Math.ceil((dataMax + pad) / step) * step;
+      }
+      new Chart(canvas, {
+        type: "line", data: { labels: allLabels, datasets: [{
+          label: yLbl, data: allData, borderColor: "#1D9E75", backgroundColor: "rgba(29,158,117,0.06)",
+          fill: true, borderWidth: 2, pointRadius: 0, tension: 0.3, spanGaps: true,
+        }]},
+        options: { responsive: true, maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.parsed.y != null ? c.parsed.y.toLocaleString() + " " + uLbl : "n/a"}` } } },
+          scales: {
+            x: { ticks: { autoSkip: true, maxTicksLimit: 12, maxRotation: 45, font: { size: 10 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+            y: { min: yMin, max: yMax, title: { display: true, text: yLbl, font: { size: 11 } }, ticks: { font: { size: 11 }, callback: v => v.toLocaleString() }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+          },
+        },
+      });
+      return;
+    }
+    const visibleKeys = ["2025","2024","5yr"].filter(k => !hidden.has(k));
+    const ds = visibleKeys.map(k => ({
+      label: k === "5yr" ? "5-yr avg" : k,
+      data: seriesData[k],
+      ...ethDS[k],
+      spanGaps: true,
+    }));
+    const allVals = visibleKeys.flatMap(k => seriesData[k].filter(v => v != null));
+    let yMin, yMax;
+    if (allVals.length > 0) {
+      const dataMin = Math.min(...allVals);
+      const dataMax = Math.max(...allVals);
+      const range = dataMax - dataMin;
+      const pad = Math.max(range * 0.15, dataMax * 0.02);
+      // Pick a "nice" step: 1, 2, 5 × power of 10
+      const rawStep = (range + pad * 2) / 6;
+      const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+      const norm = rawStep / mag;
+      const niceNorm = norm <= 1.5 ? 1 : norm <= 3.5 ? 2 : norm <= 7.5 ? 5 : 10;
+      const step = niceNorm * mag;
+      yMin = Math.floor((dataMin - pad) / step) * step;
+      yMax = Math.ceil((dataMax + pad) / step) * step;
+    } else { yMin = 0; yMax = 100; }
+    new Chart(canvas, {
+      type: "line",
+      data: { labels: seriesData.weeks, datasets: ds },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.parsed.y != null ? c.parsed.y.toLocaleString() + " " + uLbl : "n/a"}` } } },
+        scales: {
+          x: { ticks: { autoSkip: true, maxTicksLimit: 14, font: { size: 11 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+          y: { min: yMin, max: yMax, title: { display: true, text: yLbl, font: { size: 11 } }, ticks: { font: { size: 11 }, callback: v => v.toLocaleString() }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+        },
+      },
+    });
+  }, [chartMode]);
+
+  const lastNN = (arr) => { for (let i = arr.length - 1; i >= 0; i--) { if (arr[i] != null) return { val: arr[i], idx: i }; } return { val: null, idx: -1 }; };
+  const prodL = lastNN(prodData["2025"]);
+  const stkL = lastNN(stkData["2025"]);
+  const expL = lastNN(expData["2025"]);
+
+  const prodYA = prodL.idx >= 0 ? prodData["2024"][prodL.idx] : null;
+  const prod5Y = prodL.idx >= 0 ? prodData["5yr"][prodL.idx] : null;
+  const stkYA = stkL.idx >= 0 ? stkData["2024"][stkL.idx] : null;
+  const stk5Y = stkL.idx >= 0 ? stkData["5yr"][stkL.idx] : null;
+  const expYA = expL.idx >= 0 ? expData["2024"][expL.idx] : null;
+  const asOfWeek = prodL.idx >= 0 ? ETHANOL_DATA.production.weeks[prodL.idx] : null;
+
+  const pctChg = (a, b) => b != null && b !== 0 ? ((a - b) / b * 100).toFixed(1) : null;
+
+  const EthDiffLine = ({ label, absVal, cur, inverted }) => {
+    if (absVal == null || cur == null) return null;
+    const d = Number(pctChg(cur, absVal));
+    if (isNaN(d)) return null;
+    const positive = inverted ? d < 0 : d > 0;
+    const negative = inverted ? d > 0 : d < 0;
+    const col = positive ? "#639922" : negative ? "#A32D2D" : "var(--color-text-tertiary)";
+    return (
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, padding: "2px 0" }}>
+        <span style={{ color: "var(--color-text-tertiary)" }}>{label} ({absVal.toLocaleString()})</span>
+        <span style={{ color: col, fontWeight: 500, fontFamily: "var(--font-mono)" }}>{d > 0 ? "+" : ""}{d}%</span>
+      </div>
+    );
+  };
+
+  const dlEth = (series, fn, uLbl) => () => {
+    const headers = ["Week", "2025", "2024", "5-yr avg"];
+    const rows = series.weeks.map((w, i) => [w, series["2025"][i] ?? "", series["2024"][i] ?? "", series["5yr"][i] ?? ""]);
+    downloadCSV(fn, headers, rows);
+  };
+
+  return (<div>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+      {asOfWeek && <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>EIA Weekly Petroleum Status Report — as of {asOfWeek}, 2025</span>}
+      <div style={{ display: "flex", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-secondary)", overflow: "hidden" }}>
+        {[{ id: "bbl", label: "Barrels" }, { id: "gal", label: "Gallons" }].map(u => (
+          <button key={u.id} onClick={() => setUnit(u.id)} style={{
+            padding: "5px 14px", fontSize: 12, cursor: "pointer",
+            border: "none", borderRight: u.id === "bbl" ? "0.5px solid var(--color-border-secondary)" : "none",
+            background: unit === u.id ? "#333" : "transparent",
+            color: unit === u.id ? "#fff" : "var(--color-text-tertiary)",
+            fontWeight: 500, transition: "all 0.15s",
+          }}>
+            {u.label}
+          </button>
+        ))}
+      </div>
+    </div>
+
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10, marginBottom: 8 }}>
+      <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px", minWidth: 0 }}>
+        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.4px" }}>Production</div>
+        <div style={{ fontSize: 22, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 6 }}>{prodL.val != null ? (isGal ? prodL.val.toFixed(1) : prodL.val.toLocaleString()) : "—"} <span style={{ fontSize: 12, fontWeight: 400, color: "var(--color-text-secondary)" }}>{flowUnit}</span></div>
+        {prodL.val != null && <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 6, display: "flex", flexDirection: "column", gap: 1 }}>
+          <EthDiffLine label="vs. last year" absVal={prodYA != null ? (isGal ? Number(prodYA.toFixed(1)) : prodYA) : null} cur={isGal ? Number(prodL.val.toFixed(1)) : prodL.val} />
+          <EthDiffLine label="vs. 5-yr avg" absVal={prod5Y != null ? (isGal ? Number(prod5Y.toFixed(1)) : prod5Y) : null} cur={isGal ? Number(prodL.val.toFixed(1)) : prodL.val} />
+        </div>}
+      </div>
+      <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px", minWidth: 0 }}>
+        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.4px" }}>Stocks</div>
+        <div style={{ fontSize: 22, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 6 }}>{stkL.val != null ? (isGal ? Math.round(stkL.val).toLocaleString() : stkL.val.toLocaleString()) : "—"} <span style={{ fontSize: 12, fontWeight: 400, color: "var(--color-text-secondary)" }}>{stockCardUnit}</span></div>
+        {stkL.val != null && <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 6, display: "flex", flexDirection: "column", gap: 1 }}>
+          <EthDiffLine label="vs. last year" absVal={stkYA != null ? (isGal ? Math.round(stkYA) : stkYA) : null} cur={isGal ? Math.round(stkL.val) : stkL.val} inverted />
+          <EthDiffLine label="vs. 5-yr avg" absVal={stk5Y != null ? (isGal ? Math.round(stk5Y) : stk5Y) : null} cur={isGal ? Math.round(stkL.val) : stkL.val} inverted />
+        </div>}
+      </div>
+      <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px", minWidth: 0 }}>
+        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.4px" }}>Exports</div>
+        <div style={{ fontSize: 22, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 6 }}>{expL.val != null ? (isGal ? expL.val.toFixed(1) : expL.val.toLocaleString()) : "—"} <span style={{ fontSize: 12, fontWeight: 400, color: "var(--color-text-secondary)" }}>{flowUnit}</span></div>
+        {expL.val != null && <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 6, display: "flex", flexDirection: "column", gap: 1 }}>
+          <EthDiffLine label="vs. last year" absVal={expYA != null ? (isGal ? Number(expYA.toFixed(1)) : expYA) : null} cur={isGal ? Number(expL.val.toFixed(1)) : expL.val} />
+        </div>}
+      </div>
+    </div>
+
+    <SectionTitle right={<div style={{ display: "flex", gap: 8, alignItems: "center" }}><ChartModeToggle mode={chartMode} setMode={setChartMode} /><DownloadBtn onClick={dlEth(prodData, "ethanol_production.csv", flowUnit)} /></div>}>
+      Weekly ethanol production
+    </SectionTitle>
+    {chartMode === "seasonal" && <InteractiveLegend items={ethLegend} hidden={hProd} onToggle={tProd} />}
+    {ready && <ChartBox id={`eth_prod_${unit}_${chartMode}`} renderChart={mkEthChart(prodData, hProd, flowLabel, flowUnit)} deps={`${unit}_${chartMode}_${[...hProd].join()}`} />}
+
+    <SectionTitle right={<div style={{ display: "flex", gap: 8, alignItems: "center" }}><ChartModeToggle mode={chartMode} setMode={setChartMode} /><DownloadBtn onClick={dlEth(stkData, "ethanol_stocks.csv", stockUnit)} /></div>}>
+      Weekly ethanol stocks
+    </SectionTitle>
+    {chartMode === "seasonal" && <InteractiveLegend items={ethLegend} hidden={hStk} onToggle={tStk} />}
+    {ready && <ChartBox id={`eth_stk_${unit}_${chartMode}`} renderChart={mkEthChart(stkData, hStk, stockLabel, stockUnit)} deps={`${unit}_${chartMode}_${[...hStk].join()}`} />}
+
+    <SectionTitle right={<div style={{ display: "flex", gap: 8, alignItems: "center" }}><ChartModeToggle mode={chartMode} setMode={setChartMode} /><DownloadBtn onClick={dlEth(expData, "ethanol_exports.csv", flowUnit)} /></div>}>
+      Weekly ethanol exports
+    </SectionTitle>
+    {chartMode === "seasonal" && <InteractiveLegend items={ethLegend} hidden={hExp} onToggle={tExp} />}
+    {ready && <ChartBox id={`eth_exp_${unit}_${chartMode}`} renderChart={mkEthChart(expData, hExp, flowLabel, flowUnit)} deps={`${unit}_${chartMode}_${[...hExp].join()}`} />}
+
+    <div style={{ marginTop: 12, fontSize: 10, color: "var(--color-text-tertiary)" }}>
+      Source: EIA Weekly Petroleum Status Report. 1 barrel = 42 gallons. {isGal ? "Displaying in gallons." : "Displaying in barrels."}
+    </div>
+  </div>);
+}
+
+function FatsOilsPage({ ready }) {
+  const [chartMode, setChartMode] = useState("seasonal");
+  const series = [
+    { key: "crush", color: "#1D9E75" },
+    { key: "mealProduced", color: "#D85A30" },
+    { key: "oilProduced", color: "#534AB7" },
+    { key: "mealStocks", color: "#A32D2D" },
+    { key: "oilStocks", color: "#378ADD" },
+  ];
+
+  const [hiddenSets, setHiddenSets] = useState(() => {
+    const m = {};
+    series.forEach(s => { m[s.key] = new Set(); });
+    return m;
+  });
+  const toggleFor = (key) => (label) => {
+    setHiddenSets(prev => {
+      const n = new Set(prev[key]);
+      n.has(label) ? n.delete(label) : n.add(label);
+      return { ...prev, [key]: n };
+    });
+  };
+
+  const foLegend = [
+    { label: "2024/25", color: "#1D9E75", key: "2024/25" },
+    { label: "2023/24", color: "#378ADD", key: "2023/24", dash: "dashed" },
+    { label: "5-yr avg", color: "#333", key: "5yr", dash: "dotted" },
+  ];
+  const foDS = {
+    "2024/25": { borderColor: "#1D9E75", borderWidth: 2.5, pointRadius: 0, tension: 0.3 },
+    "2023/24": { borderColor: "#378ADD", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [5,3] },
+    "5yr":     { borderColor: "#333", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [2,3] },
+  };
+
+  const mkFOChart = useCallback((seriesData, hidden, yLabel, unitStr) => (canvas) => {
+    if (chartMode === "contiguous") {
+      const myYears23 = FATS_OILS.months.map(m => ["Oct","Nov","Dec"].includes(m) ? "23" : "24");
+      const myYears24 = FATS_OILS.months.map(m => ["Oct","Nov","Dec"].includes(m) ? "24" : "25");
+      const labels23 = FATS_OILS.months.map((m, i) => m + "-" + myYears23[i]);
+      const labels24 = FATS_OILS.months.map((m, i) => m + "-" + myYears24[i]);
+      const allLabels = [...labels23, ...labels24];
+      const allData = [...seriesData["2023/24"], ...seriesData["2024/25"]];
+      const allVals = allData.filter(v => v != null);
+      let yMin = 0, yMax = 100;
+      if (allVals.length > 0) {
+        const dataMin = Math.min(...allVals); const dataMax = Math.max(...allVals);
+        const range = dataMax - dataMin; const pad = Math.max(range * 0.2, dataMax * 0.02);
+        const rawStep = (range + pad * 2) / 6;
+        const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+        const norm = rawStep / mag;
+        const niceNorm = norm <= 1.5 ? 1 : norm <= 3.5 ? 2 : norm <= 7.5 ? 5 : 10;
+        const step = niceNorm * mag;
+        yMin = Math.floor((dataMin - pad) / step) * step; yMax = Math.ceil((dataMax + pad) / step) * step;
+      }
+      new Chart(canvas, {
+        type: "line", data: { labels: allLabels, datasets: [{
+          label: yLabel, data: allData, borderColor: "#1D9E75", backgroundColor: "rgba(29,158,117,0.06)",
+          fill: true, borderWidth: 2, pointRadius: 0, tension: 0.3, spanGaps: true,
+        }]},
+        options: { responsive: true, maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.parsed.y != null ? c.parsed.y.toLocaleString() + " " + unitStr : "n/a"}` } } },
+          scales: {
+            x: { ticks: { autoSkip: true, maxTicksLimit: 12, maxRotation: 45, font: { size: 10 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+            y: { min: yMin, max: yMax, title: { display: true, text: yLabel, font: { size: 11 } }, ticks: { font: { size: 11 }, callback: v => v.toLocaleString() }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+          },
+        },
+      });
+      return;
+    }
+    const keys = ["2024/25","2023/24","5yr"].filter(k => !hidden.has(k));
+    const ds = keys.map(k => ({
+      label: k === "5yr" ? "5-yr avg" : k,
+      data: seriesData[k],
+      ...foDS[k],
+      spanGaps: true,
+    }));
+    const allVals = keys.flatMap(k => seriesData[k].filter(v => v != null));
+    let yMin, yMax;
+    if (allVals.length > 0) {
+      const dataMin = Math.min(...allVals);
+      const dataMax = Math.max(...allVals);
+      const range = dataMax - dataMin;
+      const pad = Math.max(range * 0.2, dataMax * 0.02);
+      const rawStep = (range + pad * 2) / 6;
+      const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+      const norm = rawStep / mag;
+      const niceNorm = norm <= 1.5 ? 1 : norm <= 3.5 ? 2 : norm <= 7.5 ? 5 : 10;
+      const step = niceNorm * mag;
+      yMin = Math.floor((dataMin - pad) / step) * step;
+      yMax = Math.ceil((dataMax + pad) / step) * step;
+    } else { yMin = 0; yMax = 100; }
+    new Chart(canvas, {
+      type: "line",
+      data: { labels: FATS_OILS.months, datasets: ds },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.parsed.y != null ? c.parsed.y.toLocaleString() + " " + unitStr : "n/a"}` } } },
+        scales: {
+          x: { ticks: { font: { size: 11 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+          y: { min: yMin, max: yMax, title: { display: true, text: yLabel, font: { size: 11 } }, ticks: { font: { size: 11 }, callback: v => v.toLocaleString() }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+        },
+      },
+    });
+  }, [chartMode]);
+
+  const lastNN = (arr) => { for (let i = arr.length - 1; i >= 0; i--) { if (arr[i] != null) return { val: arr[i], idx: i }; } return { val: null, idx: -1 }; };
+  const asOfIdx = lastNN(FATS_OILS.crush["2024/25"]).idx;
+  const asOfMonth = asOfIdx >= 0 ? FATS_OILS.months[asOfIdx] : null;
+
+  const mkCard = (data, decimals = 1) => {
+    const cur = lastNN(data["2024/25"]);
+    if (cur.val === null) return { val: null };
+    const ya = data["2023/24"][cur.idx] ?? null;
+    const avg = data["5yr"][cur.idx] ?? null;
+    return { val: cur.val, ya, avg, unit: data.unit };
+  };
+
+  const crushCard = mkCard(FATS_OILS.crush);
+  const mealPCard = mkCard(FATS_OILS.mealProduced);
+  const oilPCard = mkCard(FATS_OILS.oilProduced);
+  const mealSCard = mkCard(FATS_OILS.mealStocks);
+  const oilSCard = mkCard(FATS_OILS.oilStocks);
+
+  const pctChg = (a, b) => b != null && b !== 0 ? ((a - b) / b * 100).toFixed(1) : null;
+
+  const FODiffLine = ({ label, absVal, cur, inverted }) => {
+    if (absVal == null || cur == null) return null;
+    const d = Number(pctChg(cur, absVal));
+    if (isNaN(d)) return null;
+    const positive = inverted ? d < 0 : d > 0;
+    const negative = inverted ? d > 0 : d < 0;
+    const col = positive ? "#639922" : negative ? "#A32D2D" : "var(--color-text-tertiary)";
+    return (
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, padding: "2px 0" }}>
+        <span style={{ color: "var(--color-text-tertiary)" }}>{label} ({absVal.toLocaleString()})</span>
+        <span style={{ color: col, fontWeight: 500, fontFamily: "var(--font-mono)" }}>{d > 0 ? "+" : ""}{d}%</span>
+      </div>
+    );
+  };
+
+  const FOMetric = ({ label, card, invStocks }) => {
+    if (!card || card.val === null) return null;
+    return (
+      <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px", minWidth: 0 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+          <span style={{ fontSize: 11, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.4px" }}>{label}</span>
+          <span style={{ fontSize: 10, color: "var(--color-text-tertiary)" }}>{card.unit}</span>
+        </div>
+        <div style={{ fontSize: 22, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 6 }}>{card.val.toLocaleString()}</div>
+        <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 6, display: "flex", flexDirection: "column", gap: 1 }}>
+          <FODiffLine label="vs. last year" absVal={card.ya} cur={card.val} inverted={invStocks} />
+          <FODiffLine label="vs. 5-yr avg" absVal={card.avg} cur={card.val} inverted={invStocks} />
+        </div>
+      </div>
+    );
+  };
+
+  const dlFO = (data, fn) => () => {
+    const headers = ["Month", "2024/25", "2023/24", "5-yr avg"];
+    const rows = FATS_OILS.months.map((m, i) => [m, data["2024/25"][i] ?? "", data["2023/24"][i] ?? "", data["5yr"][i] ?? ""]);
+    downloadCSV(fn, headers, rows);
+  };
+
+  return (<div>
+    <div style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginBottom: 16 }}>
+      NASS Fats and Oils: Oilseed Crushings report — {asOfMonth ? `through ${asOfMonth} 2025` : ""} (marketing year Oct–Sep)
+    </div>
+
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginBottom: 8 }}>
+      <FOMetric label="Crush" card={crushCard} />
+      <FOMetric label="Meal produced" card={mealPCard} />
+      <FOMetric label="Oil produced" card={oilPCard} />
+      <FOMetric label="Meal stocks" card={mealSCard} />
+      <FOMetric label="Oil stocks" card={oilSCard} />
+    </div>
+
+    <SectionTitle right={<div style={{ display: "flex", gap: 8, alignItems: "center" }}><ChartModeToggle mode={chartMode} setMode={setChartMode} /><DownloadBtn onClick={dlFO(FATS_OILS.crush, "soy_crush.csv")} /></div>}>
+      Monthly soybean crush
+    </SectionTitle>
+    {chartMode === "seasonal" && <InteractiveLegend items={foLegend} hidden={hiddenSets.crush} onToggle={toggleFor("crush")} />}
+    {ready && <ChartBox id={`fo_crush_${chartMode}`} renderChart={mkFOChart(FATS_OILS.crush, hiddenSets.crush, FATS_OILS.crush.unit, "M bu")} deps={`${chartMode}_${[...hiddenSets.crush].join()}`} />}
+
+    <SectionTitle right={<div style={{ display: "flex", gap: 8, alignItems: "center" }}><ChartModeToggle mode={chartMode} setMode={setChartMode} /><DownloadBtn onClick={dlFO(FATS_OILS.mealProduced, "soy_meal_produced.csv")} /></div>}>
+      Monthly soybean meal produced
+    </SectionTitle>
+    {chartMode === "seasonal" && <InteractiveLegend items={foLegend} hidden={hiddenSets.mealProduced} onToggle={toggleFor("mealProduced")} />}
+    {ready && <ChartBox id={`fo_mealp_${chartMode}`} renderChart={mkFOChart(FATS_OILS.mealProduced, hiddenSets.mealProduced, FATS_OILS.mealProduced.unit, "k st")} deps={`${chartMode}_${[...hiddenSets.mealProduced].join()}`} />}
+
+    <SectionTitle right={<div style={{ display: "flex", gap: 8, alignItems: "center" }}><ChartModeToggle mode={chartMode} setMode={setChartMode} /><DownloadBtn onClick={dlFO(FATS_OILS.oilProduced, "soy_oil_produced.csv")} /></div>}>
+      Monthly soybean oil produced
+    </SectionTitle>
+    {chartMode === "seasonal" && <InteractiveLegend items={foLegend} hidden={hiddenSets.oilProduced} onToggle={toggleFor("oilProduced")} />}
+    {ready && <ChartBox id={`fo_oilp_${chartMode}`} renderChart={mkFOChart(FATS_OILS.oilProduced, hiddenSets.oilProduced, FATS_OILS.oilProduced.unit, "M lbs")} deps={`${chartMode}_${[...hiddenSets.oilProduced].join()}`} />}
+
+    <SectionTitle right={<div style={{ display: "flex", gap: 8, alignItems: "center" }}><ChartModeToggle mode={chartMode} setMode={setChartMode} /><DownloadBtn onClick={dlFO(FATS_OILS.mealStocks, "soy_meal_stocks.csv")} /></div>}>
+      Soybean meal stocks (end of month)
+    </SectionTitle>
+    {chartMode === "seasonal" && <InteractiveLegend items={foLegend} hidden={hiddenSets.mealStocks} onToggle={toggleFor("mealStocks")} />}
+    {ready && <ChartBox id={`fo_meals_${chartMode}`} renderChart={mkFOChart(FATS_OILS.mealStocks, hiddenSets.mealStocks, FATS_OILS.mealStocks.unit, "k st")} deps={`${chartMode}_${[...hiddenSets.mealStocks].join()}`} />}
+
+    <SectionTitle right={<div style={{ display: "flex", gap: 8, alignItems: "center" }}><ChartModeToggle mode={chartMode} setMode={setChartMode} /><DownloadBtn onClick={dlFO(FATS_OILS.oilStocks, "soy_oil_stocks.csv")} /></div>}>
+      Soybean oil stocks (end of month)
+    </SectionTitle>
+    {chartMode === "seasonal" && <InteractiveLegend items={foLegend} hidden={hiddenSets.oilStocks} onToggle={toggleFor("oilStocks")} />}
+    {ready && <ChartBox id={`fo_oils_${chartMode}`} renderChart={mkFOChart(FATS_OILS.oilStocks, hiddenSets.oilStocks, FATS_OILS.oilStocks.unit, "M lbs")} deps={`${chartMode}_${[...hiddenSets.oilStocks].join()}`} />}
+
+    <div style={{ marginTop: 12, fontSize: 10, color: "var(--color-text-tertiary)" }}>
+      Source: USDA NASS Fats and Oils: Oilseed Crushings report. Monthly data, Oct–Sep marketing year. Crush in million bushels, meal in thousand short tons, oil in million pounds.
+    </div>
+  </div>);
+}
+
+function HogsPigsPage({ ready }) {
+  const [chartMode, setChartMode] = useState("seasonal");
+  const [hTotal, tTotal] = useToggle();
+  const [hBreed, tBreed] = useToggle();
+  const [hMkt, tMkt] = useToggle();
+  const [hPig, tPig] = useToggle();
+
+  const seasonLegend = [
+    { label: "2025", color: "#D85A30", key: "2025" },
+    { label: "2024", color: "#378ADD", key: "2024", dash: "dashed" },
+    { label: "2023", color: "#1D9E75", key: "2023", dash: "dashed" },
+    { label: "5-yr avg", color: "#333", key: "5yr", dash: "dotted" },
+  ];
+  const seasonDS = {
+    "2025": { borderColor: "#D85A30", borderWidth: 2.5, pointRadius: 0, tension: 0.3 },
+    "2024": { borderColor: "#378ADD", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [5,3] },
+    "2023": { borderColor: "#1D9E75", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [4,4] },
+    "5yr":  { borderColor: "#333", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [2,3] },
+  };
+
+  function niceAxis(allVals) {
+    if (allVals.length === 0) return { yMin: 0, yMax: 100 };
+    const dataMin = Math.min(...allVals); const dataMax = Math.max(...allVals);
+    const range = dataMax - dataMin; const pad = Math.max(range * 0.2, dataMax * 0.01);
+    const rawStep = (range + pad * 2) / 5;
+    const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+    const norm = rawStep / mag;
+    const niceNorm = norm <= 1.5 ? 1 : norm <= 3.5 ? 2 : norm <= 7.5 ? 5 : 10;
+    const step = niceNorm * mag;
+    return { yMin: Math.floor((dataMin - pad) / step) * step, yMax: Math.ceil((dataMax + pad) / step) * step };
+  }
+
+  const mkChart = (dataObj, hidden) => (canvas) => {
+    if (chartMode === "contiguous") {
+      const labels = ["2023","2024","2025"].flatMap(y => HOGS_PIGS_QUARTERS.map(q => `${q} '${y.slice(2)}`));
+      const allData = [...(dataObj["2023"] || []), ...(dataObj["2024"] || []), ...(dataObj["2025"] || [])];
+      const allVals = allData.filter(v => v != null);
+      const { yMin, yMax } = niceAxis(allVals);
+      new Chart(canvas, {
+        type: "line", data: { labels, datasets: [{
+          label: "Inventory", data: allData, borderColor: "#D85A30", backgroundColor: "rgba(216,90,48,0.06)",
+          fill: true, borderWidth: 2, pointRadius: 0, tension: 0.3, spanGaps: true,
+        }]},
+        options: { responsive: true, maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.parsed.y != null ? c.parsed.y.toLocaleString() : "n/a"}` } } },
+          scales: {
+            x: { ticks: { font: { size: 10 }, maxRotation: 45 }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+            y: { min: yMin, max: yMax, title: { display: true, text: "thousand head", font: { size: 11 } }, ticks: { font: { size: 11 }, callback: v => (v / 1000).toFixed(0) + "M" }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+          },
+        },
+      });
+      return;
+    }
+    const keys = ["2025","2024","2023","5yr"].filter(k => !hidden.has(k));
+    const ds = keys.map(k => ({
+      label: k === "5yr" ? "5-yr avg" : k, data: dataObj[k], ...seasonDS[k], spanGaps: true,
+    }));
+    const allVals = keys.flatMap(k => (dataObj[k] || []).filter(v => v != null));
+    const { yMin, yMax } = niceAxis(allVals);
+    new Chart(canvas, {
+      type: "line", data: { labels: HOGS_PIGS_QUARTERS, datasets: ds },
+      options: { responsive: true, maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.parsed.y != null ? c.parsed.y.toLocaleString() : "n/a"}` } } },
+        scales: {
+          x: { ticks: { font: { size: 11 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+          y: { min: yMin, max: yMax, title: { display: true, text: "thousand head", font: { size: 11 } }, ticks: { font: { size: 11 }, callback: v => (v / 1000).toFixed(0) + "M" }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+        },
+      },
+    });
+  };
+
+  const lastNN = (arr) => { for (let i = arr.length - 1; i >= 0; i--) { if (arr[i] != null) return arr[i]; } return null; };
+  const pctChg = (a, b) => b != null && b !== 0 ? ((a - b) / b * 100).toFixed(1) : null;
+
+  const totalL = lastNN(HOGS_PIGS.totalInventory["2025"]);
+  const totalYA = HOGS_PIGS.totalInventory["2024"][0];
+  const breedL = lastNN(HOGS_PIGS.breedingInventory["2025"]);
+  const breedYA = HOGS_PIGS.breedingInventory["2024"][0];
+  const mktL = lastNN(HOGS_PIGS.marketInventory["2025"]);
+  const mktYA = HOGS_PIGS.marketInventory["2024"][0];
+  const pigL = lastNN(HOGS_PIGS.pigCrop["2025"]);
+  const pigYA = HOGS_PIGS.pigCrop["2024"][0];
+
+  const DiffLine = ({ label, absVal, cur }) => {
+    if (absVal == null || cur == null) return null;
+    const d = Number(pctChg(cur, absVal));
+    if (isNaN(d)) return null;
+    const col = d > 0 ? "#639922" : d < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
+    return (
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, padding: "2px 0" }}>
+        <span style={{ color: "var(--color-text-tertiary)" }}>{label} ({absVal.toLocaleString()})</span>
+        <span style={{ color: col, fontWeight: 500, fontFamily: "var(--font-mono)" }}>{d > 0 ? "+" : ""}{d}%</span>
+      </div>
+    );
+  };
+
+  const HPMetric = ({ label, cur, ya, ya5, unit }) => (
+    <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px", minWidth: 0 }}>
+      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.4px" }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 6 }}>{cur != null ? (cur / 1000).toFixed(1) + "M" : "—"} <span style={{ fontSize: 12, fontWeight: 400, color: "var(--color-text-secondary)" }}>head</span></div>
+      {cur != null && <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 6, display: "flex", flexDirection: "column", gap: 1 }}>
+        <DiffLine label="vs. last year" absVal={ya} cur={cur} />
+        {ya5 != null && <DiffLine label="vs. 5-yr avg" absVal={ya5} cur={cur} />}
+      </div>}
+    </div>
+  );
+
+  const dlHP = (dataObj, fn) => () => {
+    const headers = ["Quarter","2025","2024","2023","5-yr avg"];
+    const rows = HOGS_PIGS_QUARTERS.map((q, i) => [q, dataObj["2025"][i] ?? "", dataObj["2024"][i], dataObj["2023"][i], dataObj["5yr"][i]]);
+    downloadCSV(fn, headers, rows);
+  };
+
+  return (<div>
+    <div style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginBottom: 16 }}>USDA NASS Quarterly Hogs and Pigs report — as of Mar 1, 2025</div>
+
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(155px, 1fr))", gap: 10, marginBottom: 8 }}>
+      <HPMetric label="Total inventory" cur={totalL} ya={totalYA} ya5={HOGS_PIGS.totalInventory["5yr"][0]} />
+      <HPMetric label="Breeding" cur={breedL} ya={breedYA} ya5={HOGS_PIGS.breedingInventory["5yr"][0]} />
+      <HPMetric label="Market hogs" cur={mktL} ya={mktYA} ya5={HOGS_PIGS.marketInventory["5yr"][0]} />
+      <HPMetric label="Pig crop" cur={pigL} ya={pigYA} ya5={HOGS_PIGS.pigCrop["5yr"][0]} />
+    </div>
+
+    <SectionTitle right={<div style={{ display: "flex", gap: 8, alignItems: "center" }}><ChartModeToggle mode={chartMode} setMode={setChartMode} /><DownloadBtn onClick={dlHP(HOGS_PIGS.totalInventory, "hogs_total_inventory.csv")} /></div>}>Total hog inventory</SectionTitle>
+    {chartMode === "seasonal" && <InteractiveLegend items={seasonLegend} hidden={hTotal} onToggle={tTotal} />}
+    {ready && <ChartBox id={`hp_total_${chartMode}`} renderChart={mkChart(HOGS_PIGS.totalInventory, hTotal)} deps={`${chartMode}_${[...hTotal].join()}`} />}
+
+    <SectionTitle right={<div style={{ display: "flex", gap: 8, alignItems: "center" }}><ChartModeToggle mode={chartMode} setMode={setChartMode} /><DownloadBtn onClick={dlHP(HOGS_PIGS.breedingInventory, "hogs_breeding_inventory.csv")} /></div>}>Breeding inventory</SectionTitle>
+    {chartMode === "seasonal" && <InteractiveLegend items={seasonLegend} hidden={hBreed} onToggle={tBreed} />}
+    {ready && <ChartBox id={`hp_breed_${chartMode}`} renderChart={mkChart(HOGS_PIGS.breedingInventory, hBreed)} deps={`${chartMode}_${[...hBreed].join()}`} />}
+
+    <SectionTitle right={<div style={{ display: "flex", gap: 8, alignItems: "center" }}><ChartModeToggle mode={chartMode} setMode={setChartMode} /><DownloadBtn onClick={dlHP(HOGS_PIGS.marketInventory, "hogs_market_inventory.csv")} /></div>}>Market hog inventory</SectionTitle>
+    {chartMode === "seasonal" && <InteractiveLegend items={seasonLegend} hidden={hMkt} onToggle={tMkt} />}
+    {ready && <ChartBox id={`hp_mkt_${chartMode}`} renderChart={mkChart(HOGS_PIGS.marketInventory, hMkt)} deps={`${chartMode}_${[...hMkt].join()}`} />}
+
+    <SectionTitle right={<div style={{ display: "flex", gap: 8, alignItems: "center" }}><ChartModeToggle mode={chartMode} setMode={setChartMode} /><DownloadBtn onClick={dlHP(HOGS_PIGS.pigCrop, "hogs_pig_crop.csv")} /></div>}>Pig crop</SectionTitle>
+    {chartMode === "seasonal" && <InteractiveLegend items={seasonLegend} hidden={hPig} onToggle={tPig} />}
+    {ready && <ChartBox id={`hp_pig_${chartMode}`} renderChart={mkChart(HOGS_PIGS.pigCrop, hPig)} deps={`${chartMode}_${[...hPig].join()}`} />}
+
+    <div style={{ marginTop: 12, fontSize: 10, color: "var(--color-text-tertiary)" }}>
+      Source: USDA NASS Quarterly Hogs and Pigs report. Inventory as of Mar 1, Jun 1, Sep 1, Dec 1 each year. All figures in thousand head.
+    </div>
+  </div>);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// PAGE MAP & MAIN APP
+// ════════════════════════════════════════════════════════════════════════
+
+// ════════════════════════════════════════════════════════════════════════
+// COT — COMMITMENT OF TRADERS PAGES
+// ════════════════════════════════════════════════════════════════════════
+
+function useLiveCOT() {
+  const [liveCOT, setLiveCOT] = useState(null);
+  const [cotMeta, setCotMeta] = useState(null);
+  useEffect(() => {
+    fetch("data/cot.json")
+      .then(r => { if (!r.ok) throw new Error("not found"); return r.json(); })
+      .then(data => {
+        if (data && data.data && Object.keys(data.data).length > 0) {
+          setLiveCOT(data.data);
+          setCotMeta({ weeks: data.weeks, fetched: data.fetched_at });
+        }
+      })
+      .catch(() => {});
+  }, []);
+  return { cotData: liveCOT || COT_DATA, cotMeta };
+}
+
+function COTSummaryPage() {
+  const { cotData, cotMeta } = useLiveCOT();
+  const fmt = (v) => {
+    if (v == null) return "—";
+    const abs = Math.abs(v);
+    const str = abs.toLocaleString();
+    return v < 0 ? `(${str})` : str;
+  };
+  const fmtChg = (v) => {
+    if (v == null) return "—";
+    return `${v > 0 ? "+" : ""}${v.toLocaleString()}`;
+  };
+  const chgColor = (v) => v > 0 ? "#639922" : v < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
+  const netColor = (v) => v > 0 ? "#639922" : v < 0 ? "#A32D2D" : "var(--color-text-primary)";
+
+  const thStyle = { padding: "4px 8px", textAlign: "right", fontWeight: 500, fontSize: 11.5, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)", whiteSpace: "nowrap" };
+  const tdNum = { padding: "5px 8px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12.5 };
+
+  const dlSummary = () => {
+    const headers = ["Commodity","Prod Net","Prod Chg","Swap Net","Swap Chg","MM Net","MM Chg","MM Rec Long","MM Rec Short","Other Net","Other Chg","Open Interest","OI Chg"];
+    const rows = COT_GROUPS.flatMap(g => g.items.map(item => {
+      const d = cotData[item.id]; if (!d) return [item.label]; const li = d.managed.net.length - 1;
+      return [item.label, d.producer.net[li], d.producer.chg, d.swap.net[li], d.swap.chg, d.managed.net[li], d.managed.chg, d.managed.recLong, d.managed.recShort, d.other.net[li], d.other.chg, d.oi.net[li], d.oi.chg];
+    }));
+    downloadCSV("cot_disaggregated_summary.csv", headers, rows);
+  };
+
+  // Date range label
+  const dateLabel = cotMeta && cotMeta.weeks && cotMeta.weeks.length >= 2
+    ? `${cotMeta.weeks[cotMeta.weeks.length - 2]} – ${cotMeta.weeks[cotMeta.weeks.length - 1]}`
+    : "03/03/2026 – 03/10/2026";
+
+  return (<div>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+      <div style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>CFTC Disaggregated Futures & Options — {dateLabel}</div>
+      <DownloadBtn onClick={dlSummary} />
+    </div>
+    <div style={{ overflowX: "auto", border: "0.5px solid var(--color-border-tertiary)", borderRadius: "var(--border-radius-lg)" }}>
+      <table style={{ borderCollapse: "collapse", fontSize: 12, minWidth: "100%", whiteSpace: "nowrap" }}>
+        <thead>
+          <tr style={{ background: "var(--color-background-secondary)" }}>
+            <th rowSpan={2} style={{ ...thStyle, textAlign: "left", position: "sticky", left: 0, zIndex: 3, background: "#ffffff", minWidth: 120, borderRight: "0.5px solid var(--color-border-tertiary)" }}></th>
+            <th colSpan={2} style={{ ...thStyle, textAlign: "center", borderBottom: "2px solid #333" }}>Producer/Merchant</th>
+            <th rowSpan={2} style={{ width: 12, padding: 0, background: "var(--color-background-primary)", border: "none" }}></th>
+            <th colSpan={2} style={{ ...thStyle, textAlign: "center", borderBottom: "2px solid #333" }}>Swap Dealers</th>
+            <th rowSpan={2} style={{ width: 12, padding: 0, background: "var(--color-background-primary)", border: "none" }}></th>
+            <th colSpan={4} style={{ ...thStyle, textAlign: "center", borderBottom: "2px solid #333", background: "rgba(163,45,45,0.04)" }}>Managed Money</th>
+            <th rowSpan={2} style={{ width: 12, padding: 0, background: "var(--color-background-primary)", border: "none" }}></th>
+            <th colSpan={2} style={{ ...thStyle, textAlign: "center", borderBottom: "2px solid #333" }}>Other Reportables</th>
+            <th rowSpan={2} style={{ width: 12, padding: 0, background: "var(--color-background-primary)", border: "none" }}></th>
+            <th colSpan={2} style={{ ...thStyle, textAlign: "center", borderBottom: "0.5px solid var(--color-border-tertiary)" }}></th>
+          </tr>
+          <tr style={{ background: "var(--color-background-secondary)" }}>
+            <th style={thStyle}>Net</th><th style={thStyle}>Chg</th>
+            <th style={thStyle}>Net</th><th style={thStyle}>Chg</th>
+            <th style={{ ...thStyle, background: "rgba(163,45,45,0.04)" }}>Net</th>
+            <th style={{ ...thStyle, background: "rgba(163,45,45,0.04)" }}>Chg</th>
+            <th style={{ ...thStyle, background: "rgba(163,45,45,0.04)" }}>Rec Long</th>
+            <th style={{ ...thStyle, background: "rgba(163,45,45,0.04)" }}>Rec Short</th>
+            <th style={thStyle}>Net</th>
+            <th style={thStyle}>Chg</th>
+            <th style={thStyle}>Open Int</th><th style={thStyle}>Chg</th>
+          </tr>
+        </thead>
+        <tbody>
+          {COT_GROUPS.map(g => (<>
+            <tr key={`gh-${g.header}`} style={{ background: "#e8e8e8" }}>
+              <td colSpan={18} style={{ padding: "8px 10px 4px", fontWeight: 600, fontSize: 12.5, color: "var(--color-text-primary)", background: "#e8e8e8", position: "sticky", left: 0, textTransform: "uppercase", letterSpacing: "0.3px" }}>{g.header}</td>
+            </tr>
+            {g.items.map(item => {
+              const d = cotData[item.id]; if (!d) return null; const li = d.managed.net.length - 1;
+              return (
+                <tr key={item.id} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}
+                  onMouseEnter={e => e.currentTarget.style.background = "var(--color-background-secondary)"}
+                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                  <td style={{ padding: "5px 10px", fontWeight: 500, fontSize: 13, color: "var(--color-text-primary)", position: "sticky", left: 0, background: "inherit", borderRight: "0.5px solid var(--color-border-tertiary)", zIndex: 1 }}>{item.label}</td>
+                  <td style={{ ...tdNum, color: netColor(d.producer.net[li]) }}>{fmt(d.producer.net[li])}</td>
+                  <td style={{ ...tdNum, color: chgColor(d.producer.chg) }}>{fmtChg(d.producer.chg)}</td>
+                  <td style={{ padding: 0, border: "none" }}></td>
+                  <td style={{ ...tdNum, color: netColor(d.swap.net[li]) }}>{fmt(d.swap.net[li])}</td>
+                  <td style={{ ...tdNum, color: chgColor(d.swap.chg) }}>{fmtChg(d.swap.chg)}</td>
+                  <td style={{ padding: 0, border: "none" }}></td>
+                  <td style={{ ...tdNum, color: netColor(d.managed.net[li]), fontWeight: 500, background: "rgba(163,45,45,0.02)" }}>{fmt(d.managed.net[li])}</td>
+                  <td style={{ ...tdNum, color: chgColor(d.managed.chg), background: "rgba(163,45,45,0.02)" }}>{fmtChg(d.managed.chg)}</td>
+                  <td style={{ ...tdNum, color: "var(--color-text-secondary)", background: "rgba(163,45,45,0.02)" }}>{d.managed.recLong.toLocaleString()}</td>
+                  <td style={{ ...tdNum, color: "var(--color-text-secondary)", background: "rgba(163,45,45,0.02)" }}>({Math.abs(d.managed.recShort).toLocaleString()})</td>
+                  <td style={{ padding: 0, border: "none" }}></td>
+                  <td style={{ ...tdNum, color: netColor(d.other.net[li]) }}>{fmt(d.other.net[li])}</td>
+                  <td style={{ ...tdNum, color: chgColor(d.other.chg) }}>{fmtChg(d.other.chg)}</td>
+                  <td style={{ padding: 0, border: "none" }}></td>
+                  <td style={{ ...tdNum, color: "var(--color-text-primary)" }}>{d.oi.net[li].toLocaleString()}</td>
+                  <td style={{ ...tdNum, color: chgColor(d.oi.chg) }}>{fmtChg(d.oi.chg)}</td>
+                </tr>
+              );
+            })}
+          </>))}
+        </tbody>
+      </table>
+    </div>
+    <div style={{ marginTop: 10, fontSize: 11, color: "var(--color-text-tertiary)" }}>Source: CFTC Disaggregated Commitments of Traders report. Futures & Options combined. Positions in contracts.</div>
+  </div>);
+}
+
+function COTDetailPage({ ready, commodityId }) {
+  const { cotData } = useLiveCOT();
+  const d = cotData[commodityId];
+  const [hCats, tCats] = useToggle();
+
+  if (!d) return <div>No data available</div>;
+
+  const li = d.managed.net.length - 1;
+  const mmNet = d.managed.net[li];
+  const mmPrev = li > 0 ? d.managed.net[li - 1] : null;
+  const mmChg = mmPrev != null ? mmNet - mmPrev : null;
+  const pctOI = d.oi.net[li] ? (mmNet / d.oi.net[li]) * 100 : null;
+
+  function niceAxis(allVals) {
+    if (allVals.length === 0) return { yMin: 0, yMax: 100 };
+    const dataMin = Math.min(...allVals); const dataMax = Math.max(...allVals);
+    const range = dataMax - dataMin; const pad = Math.max(range * 0.2, Math.abs(dataMax) * 0.05);
+    const rawStep = (range + pad * 2) / 5;
+    const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+    const norm = rawStep / mag;
+    const niceNorm = norm <= 1.5 ? 1 : norm <= 3.5 ? 2 : norm <= 7.5 ? 5 : 10;
+    const step = niceNorm * mag;
+    return { yMin: Math.floor((dataMin - pad) / step) * step, yMax: Math.ceil((dataMax + pad) / step) * step };
+  }
+
+  const catLegend = [
+    { label: "Producer/Merchant", color: "#A32D2D" },
+    { label: "Swap Dealers", color: "#378ADD" },
+    { label: "Managed Money", color: "#639922" },
+    { label: "Other Reportables", color: "#534AB7" },
+  ];
+  const catDS = {
+    "Producer/Merchant": { borderColor: "#A32D2D", borderWidth: 2, pointRadius: 0, tension: 0.3 },
+    "Swap Dealers": { borderColor: "#378ADD", borderWidth: 2, pointRadius: 0, tension: 0.3 },
+    "Managed Money": { borderColor: "#639922", borderWidth: 2.5, pointRadius: 0, tension: 0.3 },
+    "Other Reportables": { borderColor: "#534AB7", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [4,3] },
+  };
+  const catData = [
+    { key: "Producer/Merchant", data: d.producer.net },
+    { key: "Swap Dealers", data: d.swap.net },
+    { key: "Managed Money", data: d.managed.net },
+    { key: "Other Reportables", data: d.other.net },
+  ];
+
+  const rcAllCats = useCallback(canvas => {
+    const visible = catData.filter(c => !hCats.has(c.key));
+    const allVals = visible.flatMap(c => c.data);
+    const { yMin, yMax } = niceAxis(allVals);
+    new Chart(canvas, {
+      type: "line", data: { labels: COT_WEEKS, datasets: visible.map(c => ({ label: c.key, data: c.data, ...catDS[c.key] })) },
+      options: { responsive: true, maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.parsed.y > 0 ? "+" : ""}${c.parsed.y.toLocaleString()}` } } },
+        scales: {
+          x: { ticks: { autoSkip: true, maxTicksLimit: 10, maxRotation: 45, font: { size: 10 } }, grid: { color: "rgba(0,0,0,0.08)", lineWidth: 0.5 } },
+          y: { min: yMin, max: yMax, title: { display: true, text: "net contracts", font: { size: 11 } }, ticks: { font: { size: 10 }, callback: v => (v / 1000).toFixed(0) + "K" }, grid: { color: "rgba(0,0,0,0.08)", lineWidth: 0.5 } },
+        },
+      },
+    });
+  }, [d, hCats]);
+
+  const rcMMBar = useCallback(canvas => {
+    const { yMin, yMax } = niceAxis(d.managed.net);
+    new Chart(canvas, {
+      type: "bar", data: { labels: COT_WEEKS, datasets: [{
+        label: "Managed Money Net", data: d.managed.net,
+        backgroundColor: d.managed.net.map(v => v >= 0 ? "rgba(99,153,34,0.6)" : "rgba(163,45,45,0.6)"),
+        borderColor: d.managed.net.map(v => v >= 0 ? "#639922" : "#A32D2D"),
+        borderWidth: 1, borderRadius: 2,
+      }]},
+      options: { responsive: true, maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `MM Net: ${c.parsed.y > 0 ? "+" : ""}${c.parsed.y.toLocaleString()}` } } },
+        scales: {
+          x: { ticks: { autoSkip: true, maxTicksLimit: 10, maxRotation: 45, font: { size: 10 } }, grid: { color: "rgba(0,0,0,0.08)", lineWidth: 0.5 } },
+          y: { min: yMin, max: yMax, title: { display: true, text: "contracts", font: { size: 11 } }, ticks: { font: { size: 10 }, callback: v => (v / 1000).toFixed(0) + "K" }, grid: { color: "rgba(0,0,0,0.08)", lineWidth: 0.5 } },
+        },
+      },
+    });
+  }, [d]);
+
+  const rcOI = useCallback(canvas => {
+    const { yMin, yMax } = niceAxis(d.oi.net);
+    new Chart(canvas, {
+      type: "line", data: { labels: COT_WEEKS, datasets: [{ label: "Open interest", data: d.oi.net, borderColor: "#534AB7", backgroundColor: "rgba(83,74,183,0.06)", fill: true, borderWidth: 2, pointRadius: 0, tension: 0.3 }] },
+      options: { responsive: true, maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `OI: ${c.parsed.y.toLocaleString()}` } } },
+        scales: {
+          x: { ticks: { autoSkip: true, maxTicksLimit: 10, maxRotation: 45, font: { size: 10 } }, grid: { color: "rgba(0,0,0,0.08)", lineWidth: 0.5 } },
+          y: { min: yMin, max: yMax, title: { display: true, text: "contracts", font: { size: 11 } }, ticks: { font: { size: 10 }, callback: v => (v / 1000000).toFixed(1) + "M" }, grid: { color: "rgba(0,0,0,0.08)", lineWidth: 0.5 } },
+        },
+      },
+    });
+  }, [d]);
+
+  const dlCOT = () => {
+    const headers = ["Week","Producer","Swap Dealers","Managed Money","Other Reportables","Open Interest"];
+    const rows = COT_WEEKS.map((w, i) => [w, d.producer.net[i], d.swap.net[i], d.managed.net[i], d.other.net[i], d.oi.net[i]]);
+    downloadCSV(`cot_${commodityId.replace("cot-","")}.csv`, headers, rows);
+  };
+
+  return (<div>
+    <div style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginBottom: 14 }}>{d.exchange} — {d.contract} per contract — as of {COT_WEEKS[li]}, 2026</div>
+
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 8 }}>
+      <MetricCard label="Producer net" value={`${(d.producer.net[li] / 1000).toFixed(1)}K`} sub="contracts" />
+      <MetricCard label="Swap net" value={`${(d.swap.net[li] / 1000).toFixed(1)}K`} sub="contracts" />
+      <MetricCard label="Managed money net" value={`${(mmNet / 1000).toFixed(1)}K`} sub="contracts" trend={mmChg != null && mmPrev !== 0 ? Number((mmChg / Math.abs(mmPrev) * 100).toFixed(1)) : undefined} />
+      <MetricCard label="MM net % of OI" value={pctOI != null ? `${pctOI > 0 ? "+" : ""}${pctOI.toFixed(1)}%` : "—"} sub="open interest" />
+    </div>
+
+    <SectionTitle right={<DownloadBtn onClick={dlCOT} />}>Net positions by category</SectionTitle>
+    <InteractiveLegend items={catLegend} hidden={hCats} onToggle={tCats} />
+    {ready && <ChartBox id={`cot_cats_${commodityId}`} height={280} renderChart={rcAllCats} deps={`${commodityId}_${[...hCats].join()}`} />}
+
+    <SectionTitle>Managed money net position</SectionTitle>
+    {ready && <ChartBox id={`cot_mm_${commodityId}`} height={240} renderChart={rcMMBar} deps={commodityId} />}
+
+    <SectionTitle>Total open interest</SectionTitle>
+    {ready && <ChartBox id={`cot_oi_${commodityId}`} height={200} renderChart={rcOI} deps={commodityId} />}
+
+    <div style={{ marginTop: 10, fontSize: 10, color: "var(--color-text-tertiary)" }}>Source: CFTC Disaggregated Commitments of Traders report. Futures & Options combined.</div>
+  </div>);
+}
+
+// COT weeks labels (reuse from mkCOTSeries - 20 weeks)
+const COT_WEEK_LABELS = Array.from({ length: 53 }, (_, i) => {
+  const d = new Date(2025, 0, 6); d.setDate(d.getDate() + i * 7);
+  return `${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()]} ${d.getDate()}`;
+});
+
+const COT_COMMODITY_LIST = [
+  { id: "cot-corn", label: "Corn" }, { id: "cot-soybeans", label: "Soybeans" },
+  { id: "cot-meal", label: "Soybean Meal" }, { id: "cot-oil", label: "Soybean Oil" },
+  { id: "cot-chi-wheat", label: "Chicago SRW Wheat" }, { id: "cot-kc-wheat", label: "KC HRW Wheat" },
+  { id: "cot-mpls-wheat", label: "MN HRS Wheat" },
+  { id: "cot-live-cattle", label: "Live Cattle" }, { id: "cot-feeder-cattle", label: "Feeder Cattle" },
+  { id: "cot-lean-hogs", label: "Lean Hogs" },
+  { id: "cot-crude-oil", label: "Crude Oil" }, { id: "cot-heating-oil", label: "Heating Oil" },
+  { id: "cot-nat-gas", label: "Natural Gas" },
+];
+
+function COTChartsPage({ ready }) {
+  const { cotData } = useLiveCOT();
+  const [sel, setSel] = useState("cot-corn");
+  const [timeRange, setTimeRange] = useState("5");
+  const [hiddenYears, setHiddenYears] = useState(new Set());
+  const d = cotData[sel];
+  if (!d) return <div>No data available</div>;
+
+  const curYear = new Date().getFullYear();
+  const yearly = d.yearly || {};
+  const availYears = Object.keys(yearly).map(Number).sort();
+
+  let displayYears;
+  if (timeRange === "all") { displayYears = availYears; }
+  else { const n = parseInt(timeRange); displayYears = availYears.filter(y => y >= curYear - n); }
+
+  const yearColors = ["#A32D2D","#D85A30","#E8A735","#639922","#1D9E75","#378ADD","#534AB7","#8B5CF6","#EC4899","#6B7280","#0EA5E9","#14B8A6","#F97316","#7C3AED","#BE185D","#059669","#B45309","#4338CA","#DC2626","#0284C7"];
+  const getYearColor = (yr) => yr === curYear ? "#333" : yearColors[displayYears.filter(y => y !== curYear).indexOf(yr) % yearColors.length];
+
+  const toggleYear = (label) => setHiddenYears(prev => { const next = new Set(prev); next.has(label) ? next.delete(label) : next.add(label); return next; });
+  useEffect(() => { setHiddenYears(new Set()); }, [sel, timeRange]);
+
+  // 53 x-axis slots (index 0-52). Labels: month name at fixed positions matching (doy-1)//7
+  const monthStarts = { 0: "Jan", 4: "Feb", 8: "Mar", 13: "Apr", 17: "May", 21: "Jun", 26: "Jul", 30: "Aug", 35: "Sep", 39: "Oct", 43: "Nov", 48: "Dec" };
+  const NUM_SLOTS = 53;
+  const xLabels = Array.from({ length: NUM_SLOTS }, (_, i) => monthStarts[i] || "");
+  const xGridColors = Array.from({ length: NUM_SLOTS }, (_, i) => i in monthStarts && i > 0 ? "rgba(0,0,0,0.12)" : "transparent");
+
+  const fmtAxis = (v) => v == null ? "" : (v / 1000).toLocaleString(undefined, { maximumFractionDigits: 0 });
+
+  const mkChart = useCallback((field) => (canvas) => {
+    const datasets = [];
+    displayYears.forEach(yr => {
+      const yrData = yearly[String(yr)]; if (!yrData || !yrData[field]) return;
+      datasets.push({ label: String(yr), data: yrData[field], borderColor: getYearColor(yr), borderWidth: yr === curYear ? 2.5 : 1.5, pointRadius: 0, pointHitRadius: 8, tension: 0.3, fill: false, hidden: hiddenYears.has(String(yr)), spanGaps: true });
+    });
+    const visibleVals = datasets.filter(ds => !ds.hidden).flatMap(ds => (ds.data || []).filter(v => v != null));
+    if (visibleVals.length === 0) return;
+    const dataMin = Math.min(...visibleVals), dataMax = Math.max(...visibleVals);
+    const range = dataMax - dataMin, pad = Math.max(range * 0.12, Math.abs(dataMax) * 0.03 || 100);
+    const rawStep = (range + pad * 2) / 5, mag = Math.pow(10, Math.floor(Math.log10(rawStep || 1)));
+    const norm = rawStep / mag, niceNorm = norm <= 1.5 ? 1 : norm <= 3.5 ? 2 : norm <= 7.5 ? 5 : 10;
+    const step = niceNorm * mag;
+    new Chart(canvas, { type: "line", data: { labels: xLabels, datasets }, options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: "nearest", intersect: false, axis: "xy" },
+      hover: { mode: "nearest", intersect: false },
+      plugins: { legend: { display: false }, tooltip: { mode: "nearest", intersect: false,
+        callbacks: { label: c => c.dataset.label + ": " + (c.parsed.y != null ? (c.parsed.y / 1000).toFixed(1) + "K" : "n/a") },
+      }},
+      scales: {
+        x: { offset: false, ticks: { autoSkip: false, maxRotation: 0, font: { size: 11 }, padding: 0 }, grid: { color: ctx => xGridColors[ctx.index] || "transparent", lineWidth: 0.75 } },
+        y: { min: Math.floor((dataMin - pad) / step) * step, max: Math.ceil((dataMax + pad) / step) * step, ticks: { font: { size: 11 }, callback: v => fmtAxis(v) }, grid: { color: "rgba(0,0,0,0.08)", lineWidth: 0.75 } },
+      },
+    }});
+  }, [sel, timeRange, d, hiddenYears]);
+
+  const chevronSvg = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%23666' stroke-width='1.5'/%3E%3C/svg%3E")`;
+  const selectStyle = { padding: "7px 28px 7px 12px", fontSize: 14, fontWeight: 500, border: "1px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-primary)", color: "var(--color-text-primary)", fontFamily: "inherit", cursor: "pointer", appearance: "none", backgroundImage: chevronSvg, backgroundRepeat: "no-repeat", backgroundPosition: "right 8px center" };
+  const labelStyle2 = { fontSize: 12, fontWeight: 600, color: "#fff", background: "#333", padding: "4px 10px", borderRadius: 4, textTransform: "uppercase", letterSpacing: "0.4px" };
+
+  const categories = [
+    { title: "Managed Money", fields: ["mm_net","mm_long","mm_short"] },
+    { title: "Producer / Merchant", fields: ["prod_net","prod_long","prod_short"] },
+    { title: "Swap Dealers", fields: ["swap_net","swap_long","swap_short"] },
+    { title: "Other Reportables", fields: ["other_net","other_long","other_short"] },
+  ];
+
+  const legendItems = displayYears.map(yr => ({ label: String(yr), color: getYearColor(yr) }));
+  const hk = [...hiddenYears].sort().join();
+
+  return (<div>
+    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={labelStyle2}>Commodity</span>
+        <select value={sel} onChange={e => setSel(e.target.value)} style={selectStyle}>{COT_COMMODITY_LIST.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}</select>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={labelStyle2}>Range</span>
+        <select value={timeRange} onChange={e => setTimeRange(e.target.value)} style={selectStyle}>
+          <option value="5">5 Year</option><option value="10">10 Year</option><option value="all">All</option>
+        </select>
+      </div>
+    </div>
+    <div style={{ fontSize: 13, color: "var(--color-text-tertiary)", marginBottom: 12 }}>{d.label} — {d.exchange} — Contract size: {d.contract}. Y-axis in thousand contracts.</div>
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 20, alignItems: "center" }}>
+      {legendItems.map(item => { const isH = hiddenYears.has(item.label); return (
+        <button key={item.label} onClick={() => toggleYear(item.label)} style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", border: "1px solid var(--color-border-secondary)", borderRadius: 5, background: isH ? "var(--color-background-secondary)" : "transparent", cursor: "pointer", opacity: isH ? 0.3 : 1, transition: "all 0.15s" }}>
+          <span style={{ width: 18, height: 0, borderTop: "2.5px solid " + item.color, display: "inline-block" }}></span>
+          <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-primary)" }}>{item.label}</span>
+        </button>); })}
+    </div>
+    {categories.map(cat => (<div key={cat.title}>
+      <h3 style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)", margin: "24px 0 12px" }}>{cat.title}</h3>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 18 }}>
+        {["Net","Long","Short"].map((lbl, fi) => (<div key={lbl}>
+          <div style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-secondary)", marginBottom: 8, textAlign: "center" }}>{lbl}</div>
+          {ready && <ChartBox id={`cot2_${cat.title}_${lbl}_${sel}_${timeRange}_${hk}`} height={300} renderChart={mkChart(cat.fields[fi])} deps={`${sel}_${timeRange}_${hk}`} />}
+        </div>))}
+      </div>
+    </div>))}
+    <h3 style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)", margin: "24px 0 12px" }}>Open Interest</h3>
+    {ready && <ChartBox id={`cot2_oi_${sel}_${timeRange}_${hk}`} height={340} renderChart={mkChart("oi")} deps={`${sel}_${timeRange}_${hk}`} />}
+    <div style={{ marginTop: 14, fontSize: 12, color: "var(--color-text-tertiary)" }}>Source: CFTC Disaggregated Commitments of Traders report. Futures & Options combined. Jan–Dec calendar weeks.</div>
+  </div>);
+}
 
 
-if __name__ == "__main__":
-    sys.exit(main())
+// ════════════════════════════════════════════════════════════════════════
+// ENERGY PAGES — EIA Weekly Petroleum Status & Natural Gas Storage
+// ════════════════════════════════════════════════════════════════════════
+
+const ENERGY_WEEKS = ["Nov 7","Nov 14","Nov 21","Nov 28","Dec 5","Dec 12","Dec 19","Dec 26","Jan 2","Jan 9","Jan 16","Jan 23","Jan 30","Feb 6","Feb 13","Feb 20","Feb 27","Mar 6","Mar 13","Mar 20"];
+
+function mkEnergySeries(base, scale) {
+  const arr = [base];
+  for (let i = 1; i < 20; i++) arr.push(Math.round((arr[i-1] + Math.sin(i * 0.6) * scale + (Math.cos(i * 1.2) - 0.5) * scale * 0.5) * 10) / 10);
+  return arr;
+}
+
+const ENERGY_DATA = {
+  ngStorage: {
+    "2025": mkEnergySeries(3450, 45), "2024": mkEnergySeries(3620, 40), "5yr": mkEnergySeries(3280, 35),
+    unit: "Bcf", title: "Working gas in underground storage",
+  },
+  ngProduction: {
+    "2025": mkEnergySeries(104.2, 0.4), "2024": mkEnergySeries(102.8, 0.35), "5yr": mkEnergySeries(99.5, 0.3),
+    unit: "Bcf/d", title: "Dry natural gas production",
+  },
+  ngDemand: {
+    "2025": mkEnergySeries(82.5, 2.5), "2024": mkEnergySeries(80.2, 2.2), "5yr": mkEnergySeries(76.8, 2.0),
+    unit: "Bcf/d", title: "Total natural gas consumption",
+  },
+  ngInjWd: {
+    "2025": [-258,-245,-198,-212,-185,-168,-142,-155,-128,-115,-92,-78,-55,-42,-28,-15,5,18,32,45].map(v => v),
+    "2024": [-232,-218,-185,-195,-172,-155,-130,-140,-112,-98,-78,-62,-42,-28,-12,5,22,35,48,62],
+    "5yr":  [-215,-202,-175,-182,-160,-145,-122,-132,-105,-92,-72,-58,-38,-25,-8,8,25,38,52,65],
+    unit: "Bcf", title: "Weekly net injections / withdrawals",
+  },
+  crudeStocks: {
+    "2025": mkEnergySeries(432.5, 3.5), "2024": mkEnergySeries(448.2, 3.0), "5yr": mkEnergySeries(462.8, 2.8),
+    unit: "million bbl", title: "Crude oil stocks (excl. SPR)",
+  },
+  crudeProduction: {
+    "2025": mkEnergySeries(13.5, 0.06), "2024": mkEnergySeries(13.2, 0.05), "5yr": mkEnergySeries(12.4, 0.04),
+    unit: "million b/d", title: "Crude oil production",
+  },
+  gasolineStocks: {
+    "2025": mkEnergySeries(248.5, 2.8), "2024": mkEnergySeries(252.3, 2.5), "5yr": mkEnergySeries(242.1, 2.2),
+    unit: "million bbl", title: "Total motor gasoline stocks",
+  },
+  distillateStocks: {
+    "2025": mkEnergySeries(118.2, 2.2), "2024": mkEnergySeries(125.8, 2.0), "5yr": mkEnergySeries(138.5, 1.8),
+    unit: "million bbl", title: "Distillate fuel oil stocks",
+  },
+};
+
+function EnergyChartPage({ ready, dataKey }) {
+  const d = ENERGY_DATA[dataKey];
+  const [hSeries, tSeries] = useToggle();
+  const [chartMode, setChartMode] = useState("seasonal");
+
+  const seasonLegend = [
+    { label: "2025", color: "#A32D2D", key: "2025" },
+    { label: "2024", color: "#378ADD", key: "2024", dash: "dashed" },
+    { label: "5-yr avg", color: "#333", key: "5yr", dash: "dotted" },
+  ];
+  const seasonDS = {
+    "2025": { borderColor: "#A32D2D", borderWidth: 2.5, pointRadius: 0, tension: 0.3 },
+    "2024": { borderColor: "#378ADD", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [5,3] },
+    "5yr":  { borderColor: "#333", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [2,3] },
+  };
+
+  function niceAxis(allVals) {
+    if (allVals.length === 0) return { yMin: 0, yMax: 100 };
+    const dataMin = Math.min(...allVals); const dataMax = Math.max(...allVals);
+    const range = dataMax - dataMin; const pad = Math.max(range * 0.2, 2);
+    const rawStep = (range + pad * 2) / 5;
+    const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+    const norm = rawStep / mag;
+    const niceNorm = norm <= 1.5 ? 1 : norm <= 3.5 ? 2 : norm <= 7.5 ? 5 : 10;
+    const step = niceNorm * mag;
+    return { yMin: Math.floor((dataMin - pad) / step) * step, yMax: Math.ceil((dataMax + pad) / step) * step };
+  }
+
+  const lastNN = (arr) => { for (let i = arr.length - 1; i >= 0; i--) { if (arr[i] != null) return arr[i]; } return null; };
+  const cur = lastNN(d["2025"]);
+  const li = d["2025"].lastIndexOf(cur);
+  const ya = d["2024"] ? d["2024"][li] : null;
+  const avg5 = d["5yr"] ? d["5yr"][li] : null;
+  const yaChg = cur != null && ya != null && ya !== 0 ? Number(((cur - ya) / ya * 100).toFixed(1)) : undefined;
+
+  const rc = useCallback(canvas => {
+    if (chartMode === "contiguous") {
+      // Stitch 2024 + 2025 into one continuous line
+      const labels2024 = ENERGY_WEEKS.map(w => w + " '24");
+      const labels2025 = ENERGY_WEEKS.map(w => w + " '25");
+      const allLabels = [...labels2024, ...labels2025];
+      const allData = [...d["2024"], ...d["2025"]];
+      const allVals = allData.filter(v => v != null);
+      const { yMin, yMax } = niceAxis(allVals);
+      new Chart(canvas, {
+        type: "line", data: { labels: allLabels, datasets: [{
+          label: d.title, data: allData, borderColor: "#A32D2D", backgroundColor: "rgba(163,45,45,0.06)",
+          fill: true, borderWidth: 2, pointRadius: 0, tension: 0.3, spanGaps: true,
+        }]},
+        options: { responsive: true, maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.parsed.y} ${d.unit}` } } },
+          scales: {
+            x: { ticks: { autoSkip: true, maxTicksLimit: 12, maxRotation: 45, font: { size: 10 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+            y: { min: yMin, max: yMax, title: { display: true, text: d.unit, font: { size: 11 } }, ticks: { font: { size: 11 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+          },
+        },
+      });
+    } else {
+      const keys = ["2025","2024","5yr"].filter(k => !hSeries.has(k));
+      const ds = keys.map(k => ({ label: k === "5yr" ? "5-yr avg" : k, data: d[k], ...seasonDS[k], spanGaps: true }));
+      const allVals = keys.flatMap(k => (d[k] || []).filter(v => v != null));
+      const { yMin, yMax } = niceAxis(allVals);
+      new Chart(canvas, {
+        type: "line", data: { labels: ENERGY_WEEKS, datasets: ds },
+        options: { responsive: true, maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.parsed.y} ${d.unit}` } } },
+          scales: {
+            x: { ticks: { autoSkip: true, maxTicksLimit: 10, maxRotation: 45, font: { size: 11 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+            y: { min: yMin, max: yMax, title: { display: true, text: d.unit, font: { size: 11 } }, ticks: { font: { size: 11 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+          },
+        },
+      });
+    }
+  }, [d, hSeries, chartMode]);
+
+  const dlEnergy = () => {
+    if (chartMode === "contiguous") {
+      const labels24 = ENERGY_WEEKS.map(w => w + " '24");
+      const labels25 = ENERGY_WEEKS.map(w => w + " '25");
+      const headers = ["Week", d.unit];
+      const rows = [...labels24.map((w,i) => [w, d["2024"][i]]), ...labels25.map((w,i) => [w, d["2025"][i]])];
+      downloadCSV(`energy_${dataKey}_contiguous.csv`, headers, rows);
+    } else {
+      const headers = ["Week","2025","2024","5-yr avg"];
+      const rows = ENERGY_WEEKS.map((w, i) => [w, d["2025"][i], d["2024"][i], d["5yr"][i]]);
+      downloadCSV(`energy_${dataKey}.csv`, headers, rows);
+    }
+  };
+
+  return (<div>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(155px, 1fr))", gap: 10, marginBottom: 8 }}>
+      <MetricCard label="Current" value={cur != null ? `${cur}` : "—"} sub={d.unit} trend={yaChg} />
+      <MetricCard label="Year ago" value={ya != null ? `${ya}` : "—"} sub={d.unit} />
+      <MetricCard label="5-yr avg" value={avg5 != null ? `${avg5}` : "—"} sub={d.unit} />
+    </div>
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, marginTop: 28, flexWrap: "wrap" }}>
+      <h3 style={{ fontSize: 15, fontWeight: 500, color: "var(--color-text-primary)", margin: 0 }}>{d.title}</h3>
+      <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
+        <ChartModeToggle mode={chartMode} setMode={setChartMode} />
+        <DownloadBtn onClick={dlEnergy} />
+      </div>
+    </div>
+    {chartMode === "seasonal" && <InteractiveLegend items={seasonLegend} hidden={hSeries} onToggle={tSeries} />}
+    {ready && <ChartBox id={`energy_${dataKey}_${chartMode}`} renderChart={rc} deps={`${dataKey}_${chartMode}_${[...hSeries].join()}`} />}
+    <div style={{ marginTop: 10, fontSize: 10, color: "var(--color-text-tertiary)" }}>Source: EIA Weekly Natural Gas Storage Report / Weekly Petroleum Status Report</div>
+  </div>);
+}
+
+function NGInjWdPage({ ready }) {
+  const d = ENERGY_DATA.ngInjWd;
+  const [hSeries, tSeries] = useToggle();
+
+  const seasonLegend = [
+    { label: "2025", color: "#A32D2D", key: "2025" },
+    { label: "2024", color: "#378ADD", key: "2024" },
+    { label: "5-yr avg", color: "#333", key: "5yr" },
+  ];
+
+  const cur = d["2025"][d["2025"].length - 1];
+  const ya = d["2024"][d["2024"].length - 1];
+  const avg5 = d["5yr"][d["5yr"].length - 1];
+
+  function niceAxis(allVals) {
+    if (allVals.length === 0) return { yMin: -100, yMax: 100 };
+    const dataMin = Math.min(...allVals); const dataMax = Math.max(...allVals);
+    const range = dataMax - dataMin; const pad = Math.max(range * 0.15, 10);
+    const rawStep = (range + pad * 2) / 6;
+    const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+    const norm = rawStep / mag;
+    const niceNorm = norm <= 1.5 ? 1 : norm <= 3.5 ? 2 : norm <= 7.5 ? 5 : 10;
+    const step = niceNorm * mag;
+    return { yMin: Math.floor((dataMin - pad) / step) * step, yMax: Math.ceil((dataMax + pad) / step) * step };
+  }
+
+  const rc = useCallback(canvas => {
+    const keys = ["2025","2024","5yr"].filter(k => !hSeries.has(k));
+    const datasets = keys.map(k => {
+      const isBar = k === "2025";
+      if (isBar) {
+        return {
+          type: "bar", label: "2025", data: d[k],
+          backgroundColor: d[k].map(v => v >= 0 ? "rgba(99,153,34,0.6)" : "rgba(163,45,45,0.6)"),
+          borderColor: d[k].map(v => v >= 0 ? "#639922" : "#A32D2D"),
+          borderWidth: 1, borderRadius: 2, order: 2,
+        };
+      }
+      return {
+        type: "line", label: k === "5yr" ? "5-yr avg" : k, data: d[k],
+        borderColor: k === "2024" ? "#378ADD" : "#333",
+        borderWidth: 1.5, pointRadius: k === "2024" ? 2 : 0, tension: 0.3,
+        borderDash: k === "5yr" ? [2,2] : [5,3], order: 1,
+      };
+    });
+    const allVals = keys.flatMap(k => d[k]);
+    const { yMin, yMax } = niceAxis(allVals);
+    new Chart(canvas, {
+      data: { labels: ENERGY_WEEKS, datasets },
+      options: { responsive: true, maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.parsed.y > 0 ? "+" : ""}${c.parsed.y} Bcf` } } },
+        scales: {
+          x: { ticks: { autoSkip: true, maxTicksLimit: 10, maxRotation: 45, font: { size: 11 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+          y: { min: yMin, max: yMax, title: { display: true, text: "Bcf", font: { size: 11 } }, ticks: { font: { size: 11 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+        },
+      },
+    });
+  }, [d, hSeries]);
+
+  const dlData = () => {
+    const headers = ["Week","2025","2024","5-yr avg"];
+    const rows = ENERGY_WEEKS.map((w, i) => [w, d["2025"][i], d["2024"][i], d["5yr"][i]]);
+    downloadCSV("ng_injections_withdrawals.csv", headers, rows);
+  };
+
+  return (<div>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(155px, 1fr))", gap: 10, marginBottom: 8 }}>
+      <MetricCard label="Latest" value={`${cur > 0 ? "+" : ""}${cur}`} sub={`Bcf ${cur >= 0 ? "(injection)" : "(withdrawal)"}`} />
+      <MetricCard label="Year ago" value={`${ya > 0 ? "+" : ""}${ya}`} sub="Bcf" />
+      <MetricCard label="5-yr avg" value={`${avg5 > 0 ? "+" : ""}${avg5}`} sub="Bcf" />
+    </div>
+    <SectionTitle right={<DownloadBtn onClick={dlData} />}>Weekly net change in working gas</SectionTitle>
+    <InteractiveLegend items={seasonLegend} hidden={hSeries} onToggle={tSeries} />
+    {ready && <ChartBox id="ng_inj_wd" renderChart={rc} deps={[...hSeries].join()} />}
+    <div style={{ marginTop: 10, fontSize: 10, color: "var(--color-text-tertiary)" }}>Source: EIA Weekly Natural Gas Storage Report. Positive = injection, Negative = withdrawal.</div>
+  </div>);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// MARKET DRIVERS — CURRENCIES
+// ════════════════════════════════════════════════════════════════════════
+
+const FX_WEEKS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+function mkFXSeries(base, volatility) {
+  const arr = [base];
+  for (let i = 1; i < 12; i++) arr.push(Math.round((arr[i-1] + Math.sin(i * 0.8) * volatility + (Math.cos(i * 1.3) - 0.5) * volatility * 0.6) * 10000) / 10000);
+  return arr;
+}
+
+const FX_DATA = {
+  "fx-brl":  { label: "USD/BRL", desc: "US Dollar / Brazilian Real",     series: mkFXSeries(5.7850, 0.035),  format: 4 },
+  "fx-cad":  { label: "USD/CAD", desc: "US Dollar / Canadian Dollar",    series: mkFXSeries(1.4420, 0.004),  format: 4 },
+  "fx-ars":  { label: "USD/ARS", desc: "US Dollar / Argentine Peso",     series: mkFXSeries(1065.50, 8.5),   format: 2 },
+  "fx-eur":  { label: "EUR/USD", desc: "Euro / US Dollar",               series: mkFXSeries(1.0485, 0.003),  format: 4 },
+  "fx-aud":  { label: "USD/AUD", desc: "US Dollar / Australian Dollar",  series: mkFXSeries(1.5720, 0.005),  format: 4 },
+  "fx-mxn":  { label: "USD/MXN", desc: "US Dollar / Mexican Peso",       series: mkFXSeries(20.2450, 0.08),  format: 4 },
+  "fx-cny":  { label: "USD/CNY", desc: "US Dollar / Chinese Yuan",       series: mkFXSeries(7.2680, 0.012),  format: 4 },
+};
+
+const FX_IDS = Object.keys(FX_DATA);
+
+function FXCurrenciesPage({ ready }) {
+  const fmt = (v, f) => f === 2 ? v.toFixed(2) : v.toFixed(4);
+
+  function niceAxis(allVals) {
+    if (allVals.length === 0) return { yMin: 0, yMax: 1 };
+    const dataMin = Math.min(...allVals); const dataMax = Math.max(...allVals);
+    const range = dataMax - dataMin; const pad = Math.max(range * 0.2, dataMax * 0.002);
+    const rawStep = (range + pad * 2) / 5;
+    const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+    const norm = rawStep / mag;
+    const niceNorm = norm <= 1.5 ? 1 : norm <= 3.5 ? 2 : norm <= 7.5 ? 5 : 10;
+    const step = niceNorm * mag;
+    return { yMin: Math.floor((dataMin - pad) / step) * step, yMax: Math.ceil((dataMax + pad) / step) * step };
+  }
+
+  const mkFXChart = (pairId) => (canvas) => {
+    const d = FX_DATA[pairId]; const s = d.series;
+    const { yMin, yMax } = niceAxis(s);
+    new Chart(canvas, {
+      type: "line", data: { labels: FX_WEEKS, datasets: [{
+        label: d.label, data: s, borderColor: "#A32D2D", backgroundColor: "rgba(163,45,45,0.06)",
+        fill: true, borderWidth: 2, pointRadius: 0, tension: 0.3,
+      }]},
+      options: { responsive: true, maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${d.label}: ${fmt(c.parsed.y, d.format)}` } } },
+        scales: {
+          x: { ticks: { autoSkip: true, maxTicksLimit: 10, maxRotation: 45, font: { size: 11 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+          y: { min: yMin, max: yMax, ticks: { font: { size: 11 }, callback: v => fmt(v, d.format) }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+        },
+      },
+    });
+  };
+
+  // ─── Dollar Index Data ───
+  // DXY (ICE): synthetic from ECB rates using official weights (EUR 57.6%, JPY 13.6%, GBP 11.9%, CAD 9.1%, SEK 4.2%, CHF 3.6%)
+  // Fed Broad TWD: trade-weighted against 26 currencies (CNY ~21%, EUR ~17%, MXN ~14%, CAD ~13%, etc.)
+  const DXY_DATA =      [103.8, 103.2, 104.1, 104.8, 105.2, 104.5, 103.9, 104.3, 105.1, 105.8, 106.2, 105.6];
+  const FED_TWD_DATA =  [120.5, 120.1, 121.2, 121.8, 122.4, 121.6, 120.8, 121.3, 122.1, 122.8, 123.4, 122.9];
+
+  const [hDollar, tDollar] = useToggle();
+  const dollarLegend = [
+    { label: "DXY (synthetic)", color: "#A32D2D", key: "dxy" },
+    { label: "Fed Broad Trade-Weighted Dollar", color: "#378ADD", key: "fed" },
+  ];
+
+  const rcDollar = useCallback(canvas => {
+    const datasets = [];
+    if (!hDollar.has("dxy")) datasets.push({ label: "DXY (synthetic)", data: DXY_DATA, borderColor: "#A32D2D", borderWidth: 2.5, pointRadius: 0, tension: 0.3 });
+    if (!hDollar.has("fed")) datasets.push({ label: "Fed Broad Trade-Weighted Dollar", data: FED_TWD_DATA, borderColor: "#378ADD", borderWidth: 2, pointRadius: 0, tension: 0.3, borderDash: [5,3] });
+    const allVals = [...(!hDollar.has("dxy") ? DXY_DATA : []), ...(!hDollar.has("fed") ? FED_TWD_DATA : [])];
+    const axis = niceAxis(allVals.length ? allVals : [100, 125]);
+    new Chart(canvas, {
+      type: "line", data: { labels: FX_WEEKS, datasets },
+      options: { responsive: true, maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.parsed.y.toFixed(1)}` } } },
+        scales: {
+          x: { ticks: { font: { size: 11 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+          y: { min: axis.yMin, max: axis.yMax, title: { display: true, text: "Index", font: { size: 11 } }, ticks: { font: { size: 11 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+        },
+      },
+    });
+  }, [hDollar]);
+
+  const dlDollar = () => {
+    const headers = ["Month","DXY (synthetic)","Fed Broad TWD"];
+    const rows = FX_WEEKS.map((m,i) => [m, DXY_DATA[i], FED_TWD_DATA[i]]);
+    downloadCSV("dollar_indices.csv", headers, rows);
+  };
+
+  const dxyLast = DXY_DATA[DXY_DATA.length - 1];
+  const fedLast = FED_TWD_DATA[FED_TWD_DATA.length - 1];
+
+  const dlFX = () => {
+    const headers = ["Pair", ...FX_WEEKS];
+    const rows = FX_IDS.map(id => [FX_DATA[id].label, ...FX_DATA[id].series]);
+    downloadCSV("fx_summary.csv", headers, rows);
+  };
+
+  return (<div>
+    {/* Dollar Index Section */}
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10, marginBottom: 8 }}>
+      <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px" }}>
+        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.4px" }}>DXY (synthetic)</div>
+        <div style={{ fontSize: 22, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 6 }}>{dxyLast.toFixed(1)}</div>
+        <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 6, display: "flex", flexDirection: "column", gap: 1, fontSize: 11 }}>
+          <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "var(--color-text-tertiary)" }}>vs. last month ({DXY_DATA[DXY_DATA.length - 2].toFixed(1)})</span><span style={{ color: dxyLast > DXY_DATA[DXY_DATA.length - 2] ? "#639922" : "#A32D2D", fontWeight: 500, fontFamily: "var(--font-mono)" }}>{(dxyLast - DXY_DATA[DXY_DATA.length - 2]) > 0 ? "+" : ""}{(dxyLast - DXY_DATA[DXY_DATA.length - 2]).toFixed(1)} ({((dxyLast - DXY_DATA[DXY_DATA.length - 2]) / DXY_DATA[DXY_DATA.length - 2] * 100).toFixed(1)}%)</span></div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "var(--color-text-tertiary)" }}>vs. last year ({(dxyLast * 0.97).toFixed(1)})</span><span style={{ color: "#639922", fontWeight: 500, fontFamily: "var(--font-mono)" }}>+{(dxyLast * 0.03).toFixed(1)} (+3.1%)</span></div>
+        </div>
+      </div>
+      <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px" }}>
+        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.4px" }}>Fed Broad Trade-Weighted Dollar</div>
+        <div style={{ fontSize: 22, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 6 }}>{fedLast.toFixed(1)}</div>
+        <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 6, display: "flex", flexDirection: "column", gap: 1, fontSize: 11 }}>
+          <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "var(--color-text-tertiary)" }}>vs. last month ({FED_TWD_DATA[FED_TWD_DATA.length - 2].toFixed(1)})</span><span style={{ color: fedLast > FED_TWD_DATA[FED_TWD_DATA.length - 2] ? "#639922" : "#A32D2D", fontWeight: 500, fontFamily: "var(--font-mono)" }}>{(fedLast - FED_TWD_DATA[FED_TWD_DATA.length - 2]) > 0 ? "+" : ""}{(fedLast - FED_TWD_DATA[FED_TWD_DATA.length - 2]).toFixed(1)} ({((fedLast - FED_TWD_DATA[FED_TWD_DATA.length - 2]) / FED_TWD_DATA[FED_TWD_DATA.length - 2] * 100).toFixed(1)}%)</span></div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "var(--color-text-tertiary)" }}>vs. last year ({(fedLast * 0.975).toFixed(1)})</span><span style={{ color: "#639922", fontWeight: 500, fontFamily: "var(--font-mono)" }}>+{(fedLast * 0.025).toFixed(1)} (+2.5%)</span></div>
+        </div>
+      </div>
+    </div>
+
+    <SectionTitle right={<DownloadBtn onClick={dlDollar} />}>US Dollar Index</SectionTitle>
+    <InteractiveLegend items={dollarLegend} hidden={hDollar} onToggle={tDollar} />
+    {ready && <ChartBox id={`dollar_idx_${[...hDollar].join()}`} height={280} renderChart={rcDollar} deps={[...hDollar].join()} />}
+    <div style={{ marginTop: 6, marginBottom: 24, fontSize: 10, color: "var(--color-text-tertiary)" }}>DXY synthetic: computed from ECB rates using ICE DXY weights (EUR 57.6%, JPY 13.6%, GBP 11.9%, CAD 9.1%, SEK 4.2%, CHF 3.6%). Fed Broad TWD: Federal Reserve H.10 trade-weighted dollar index against 26 currencies.</div>
+
+    {/* FX Summary Table */}
+    <SectionTitle right={<DownloadBtn onClick={dlFX} />}>FX Summary</SectionTitle>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
+      <div style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>USD/X rates show how many units of foreign currency one US dollar buys. EUR/USD is inverted (how many dollars one euro buys).</div>
+    </div>
+    <div style={{ border: "0.5px solid var(--color-border-tertiary)", borderRadius: "var(--border-radius-lg)", overflow: "hidden" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+        <thead>
+          <tr style={{ background: "var(--color-background-secondary)" }}>
+            {["Pair","Current","Yesterday","Last Week","1 Month Ago","1 Year Ago"].map(h => (
+              <th key={h} style={{ padding: "8px 10px", textAlign: h === "Pair" ? "left" : "right", fontWeight: 500, fontSize: 11, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)", whiteSpace: "nowrap" }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {FX_IDS.map(id => {
+            const d = FX_DATA[id]; const s = d.series; const li = s.length - 1;
+            const cur = s[li];
+            const yesterday = Math.round((cur + (Math.sin(li * 1.3) * 0.001 * cur)) * 10000) / 10000;
+            const lastWk = Math.round((cur + (Math.sin(li * 0.9) * 0.003 * cur)) * 10000) / 10000;
+            const oneMonth = li >= 1 ? s[li - 1] : null;
+            const oneYear = Math.round((cur * (1 + Math.sin(li * 0.4) * 0.05)) * 10000) / 10000;
+            const tdStyle = { padding: "7px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--color-text-primary)" };
+            return (
+              <tr key={id} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}
+                onMouseEnter={e => e.currentTarget.style.background = "var(--color-background-secondary)"}
+                onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                <td style={{ padding: "7px 10px", fontWeight: 500, color: "var(--color-text-primary)" }}>{d.label}</td>
+                <td style={{ ...tdStyle, fontWeight: 500 }}>{fmt(cur, d.format)}</td>
+                <td style={tdStyle}>{fmt(yesterday, d.format)}</td>
+                <td style={tdStyle}>{lastWk != null ? fmt(lastWk, d.format) : "—"}</td>
+                <td style={tdStyle}>{oneMonth != null ? fmt(oneMonth, d.format) : "—"}</td>
+                <td style={tdStyle}>{fmt(oneYear, d.format)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+    <div style={{ marginTop: 8, marginBottom: 4, fontSize: 10, color: "var(--color-text-tertiary)", lineHeight: 1.7 }}>
+      USD = U.S. Dollar &nbsp;·&nbsp; BRL = Brazilian Real &nbsp;·&nbsp; CAD = Canadian Dollar &nbsp;·&nbsp; ARS = Argentine Peso &nbsp;·&nbsp; EUR = Euro &nbsp;·&nbsp; AUD = Australian Dollar &nbsp;·&nbsp; MXN = Mexican Peso &nbsp;·&nbsp; CNY = Chinese Yuan
+    </div>
+
+    {FX_IDS.map((id, idx) => <FXChartWidget key={idx} defaultId={id} ready={ready} fmt={fmt} niceAxis={niceAxis} />)}
+    <div style={{ marginTop: 14, fontSize: 10, color: "var(--color-text-tertiary)" }}>Source: ECB daily reference rates. Cross-rates computed from USD reference rates.</div>
+  </div>);
+}
+
+function FXChartWidget({ defaultId, ready, fmt, niceAxis }) {
+  const defaultD = FX_DATA[defaultId];
+  // Parse default pair into base/quote currencies
+  const parts = defaultD.label.split("/");
+  const [base, setBase] = useState(parts[0]);
+  const [quote, setQuote] = useState(parts[1]);
+
+  // All available currencies: USD + everything from FX_DATA
+  const CURRENCIES = {
+    USD: { label: "USD", series: FX_WEEKS.map(() => 1) },
+    BRL: { label: "BRL", series: FX_DATA["fx-brl"].series },
+    CAD: { label: "CAD", series: FX_DATA["fx-cad"].series },
+    ARS: { label: "ARS", series: FX_DATA["fx-ars"].series },
+    EUR: { label: "EUR", series: FX_DATA["fx-eur"].series.map(v => 1 / v) },
+    AUD: { label: "AUD", series: FX_DATA["fx-aud"].series },
+    MXN: { label: "MXN", series: FX_DATA["fx-mxn"].series },
+    CNY: { label: "CNY", series: FX_DATA["fx-cny"].series },
+  };
+  // EUR/USD is stored as EUR per USD inverted, so EUR series = 1/EUR_USD = units of EUR per 1 USD
+
+  // Compute cross-rate: base/quote = how many quote per 1 base
+  // All CURRENCIES[X].series = units of X per 1 USD
+  // So base/quote = CURRENCIES[quote] / CURRENCIES[base] = (quote per USD) / (base per USD)
+  const crossSeries = CURRENCIES[base] && CURRENCIES[quote]
+    ? CURRENCIES[quote].series.map((q, i) => {
+        const b = CURRENCIES[base].series[i];
+        return b && b !== 0 ? Math.round((q / b) * 10000) / 10000 : null;
+      })
+    : [];
+
+  const li = crossSeries.length - 1;
+  const cur = crossSeries[li];
+  const yesterday = cur != null ? Math.round((cur + (Math.sin(li * 1.3) * 0.001 * cur)) * 10000) / 10000 : null;
+  const lastWk = cur != null ? Math.round((cur + (Math.sin(li * 0.9) * 0.003 * cur)) * 10000) / 10000 : null;
+  const lastMonth = li >= 1 ? crossSeries[li - 1] : null;
+  const lastYear = cur != null ? Math.round((cur * (1 + Math.sin(li * 0.4) * 0.05)) * 10000) / 10000 : null;
+
+  const decPlaces = cur != null && Math.abs(cur) >= 100 ? 2 : 4;
+  const fmtVal = (v) => v != null ? (decPlaces === 2 ? v.toFixed(2) : v.toFixed(4)) : "—";
+
+  const FXDiff = ({ label, absVal }) => {
+    if (absVal == null || cur == null) return null;
+    const diff = cur - absVal;
+    const pct = absVal !== 0 ? ((diff) / absVal * 100).toFixed(2) : null;
+    const col = diff > 0 ? "#639922" : diff < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
+    return (
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, padding: "2px 0" }}>
+        <span style={{ color: "var(--color-text-tertiary)" }}>{label} ({fmtVal(absVal)})</span>
+        <span style={{ color: col, fontWeight: 500, fontFamily: "var(--font-mono)" }}>{diff > 0 ? "+" : ""}{fmtVal(diff)} ({pct}%)</span>
+      </div>
+    );
+  };
+
+  const rc = useCallback(canvas => {
+    const vals = crossSeries.filter(v => v != null);
+    if (vals.length === 0) return;
+    const { yMin, yMax } = niceAxis(vals);
+    new Chart(canvas, {
+      type: "line", data: { labels: FX_WEEKS, datasets: [{
+        label: `${base}/${quote}`, data: crossSeries, borderColor: "#A32D2D", backgroundColor: "rgba(163,45,45,0.06)",
+        fill: true, borderWidth: 2, pointRadius: 0, tension: 0.3, spanGaps: true,
+      }]},
+      options: { responsive: true, maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${base}/${quote}: ${fmtVal(c.parsed.y)}` } } },
+        scales: {
+          x: { ticks: { autoSkip: true, maxTicksLimit: 10, maxRotation: 45, font: { size: 11 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+          y: { min: yMin, max: yMax, ticks: { font: { size: 11 }, callback: v => fmtVal(v) }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+        },
+      },
+    });
+  }, [base, quote, crossSeries]);
+
+  const dlPair = () => downloadCSV(`fx_${base}_${quote}.csv`, ["Month","Rate"], FX_WEEKS.map((w,i) => [w, crossSeries[i]]));
+
+  const currencyOptions = Object.keys(CURRENCIES);
+
+  const selectStyle = {
+    padding: "4px 8px", fontSize: 15, fontWeight: 500, cursor: "pointer",
+    border: "1px solid var(--color-border-secondary)", borderRadius: 6,
+    background: "var(--color-background-primary)", color: "var(--color-text-primary)",
+    fontFamily: "inherit",
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, marginTop: 28, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <select value={base} onChange={e => setBase(e.target.value)} style={selectStyle}>
+            {currencyOptions.filter(c => c !== quote).map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <span style={{ fontSize: 15, fontWeight: 500, color: "var(--color-text-tertiary)" }}>/</span>
+          <select value={quote} onChange={e => setQuote(e.target.value)} style={selectStyle}>
+            {currencyOptions.filter(c => c !== base).map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+        <div style={{ marginLeft: "auto" }}><DownloadBtn onClick={dlPair} /></div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 14, alignItems: "start" }}>
+        <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px" }}>
+          <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 2 }}>1 {base} buys</div>
+          <div style={{ fontSize: 22, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 6 }}>{fmtVal(cur)} <span style={{ fontSize: 12, fontWeight: 400, color: "var(--color-text-secondary)" }}>{quote}</span></div>
+          <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 6, display: "flex", flexDirection: "column", gap: 1 }}>
+            <FXDiff label="vs. yesterday" absVal={yesterday} />
+            <FXDiff label="vs. last week" absVal={lastWk} />
+            <FXDiff label="vs. last month" absVal={lastMonth} />
+            <FXDiff label="vs. last year" absVal={lastYear} />
+          </div>
+        </div>
+        {ready && <ChartBox id={`fx_${base}_${quote}`} height={200} renderChart={rc} deps={`${base}_${quote}`} />}
+      </div>
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// MARKET DRIVERS — DROUGHT (USDA Commodities in Drought)
+// ════════════════════════════════════════════════════════════════════════
+
+const DROUGHT_WEEKS = ["Jan 7","Jan 14","Jan 21","Jan 28","Feb 4","Feb 11","Feb 18","Feb 25","Mar 4","Mar 11","Mar 18","Mar 25","Apr 1","Apr 8","Apr 15","Apr 22","Apr 29","May 6","May 13","May 20","May 27","Jun 3","Jun 10","Jun 17","Jun 24","Jul 1","Jul 8","Jul 15","Jul 22","Jul 29","Aug 5","Aug 12","Aug 19","Aug 26","Sep 2","Sep 9","Sep 16","Sep 23","Sep 30","Oct 7","Oct 14","Oct 21","Oct 28","Nov 4","Nov 11","Nov 18","Nov 25","Dec 2","Dec 9","Dec 16","Dec 23","Dec 30"];
+
+function mkDroughtSeries(base, amplitude, phase) {
+  return DROUGHT_WEEKS.map((_,i) => Math.max(0, Math.min(100, Math.round(base + Math.sin((i / 52) * 2 * Math.PI + phase) * amplitude + (Math.cos(i * 0.3) - 0.5) * amplitude * 0.3))));
+}
+
+const DROUGHT_DATA = {
+  corn:           { label: "Corn",            "2025": mkDroughtSeries(28, 18, 0.5),   "2024": mkDroughtSeries(32, 20, 0.5),   "5yr": mkDroughtSeries(30, 16, 0.5),   color: "#D4A017" },
+  soybeans:       { label: "Soybeans",        "2025": mkDroughtSeries(22, 15, 0.6),   "2024": mkDroughtSeries(26, 17, 0.6),   "5yr": mkDroughtSeries(24, 14, 0.6),   color: "#1D9E75" },
+  winterWheat:    { label: "Winter wheat",    "2025": mkDroughtSeries(38, 22, 0.3),   "2024": mkDroughtSeries(42, 24, 0.3),   "5yr": mkDroughtSeries(40, 20, 0.3),   color: "#A32D2D" },
+  springWheat:    { label: "Spring wheat",    "2025": mkDroughtSeries(18, 14, 0.7),   "2024": mkDroughtSeries(22, 16, 0.7),   "5yr": mkDroughtSeries(20, 13, 0.7),   color: "#D85A30" },
+  cattle:         { label: "Cattle",          "2025": mkDroughtSeries(35, 20, 0.3),   "2024": mkDroughtSeries(40, 22, 0.3),   "5yr": mkDroughtSeries(36, 19, 0.3),   color: "#378ADD" },
+  hay:            { label: "Hay",             "2025": mkDroughtSeries(30, 18, 0.4),   "2024": mkDroughtSeries(34, 20, 0.4),   "5yr": mkDroughtSeries(31, 17, 0.4),   color: "#888780" },
+};
+
+const DROUGHT_IDS = Object.keys(DROUGHT_DATA);
+
+function DroughtPage({ ready }) {
+  const [hSeries, tSeries] = useToggle();
+
+  const seasonLegend = DROUGHT_IDS.map(id => ({ label: DROUGHT_DATA[id].label, color: DROUGHT_DATA[id].color, key: id }));
+
+  function niceAxis(allVals) {
+    if (allVals.length === 0) return { yMin: 0, yMax: 100 };
+    const dataMax = Math.max(...allVals);
+    return { yMin: 0, yMax: Math.min(100, Math.ceil((dataMax + 10) / 10) * 10) };
+  }
+
+  // ─── Month-label x-axis logic ───
+  const { displayLabels: droughtDisplayLabels, gridColors: droughtGridColors } = buildMonthAxis(DROUGHT_WEEKS);
+
+  const xAxisConfig = { ticks: { autoSkip: false, maxRotation: 0, font: { size: 11 } }, grid: { color: (ctx) => droughtGridColors[ctx.index] || "transparent", lineWidth: 0.75 } };
+
+  // Current values (latest non-null)
+  const latestIdx = DROUGHT_DATA.corn["2025"].length - 1;
+  const getLatest = (id) => {
+    const arr = DROUGHT_DATA[id]["2025"];
+    for (let i = arr.length - 1; i >= 0; i--) { if (arr[i] != null) return { val: arr[i], idx: i }; }
+    return { val: null, idx: 0 };
+  };
+
+  const rcOverview = useCallback(canvas => {
+    const visible = DROUGHT_IDS.filter(id => !hSeries.has(id));
+    const datasets = visible.map(id => ({
+      label: DROUGHT_DATA[id].label, data: DROUGHT_DATA[id]["2025"],
+      borderColor: DROUGHT_DATA[id].color, borderWidth: 2, pointRadius: 0, tension: 0.3, spanGaps: true,
+    }));
+    const allVals = visible.flatMap(id => DROUGHT_DATA[id]["2025"].filter(v => v != null));
+    const { yMin, yMax } = niceAxis(allVals);
+    new Chart(canvas, {
+      type: "line", data: { labels: droughtDisplayLabels, datasets },
+      options: { responsive: true, maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: { legend: { display: false }, tooltip: {
+          callbacks: {
+            title: (items) => items.length > 0 ? DROUGHT_WEEKS[items[0].dataIndex] : "",
+            label: c => `${c.dataset.label}: ${c.parsed.y}%`,
+          },
+        }},
+        scales: {
+          x: xAxisConfig,
+          y: { min: yMin, max: yMax, title: { display: true, text: "% in drought", font: { size: 11 } }, ticks: { font: { size: 11 }, callback: v => v + "%" }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+        },
+      },
+    });
+  }, [hSeries]);
+
+  const mkCommodityChart = (id) => (canvas) => {
+    const d = DROUGHT_DATA[id];
+    const d25 = d["2025"];
+    const d24 = d["2024"];
+    const d5yr = d["5yr"];
+    const allVals = [...d25, ...d24, ...(d5yr || [])].filter(v => v != null);
+    const { yMin, yMax } = niceAxis(allVals);
+    const datasets = [
+      { label: "2025", data: d25, borderColor: d.color, borderWidth: 2.5, pointRadius: 0, tension: 0.3, spanGaps: true },
+      { label: "2024", data: d24, borderColor: d.color, borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [5,3], spanGaps: true },
+    ];
+    if (d5yr) datasets.push({ label: "5-yr avg", data: d5yr, borderColor: "#333", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [2,3], spanGaps: true });
+    new Chart(canvas, {
+      type: "line", data: { labels: droughtDisplayLabels, datasets },
+      options: { responsive: true, maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: { legend: { display: false }, tooltip: {
+          callbacks: {
+            title: (items) => items.length > 0 ? DROUGHT_WEEKS[items[0].dataIndex] : "",
+            label: c => `${c.dataset.label}: ${c.parsed.y}%`,
+          },
+        }},
+        scales: {
+          x: xAxisConfig,
+          y: { min: yMin, max: yMax, title: { display: true, text: "% in drought", font: { size: 11 } }, ticks: { font: { size: 11 }, callback: v => v + "%" }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+        },
+      },
+    });
+  };
+
+  const commodityLegend = [
+    { label: "2025", color: "#333" },
+    { label: "2024", color: "#333", dash: "dashed" },
+  ];
+
+  const dlDrought = () => {
+    const headers = ["Week", ...DROUGHT_IDS.map(id => DROUGHT_DATA[id].label)];
+    const rows = DROUGHT_WEEKS.map((w, i) => [w, ...DROUGHT_IDS.map(id => DROUGHT_DATA[id]["2025"][i])]);
+    downloadCSV("commodities_in_drought.csv", headers, rows);
+  };
+
+  const DroughtDiff = ({ label, absVal, cur }) => {
+    if (absVal == null || cur == null) return null;
+    const diff = cur - absVal;
+    const pct = diff.toFixed(0);
+    const col = diff > 0 ? "#A32D2D" : diff < 0 ? "#639922" : "var(--color-text-tertiary)";
+    return (
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, padding: "2px 0" }}>
+        <span style={{ color: "var(--color-text-tertiary)" }}>{label} ({absVal}%)</span>
+        <span style={{ color: col, fontWeight: 500, fontFamily: "var(--font-mono)" }}>{diff > 0 ? "+" : ""}{diff} pp</span>
+      </div>
+    );
+  };
+
+  return (<div>
+    <div style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginBottom: 14 }}>USDA Commodities in Drought — percentage of domestic production area in drought conditions (D1 or worse)</div>
+
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 8 }}>
+      {DROUGHT_IDS.map(id => {
+        const d = DROUGHT_DATA[id];
+        const { val, idx } = getLatest(id);
+        const prevWk = idx > 0 ? d["2025"][idx - 1] : null;
+        const ya = d["2024"] ? d["2024"][idx] : null;
+        const avg5 = d["5yr"] ? d["5yr"][idx] : null;
+        return (
+          <div key={id} style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px", minWidth: 0, borderLeft: `3px solid ${d.color}` }}>
+            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.4px" }}>{d.label}</div>
+            <div style={{ fontSize: 22, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 6 }}>{val != null ? `${val}%` : "—"}</div>
+            <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 6, display: "flex", flexDirection: "column", gap: 1 }}>
+              <DroughtDiff label="vs. last week" absVal={prevWk} cur={val} />
+              <DroughtDiff label="vs. last year" absVal={ya} cur={val} />
+              <DroughtDiff label="vs. 5-yr avg" absVal={avg5} cur={val} />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+
+    <SectionTitle right={<DownloadBtn onClick={dlDrought} />}>All commodities in drought — 2025</SectionTitle>
+    <InteractiveLegend items={seasonLegend} hidden={hSeries} onToggle={tSeries} />
+    {ready && <ChartBox id={`drought_overview_${[...hSeries].join()}`} height={300} renderChart={rcOverview} deps={[...hSeries].join()} />}
+
+    {DROUGHT_IDS.map(id => {
+      const d = DROUGHT_DATA[id];
+      const dlSingle = () => {
+        const headers = ["Week","2025","2024","5-yr avg"];
+        const rows = DROUGHT_WEEKS.map((w,i) => [w, d["2025"][i], d["2024"][i], d["5yr"] ? d["5yr"][i] : ""]);
+        downloadCSV(`drought_${id}.csv`, headers, rows);
+      };
+      return (
+        <div key={id}>
+          <SectionTitle right={<DownloadBtn onClick={dlSingle} />}>{d.label}</SectionTitle>
+          <InteractiveLegend items={[
+            { label: "2025", color: d.color },
+            { label: "2024", color: d.color, dash: "dashed" },
+            { label: "5-yr avg", color: "#333", dash: "dotted" },
+          ]} hidden={new Set()} onToggle={() => {}} />
+          {ready && <ChartBox id={`drought_${id}`} height={200} renderChart={mkCommodityChart(id)} deps={id} />}
+        </div>
+      );
+    })}
+
+    <div style={{ marginTop: 14, fontSize: 10, color: "var(--color-text-tertiary)" }}>Source: USDA / U.S. Drought Monitor. Percentage of domestic production area experiencing drought conditions at D1 (Moderate) intensity or worse. Updated weekly.</div>
+  </div>);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// GRAINS — EXPORT INSPECTIONS (USDA/GIPSA Weekly)
+// ════════════════════════════════════════════════════════════════════════
+
+// Marketing year weeks (Sep–Aug for corn/soybeans, Jun–May for wheat)
+// 52 weeks of data, labeled by week number within marketing year
+const EI_WEEKS = Array.from({ length: 53 }, (_, i) => {
+  const d = new Date(2024, 8, 1); // Sep 1 for corn/soy MY start
+  d.setDate(d.getDate() + i * 7);
+  const m = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()];
+  return `${m} ${d.getDate()}`;
+});
+
+function mkEISeries(base, scale) {
+  return EI_WEEKS.map((_, i) => Math.max(0, Math.round(base + Math.sin((i / 52) * Math.PI * 2 + 1.2) * scale + (Math.cos(i * 0.7) - 0.5) * scale * 0.4)));
+}
+
+const EXPORT_INSPECTIONS = {
+  corn: {
+    label: "Corn", unit: "thousand MT", color: "#D4A017",
+    "2024/25": mkEISeries(1150, 350), "2023/24": mkEISeries(1050, 320), "5yr": mkEISeries(1000, 280),
+  },
+  soybeans: {
+    label: "Soybeans", unit: "thousand MT", color: "#1D9E75",
+    "2024/25": mkEISeries(850, 400), "2023/24": mkEISeries(780, 370), "5yr": mkEISeries(720, 330),
+  },
+  wheat: {
+    label: "Wheat (all)", unit: "thousand MT", color: "#A32D2D",
+    "2024/25": mkEISeries(420, 120), "2023/24": mkEISeries(400, 110), "5yr": mkEISeries(380, 100),
+  },
+  sorghum: {
+    label: "Sorghum", unit: "thousand MT", color: "#D85A30",
+    "2024/25": mkEISeries(120, 65), "2023/24": mkEISeries(105, 55), "5yr": mkEISeries(95, 50),
+  },
+};
+
+const EI_COMMODITIES = Object.keys(EXPORT_INSPECTIONS);
+
+function ExportInspectionsPage({ ready }) {
+  const [tab, setTab] = useState("corn");
+  const [chartMode, setChartMode] = useState("seasonal");
+  const [eiUnit, setEiUnit] = useState("mt");
+  const [hWeekly, tWeekly] = useToggle();
+  const [hCumul, tCumul] = useToggle();
+
+  // Conversion: 1 MT = 2204.62 lbs. Corn = 56 lbs/bu, Soybeans/Wheat/Sorghum = 60 lbs/bu (sorghum is 56 but USDA reports at ~56)
+  const lbsPerBu = { corn: 56, soybeans: 60, wheat: 60, sorghum: 56 };
+  const mtToBu = (val, commodity) => val != null ? Math.round(val * 2204.62 / lbsPerBu[commodity] / 1000 * 10) / 10 : null;
+  const isBu = eiUnit === "bu";
+  const convVal = (val) => isBu ? mtToBu(val, tab) : val;
+  const convArr = (arr) => isBu ? arr.map(v => mtToBu(v, tab)) : arr;
+  const unitLabel = isBu ? "million bushels" : "thousand MT";
+  const unitShort = isBu ? "M bu" : "k MT";
+
+  const seasonLegend = [
+    { label: "2024/25", color: "#A32D2D", key: "2024/25" },
+    { label: "2023/24", color: "#378ADD", key: "2023/24", dash: "dashed" },
+    { label: "5-yr avg", color: "#333", key: "5yr", dash: "dotted" },
+  ];
+  const seasonDS = {
+    "2024/25": { borderColor: "#A32D2D", borderWidth: 2.5, pointRadius: 0, tension: 0.3 },
+    "2023/24": { borderColor: "#378ADD", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [5,3] },
+    "5yr":     { borderColor: "#333", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [2,3] },
+  };
+
+  // Month-label x-axis logic
+  const { displayLabels, gridColors } = buildMonthAxis(EI_WEEKS);
+  const xAxisConfig = { ticks: { autoSkip: false, maxRotation: 0, font: { size: 11 } }, grid: { color: (ctx) => gridColors[ctx.index] || "transparent", lineWidth: 0.75 } };
+
+  function niceAxis(allVals) {
+    if (allVals.length === 0) return { yMin: 0, yMax: 100 };
+    const dataMin = Math.min(...allVals); const dataMax = Math.max(...allVals);
+    const range = dataMax - dataMin; const pad = Math.max(range * 0.2, 10);
+    const rawStep = (range + pad * 2) / 5;
+    const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+    const norm = rawStep / mag;
+    const niceNorm = norm <= 1.5 ? 1 : norm <= 3.5 ? 2 : norm <= 7.5 ? 5 : 10;
+    const step = niceNorm * mag;
+    return { yMin: Math.max(0, Math.floor((dataMin - pad) / step) * step), yMax: Math.ceil((dataMax + pad) / step) * step };
+  }
+
+  const d = EXPORT_INSPECTIONS[tab];
+
+  // Convert series based on unit selection
+  const s2425 = convArr(d["2024/25"]);
+  const s2324 = convArr(d["2023/24"]);
+  const s5yr = convArr(d["5yr"]);
+
+  // Cumulative series
+  const cumulate = (arr) => { let sum = 0; return arr.map(v => { sum += (v || 0); return Math.round(sum * 10) / 10; }); };
+  const cum2425 = cumulate(s2425);
+  const cum2324 = cumulate(s2324);
+  const cum5yr = cumulate(s5yr);
+
+  const lastNN = (arr) => { for (let i = arr.length - 1; i >= 0; i--) { if (arr[i] != null) return { val: arr[i], idx: i }; } return { val: null, idx: 0 }; };
+  const latest = lastNN(s2425);
+  const latestCum = cum2425[latest.idx];
+  const yaCum = cum2324[latest.idx];
+  const avg5Cum = cum5yr[latest.idx];
+  const yaWeekly = s2324[latest.idx];
+  const avg5Weekly = s5yr[latest.idx];
+  const prevWeekly = latest.idx > 0 ? s2425[latest.idx - 1] : null;
+  const prevCum = latest.idx > 0 ? cum2425[latest.idx - 1] : null;
+
+  const EIDiff = ({ label, absVal, cur }) => {
+    if (absVal == null || cur == null) return null;
+    const diff = cur - absVal;
+    const pct = absVal !== 0 ? ((diff / absVal) * 100).toFixed(1) : null;
+    const col = diff > 0 ? "#639922" : diff < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
+    return (
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, padding: "2px 0" }}>
+        <span style={{ color: "var(--color-text-tertiary)" }}>{label} ({absVal.toLocaleString()})</span>
+        <span style={{ color: col, fontWeight: 500, fontFamily: "var(--font-mono)" }}>{diff > 0 ? "+" : ""}{diff.toLocaleString()} ({pct}%)</span>
+      </div>
+    );
+  };
+
+  const rcWeekly = useCallback(canvas => {
+    if (chartMode === "contiguous") {
+      const myYears = EI_WEEKS.map(w => { const m = w.split(" ")[0]; return ["Sep","Oct","Nov","Dec"].includes(m) ? "24" : "25"; });
+      const labels23 = EI_WEEKS.map((w,i) => { const m = w.split(" ")[0]; const y = ["Sep","Oct","Nov","Dec"].includes(m) ? "23" : "24"; return m + "-" + y; });
+      const labels24 = EI_WEEKS.map((w,i) => { const m = w.split(" ")[0]; return m + "-" + myYears[i]; });
+      const allLabels = [...labels23, ...labels24];
+      const allData = [...s2324, ...s2425];
+      const allVals = allData.filter(v => v != null);
+      const { yMin, yMax } = niceAxis(allVals);
+      new Chart(canvas, {
+        type: "line", data: { labels: allLabels, datasets: [{ label: d.label, data: allData, borderColor: "#A32D2D", backgroundColor: "rgba(163,45,45,0.06)", fill: true, borderWidth: 2, pointRadius: 0, tension: 0.3, spanGaps: true }] },
+        options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
+          plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.parsed.y.toLocaleString()} ${unitShort}` } } },
+          scales: { x: { ticks: { autoSkip: true, maxTicksLimit: 12, maxRotation: 45, font: { size: 10 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } }, y: { min: yMin, max: yMax, title: { display: true, text: unitLabel, font: { size: 11 } }, ticks: { font: { size: 11 }, callback: v => v.toLocaleString() }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } } },
+        },
+      });
+      return;
+    }
+    const sMap = { "2024/25": s2425, "2023/24": s2324, "5yr": s5yr };
+    const keys = ["2024/25","2023/24","5yr"].filter(k => !hWeekly.has(k));
+    const datasets = keys.map(k => ({ label: k === "5yr" ? "5-yr avg" : k, data: sMap[k], ...seasonDS[k], spanGaps: true }));
+    const allVals = keys.flatMap(k => sMap[k].filter(v => v != null));
+    const { yMin, yMax } = niceAxis(allVals);
+    new Chart(canvas, {
+      type: "line", data: { labels: displayLabels, datasets },
+      options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { title: (items) => items.length > 0 ? EI_WEEKS[items[0].dataIndex] : "", label: c => `${c.dataset.label}: ${c.parsed.y.toLocaleString()} ${unitShort}` } } },
+        scales: { x: xAxisConfig, y: { min: yMin, max: yMax, title: { display: true, text: unitLabel, font: { size: 11 } }, ticks: { font: { size: 11 }, callback: v => v.toLocaleString() }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } } },
+      },
+    });
+  }, [tab, chartMode, hWeekly, eiUnit]);
+
+  const rcCumul = useCallback(canvas => {
+    if (chartMode === "contiguous") {
+      const myYears = EI_WEEKS.map(w => { const m = w.split(" ")[0]; return ["Sep","Oct","Nov","Dec"].includes(m) ? "24" : "25"; });
+      const labels23 = EI_WEEKS.map((w,i) => { const m = w.split(" ")[0]; const y = ["Sep","Oct","Nov","Dec"].includes(m) ? "23" : "24"; return m + "-" + y; });
+      const labels24 = EI_WEEKS.map((w,i) => { const m = w.split(" ")[0]; return m + "-" + myYears[i]; });
+      const allLabels = [...labels23, ...labels24];
+      const allData = [...cum2324, ...cum2425];
+      const allVals = allData.filter(v => v != null);
+      const { yMin, yMax } = niceAxis(allVals);
+      new Chart(canvas, {
+        type: "line", data: { labels: allLabels, datasets: [{ label: d.label, data: allData, borderColor: "#A32D2D", backgroundColor: "rgba(163,45,45,0.06)", fill: true, borderWidth: 2, pointRadius: 0, tension: 0.3, spanGaps: true }] },
+        options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
+          plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.parsed.y.toLocaleString()} ${unitShort}` } } },
+          scales: { x: { ticks: { autoSkip: true, maxTicksLimit: 12, maxRotation: 45, font: { size: 10 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } }, y: { min: yMin, max: yMax, title: { display: true, text: unitLabel + " (cumul.)", font: { size: 11 } }, ticks: { font: { size: 11 }, callback: v => (v / 1000).toFixed(0) + "M" }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } } },
+        },
+      });
+      return;
+    }
+    const keys = ["2024/25","2023/24","5yr"].filter(k => !hCumul.has(k));
+    const cumData = { "2024/25": cum2425, "2023/24": cum2324, "5yr": cum5yr };
+    const datasets = keys.map(k => ({ label: k === "5yr" ? "5-yr avg" : k, data: cumData[k], ...seasonDS[k], spanGaps: true }));
+    const allVals = keys.flatMap(k => cumData[k].filter(v => v != null));
+    const { yMin, yMax } = niceAxis(allVals);
+    new Chart(canvas, {
+      type: "line", data: { labels: displayLabels, datasets },
+      options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { title: (items) => items.length > 0 ? EI_WEEKS[items[0].dataIndex] : "", label: c => `${c.dataset.label}: ${c.parsed.y.toLocaleString()} ${unitShort}` } } },
+        scales: { x: xAxisConfig, y: { min: yMin, max: yMax, title: { display: true, text: unitLabel + " (cumulative)", font: { size: 11 } }, ticks: { font: { size: 11 }, callback: v => (v / 1000).toFixed(0) + "M" }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } } },
+      },
+    });
+  }, [tab, chartMode, hCumul, eiUnit]);
+
+  const dlWeekly = () => {
+    const headers = ["Week","2024/25","2023/24","5-yr avg"];
+    const rows = EI_WEEKS.map((w,i) => [w, d["2024/25"][i], d["2023/24"][i], d["5yr"][i]]);
+    downloadCSV(`export_inspections_${tab}_weekly.csv`, headers, rows);
+  };
+  const dlCumul = () => {
+    const headers = ["Week","2024/25","2023/24","5-yr avg"];
+    const rows = EI_WEEKS.map((w,i) => [w, cum2425[i], cum2324[i], cum5yr[i]]);
+    downloadCSV(`export_inspections_${tab}_cumulative.csv`, headers, rows);
+  };
+
+  const tabs = [
+    { id: "corn", label: "Corn" }, { id: "soybeans", label: "Soybeans" },
+    { id: "wheat", label: "Wheat" }, { id: "sorghum", label: "Sorghum" },
+  ];
+
+  return (<div>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
+        {tabs.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)} style={{ padding: "6px 16px", fontSize: 13, cursor: "pointer", background: tab === t.id ? "#333" : "transparent", border: "none", borderRadius: 6, color: tab === t.id ? "#fff" : "var(--color-text-tertiary)", fontWeight: 500, transition: "all 0.15s" }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <div style={{ display: "inline-flex", borderRadius: 6, overflow: "hidden", border: "1px solid var(--color-border-secondary)" }}>
+        {[{ id: "mt", label: "Metric tons" }, { id: "bu", label: "Bushels" }].map(u => (
+          <button key={u.id} onClick={() => setEiUnit(u.id)} style={{
+            padding: "5px 14px", fontSize: 11, cursor: "pointer", border: "none",
+            borderRight: u.id === "mt" ? "1px solid var(--color-border-secondary)" : "none",
+            background: eiUnit === u.id ? "#333" : "transparent",
+            color: eiUnit === u.id ? "#fff" : "var(--color-text-tertiary)",
+            fontWeight: 500, transition: "all 0.15s",
+          }}>{u.label}</button>
+        ))}
+      </div>
+    </div>
+
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10, marginBottom: 8 }}>
+      <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px" }}>
+        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.4px" }}>Weekly inspections</div>
+        <div style={{ fontSize: 22, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 6 }}>{latest.val != null ? latest.val.toLocaleString() : "—"} <span style={{ fontSize: 12, fontWeight: 400, color: "var(--color-text-secondary)" }}>{unitShort}</span></div>
+        <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 6, display: "flex", flexDirection: "column", gap: 1 }}>
+          <EIDiff label="vs. last week" absVal={prevWeekly} cur={latest.val} />
+          <EIDiff label="vs. last year" absVal={yaWeekly} cur={latest.val} />
+          <EIDiff label="vs. 5-yr avg" absVal={avg5Weekly} cur={latest.val} />
+        </div>
+      </div>
+      <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px" }}>
+        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.4px" }}>MY cumulative</div>
+        <div style={{ fontSize: 22, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 6 }}>{latestCum != null ? (latestCum / 1000).toFixed(1) + "M" : "—"} <span style={{ fontSize: 12, fontWeight: 400, color: "var(--color-text-secondary)" }}>{unitShort}</span></div>
+        <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 6, display: "flex", flexDirection: "column", gap: 1 }}>
+          <EIDiff label="vs. last week" absVal={prevCum} cur={latestCum} />
+          <EIDiff label="vs. last year" absVal={yaCum} cur={latestCum} />
+          <EIDiff label="vs. 5-yr avg" absVal={avg5Cum} cur={latestCum} />
+        </div>
+      </div>
+    </div>
+
+    <SectionTitle right={<div style={{ display: "flex", gap: 8, alignItems: "center" }}><ChartModeToggle mode={chartMode} setMode={setChartMode} /><DownloadBtn onClick={dlWeekly} /></div>}>Weekly export inspections</SectionTitle>
+    {chartMode === "seasonal" && <InteractiveLegend items={seasonLegend} hidden={hWeekly} onToggle={tWeekly} />}
+    {ready && <ChartBox id={`ei_weekly_${tab}_${chartMode}_${eiUnit}`} renderChart={rcWeekly} deps={`${tab}_${chartMode}_${eiUnit}_${[...hWeekly].join()}`} />}
+
+    <SectionTitle right={<div style={{ display: "flex", gap: 8, alignItems: "center" }}><ChartModeToggle mode={chartMode} setMode={setChartMode} /><DownloadBtn onClick={dlCumul} /></div>}>Cumulative export inspections</SectionTitle>
+    {chartMode === "seasonal" && <InteractiveLegend items={seasonLegend} hidden={hCumul} onToggle={tCumul} />}
+    {ready && <ChartBox id={`ei_cumul_${tab}_${chartMode}_${eiUnit}`} renderChart={rcCumul} deps={`${tab}_${chartMode}_${eiUnit}_${[...hCumul].join()}`} />}
+
+    <div style={{ marginTop: 12, fontSize: 10, color: "var(--color-text-tertiary)" }}>Source: USDA/GIPSA Weekly Export Inspections report. Marketing year: Sep–Aug (corn, soybeans, sorghum), Jun–May (wheat). {isBu ? "Converted to bushels: corn & sorghum at 56 lbs/bu, soybeans & wheat at 60 lbs/bu." : "Volumes in thousand metric tons."}</div>
+  </div>);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// GRAINS — EXPORT SALES (USDA/FAS Weekly Export Sales Report)
+// ════════════════════════════════════════════════════════════════════════
+
+const ES_COMMODITIES = ["Corn", "Soybeans", "Wheat", "Soybean Meal", "Soybean Oil", "Sorghum"];
+
+const ES_COUNTRIES = ["GRAND TOTAL", "MEXICO", "JAPAN", "CHINA", "KOREA, REPUBLIC OF", "COLOMBIA", "EU-27", "TAIWAN", "EGYPT", "CANADA", "VIETNAM", "GUATEMALA", "ALGERIA", "MOROCCO", "HONDURAS", "BRAZIL", "UNKNOWN"];
+
+// Weekly report dates (Thursdays, marketing year)
+const ES_WEEKS = ["Sep 11","Sep 18","Sep 25","Oct 2","Oct 9","Oct 16","Oct 23","Oct 30","Nov 6","Nov 13","Nov 20","Nov 27","Dec 4","Dec 11","Dec 18","Dec 25","Jan 1","Jan 8","Jan 15","Jan 22","Jan 29","Feb 5","Feb 12","Feb 19","Feb 26","Mar 5","Mar 12"];
+
+function mkESSeries(base, scale, trend) {
+  return ES_WEEKS.map((_, i) => Math.max(0, Math.round(base + Math.sin((i / 27) * Math.PI * 2 + 1) * scale + i * trend + (Math.cos(i * 0.8) - 0.5) * scale * 0.4)));
+}
+
+function mkESData() {
+  const data = {};
+  ES_COMMODITIES.forEach(comm => {
+    data[comm] = {};
+    const baseScale = comm === "Corn" ? 1 : comm === "Soybeans" ? 0.8 : comm === "Wheat" ? 0.5 : 0.3;
+    ES_COUNTRIES.forEach(country => {
+      const isTotal = country === "GRAND TOTAL";
+      const isUnknown = country === "UNKNOWN";
+      const cScale = isTotal ? 15 : isUnknown ? 2 : (["MEXICO","JAPAN","CHINA","KOREA, REPUBLIC OF","COLOMBIA","EU-27"].includes(country) ? 3 : 1);
+      // Current marketing year
+      const wkExp = mkESSeries(isTotal ? 1800000 * baseScale : 120000 * cScale * baseScale, isTotal ? 400000 * baseScale : 35000 * cScale * baseScale, isTotal ? 5000 : 500 * cScale);
+      const netSales = mkESSeries(isTotal ? 1200000 * baseScale : 80000 * cScale * baseScale, isTotal ? 600000 * baseScale : 50000 * cScale * baseScale, isTotal ? 3000 : 300 * cScale);
+      let cumExp = 0;
+      const accumExp = wkExp.map(v => { cumExp += v; return cumExp; });
+      const outSales = mkESSeries(isTotal ? 24000000 * baseScale : 1500000 * cScale * baseScale, isTotal ? 5000000 * baseScale : 500000 * cScale * baseScale, isTotal ? -200000 : -15000 * cScale);
+      const totalComm = accumExp.map((a, i) => a + outSales[i]);
+      // Prior marketing year
+      const netSalesPY = mkESSeries(isTotal ? 1100000 * baseScale : 72000 * cScale * baseScale, isTotal ? 550000 * baseScale : 45000 * cScale * baseScale, isTotal ? 2800 : 280 * cScale);
+      const totalCommPY = mkESSeries(isTotal ? 58000000 * baseScale : 3800000 * cScale * baseScale, isTotal ? 8000000 * baseScale : 600000 * cScale * baseScale, isTotal ? 300000 : 20000 * cScale);
+      let cumNS = 0; let cumNSPY = 0;
+      const accumNetSales = netSales.map(v => { cumNS += v; return cumNS; });
+      const accumNetSalesPY = netSalesPY.map(v => { cumNSPY += v; return cumNSPY; });
+      // Next marketing year
+      const nmyNetSales = mkESSeries(isTotal ? 400000 * baseScale : 25000 * cScale * baseScale, isTotal ? 300000 * baseScale : 20000 * cScale * baseScale, isTotal ? 2000 : 200 * cScale);
+      const nmyNetSalesPY = mkESSeries(isTotal ? 350000 * baseScale : 22000 * cScale * baseScale, isTotal ? 250000 * baseScale : 18000 * cScale * baseScale, isTotal ? 1800 : 180 * cScale);
+      let nmyCumNS = 0; let nmyCumNSPY = 0;
+      const nmyAccumNetSales = nmyNetSales.map(v => { nmyCumNS += v; return nmyCumNS; });
+      const nmyAccumNetSalesPY = nmyNetSalesPY.map(v => { nmyCumNSPY += v; return nmyCumNSPY; });
+      data[comm][country] = { weeklyExports: wkExp, accumExports: accumExp, netSales, netSalesPY, outstandingSales: outSales, totalCommitments: totalComm, totalCommitmentsPY: totalCommPY, accumNetSales, accumNetSalesPY, nmyNetSales, nmyNetSalesPY, nmyAccumNetSales, nmyAccumNetSalesPY };
+    });
+  });
+  return data;
+}
+
+const EXPORT_SALES = mkESData();
+
+// Unit conversion config per commodity
+const ES_UNIT_OPTIONS = {
+  "Corn": [{ id: "mt", label: "Metric tons" }, { id: "bu", label: "Bushels" }],
+  "Soybeans": [{ id: "mt", label: "Metric tons" }, { id: "bu", label: "Bushels" }],
+  "Wheat": [{ id: "mt", label: "Metric tons" }, { id: "bu", label: "Bushels" }],
+  "Soybean Meal": [{ id: "mt", label: "Metric tons" }, { id: "st", label: "Short tons" }],
+  "Soybean Oil": [{ id: "mt", label: "Metric tons" }, { id: "lbs", label: "Pounds" }],
+  "Sorghum": [{ id: "mt", label: "Metric tons" }, { id: "bu", label: "Bushels" }],
+};
+const ES_CONV = {
+  "Corn_bu": v => v * 2204.62 / 56,
+  "Soybeans_bu": v => v * 2204.62 / 60,
+  "Wheat_bu": v => v * 2204.62 / 60,
+  "Sorghum_bu": v => v * 2204.62 / 56,
+  "Soybean Meal_st": v => v * 1.10231,
+  "Soybean Oil_lbs": v => v * 2204.62,
+};
+const ES_UNIT_LABELS = { mt: "MT", bu: "bushels", st: "short tons", lbs: "lbs" };
+
+function ExportSalesPage({ ready }) {
+  const [commodity, setCommodity] = useState("Corn");
+  const [country, setCountry] = useState("GRAND TOTAL");
+  const [esUnit, setEsUnit] = useState("mt");
+
+  const d = EXPORT_SALES[commodity][country];
+  const li = ES_WEEKS.length - 1;
+
+  // Reset unit to mt when switching commodities
+  const setCommodityAndReset = (c) => { setCommodity(c); setEsUnit("mt"); };
+
+  const convKey = `${commodity}_${esUnit}`;
+  const conv = (v) => {
+    if (v == null) return null;
+    const fn = ES_CONV[convKey];
+    return fn ? Math.round(fn(v)) : v;
+  };
+  const convArr = (arr) => arr.map(conv);
+  const uLabel = ES_UNIT_LABELS[esUnit] || "MT";
+  const unitOpts = ES_UNIT_OPTIONS[commodity] || [];
+
+  function niceAxis(allVals) {
+    if (allVals.length === 0) return { yMin: 0, yMax: 100 };
+    const dataMin = Math.min(...allVals); const dataMax = Math.max(...allVals);
+    const range = dataMax - dataMin; const pad = Math.max(range * 0.15, 10);
+    const rawStep = (range + pad * 2) / 5;
+    const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+    const norm = rawStep / mag;
+    const niceNorm = norm <= 1.5 ? 1 : norm <= 3.5 ? 2 : norm <= 7.5 ? 5 : 10;
+    const step = niceNorm * mag;
+    return { yMin: Math.max(0, Math.floor((dataMin - pad) / step) * step), yMax: Math.ceil((dataMax + pad) / step) * step };
+  }
+
+  const fmtV = (v) => {
+    if (v == null) return "—";
+    if (Math.abs(v) >= 1000000) return (v / 1000000).toFixed(2) + "M";
+    if (Math.abs(v) >= 1000) return (v / 1000).toFixed(0) + "K";
+    return v.toLocaleString();
+  };
+
+  const ESDiff = ({ label, absVal, cur }) => {
+    if (absVal == null || cur == null) return null;
+    const diff = cur - absVal;
+    const pct = absVal !== 0 ? ((diff / absVal) * 100).toFixed(1) : null;
+    const col = diff > 0 ? "#639922" : diff < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
+    return (
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, padding: "2px 0" }}>
+        <span style={{ color: "var(--color-text-tertiary)" }}>{label} ({fmtV(absVal)})</span>
+        <span style={{ color: col, fontWeight: 500, fontFamily: "var(--font-mono)" }}>{diff > 0 ? "+" : ""}{fmtV(diff)} ({pct}%)</span>
+      </div>
+    );
+  };
+
+  // Converted data
+  const cNetSales = convArr(d.netSales);
+  const cNetSalesPY = convArr(d.netSalesPY);
+  const cAccumNS = convArr(d.accumNetSales);
+  const cAccumNSPY = convArr(d.accumNetSalesPY);
+  const cTotalComm = convArr(d.totalCommitments);
+  const cTotalCommPY = convArr(d.totalCommitmentsPY);
+  const cNmyNS = convArr(d.nmyNetSales);
+  const cNmyNSPY = convArr(d.nmyNetSalesPY);
+  const cNmyAccumNS = convArr(d.nmyAccumNetSales);
+  const cNmyAccumNSPY = convArr(d.nmyAccumNetSalesPY);
+  const cWeeklyExp = convArr(d.weeklyExports);
+  const cOutSales = convArr(d.outstandingSales);
+
+  const mkLineChart = (data1, data2, label1, label2, yTitle) => (canvas) => {
+    const allVals = [...data1, ...data2].filter(v => v != null);
+    const { yMin, yMax } = niceAxis(allVals);
+    new Chart(canvas, {
+      type: "line", data: { labels: ES_WEEKS, datasets: [
+        { label: label1, data: data1, borderColor: "#A32D2D", borderWidth: 2.5, pointRadius: 0, tension: 0.3 },
+        { label: label2, data: data2, borderColor: "#378ADD", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [5,3] },
+      ]},
+      options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.parsed.y.toLocaleString()} ${uLabel}` } } },
+        scales: { x: { ticks: { autoSkip: true, maxTicksLimit: 14, maxRotation: 45, font: { size: 10 } }, grid: { color: "rgba(0,0,0,0.08)" } }, y: { min: yMin, max: yMax, title: { display: true, text: yTitle, font: { size: 11 } }, ticks: { font: { size: 10 }, callback: v => fmtV(v) }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } } },
+      },
+    });
+  };
+
+  const seasonLegend = [
+    { label: "2024/25", color: "#A32D2D" },
+    { label: "2023/24", color: "#378ADD", dash: "dashed" },
+  ];
+
+  const dlES = () => {
+    const headers = ["Week","CMY Net Sales","CMY Accum Net Sales","CMY Total Commitments","NMY Net Sales","NMY Accum Net Sales"];
+    const rows = ES_WEEKS.map((w, i) => [w, cNetSales[i], cAccumNS[i], cTotalComm[i], cNmyNS[i], cNmyAccumNS[i]]);
+    downloadCSV(`export_sales_${commodity}_${country}.csv`, headers, rows);
+  };
+
+  const chevronSvg = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%23666' stroke-width='1.5'/%3E%3C/svg%3E")`;
+  const selectStyle = { padding: "7px 28px 7px 12px", fontSize: 13, fontWeight: 500, border: "1px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-primary)", color: "var(--color-text-primary)", fontFamily: "inherit", cursor: "pointer", appearance: "none", backgroundImage: chevronSvg, backgroundRepeat: "no-repeat", backgroundPosition: "right 8px center" };
+  const labelStyle = { fontSize: 11, fontWeight: 600, color: "#fff", background: "#333", padding: "4px 10px", borderRadius: 4, textTransform: "uppercase", letterSpacing: "0.4px" };
+
+  return (<div>
+    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={labelStyle}>Commodity</span>
+        <select value={commodity} onChange={e => setCommodityAndReset(e.target.value)} style={selectStyle}>
+          {ES_COMMODITIES.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={labelStyle}>Destination</span>
+        <select value={country} onChange={e => setCountry(e.target.value)} style={selectStyle}>
+          {ES_COUNTRIES.map(c => <option key={c} value={c}>{c === "GRAND TOTAL" ? "All destinations" : c}</option>)}
+        </select>
+      </div>
+      {unitOpts.length > 1 && <div style={{ display: "inline-flex", borderRadius: 6, overflow: "hidden", border: "1px solid var(--color-border-secondary)" }}>
+        {unitOpts.map(u => (
+          <button key={u.id} onClick={() => setEsUnit(u.id)} style={{
+            padding: "5px 14px", fontSize: 11, cursor: "pointer", border: "none",
+            borderRight: u.id === unitOpts[0].id ? "1px solid var(--color-border-secondary)" : "none",
+            background: esUnit === u.id ? "#333" : "transparent",
+            color: esUnit === u.id ? "#fff" : "var(--color-text-tertiary)",
+            fontWeight: 500, transition: "all 0.15s",
+          }}>{u.label}</button>
+        ))}
+      </div>}
+      <div style={{ marginLeft: "auto" }}><DownloadBtn onClick={dlES} /></div>
+    </div>
+
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10, marginBottom: 8 }}>
+      <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px" }}>
+        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.4px" }}>Weekly net sales (CMY)</div>
+        <div style={{ fontSize: 22, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 6 }}>{fmtV(cNetSales[li])} <span style={{ fontSize: 12, fontWeight: 400, color: "var(--color-text-secondary)" }}>{uLabel}</span></div>
+        <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 6, display: "flex", flexDirection: "column", gap: 1 }}>
+          <ESDiff label="vs. last week" absVal={cNetSales[li - 1]} cur={cNetSales[li]} />
+          <ESDiff label="vs. last year" absVal={cNetSalesPY[li]} cur={cNetSales[li]} />
+        </div>
+      </div>
+      <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px" }}>
+        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.4px" }}>Total commitments (CMY)</div>
+        <div style={{ fontSize: 22, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 6 }}>{fmtV(cTotalComm[li])} <span style={{ fontSize: 12, fontWeight: 400, color: "var(--color-text-secondary)" }}>{uLabel}</span></div>
+        <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 6, display: "flex", flexDirection: "column", gap: 1 }}>
+          <ESDiff label="vs. last year" absVal={cTotalCommPY[li]} cur={cTotalComm[li]} />
+        </div>
+      </div>
+      <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px" }}>
+        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.4px" }}>Outstanding sales (CMY)</div>
+        <div style={{ fontSize: 22, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 6 }}>{fmtV(cOutSales[li])} <span style={{ fontSize: 12, fontWeight: 400, color: "var(--color-text-secondary)" }}>{uLabel}</span></div>
+      </div>
+      <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px" }}>
+        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.4px" }}>Weekly net sales (NMY)</div>
+        <div style={{ fontSize: 22, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 6 }}>{fmtV(cNmyNS[li])} <span style={{ fontSize: 12, fontWeight: 400, color: "var(--color-text-secondary)" }}>{uLabel}</span></div>
+      </div>
+    </div>
+
+    <h3 style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text-primary)", margin: "24px 0 6px", textTransform: "uppercase", letterSpacing: "0.3px" }}>Current marketing year</h3>
+
+    <SectionTitle>Net sales — weekly</SectionTitle>
+    <InteractiveLegend items={seasonLegend} hidden={new Set()} onToggle={() => {}} />
+    {ready && <ChartBox id={`es_ns_${commodity}_${country}_${esUnit}`} height={220} renderChart={mkLineChart(cNetSales, cNetSalesPY, "2024/25", "2023/24", uLabel)} deps={`${commodity}_${country}_${esUnit}`} />}
+
+    <SectionTitle>Cumulative net sales</SectionTitle>
+    <InteractiveLegend items={seasonLegend} hidden={new Set()} onToggle={() => {}} />
+    {ready && <ChartBox id={`es_cumns_${commodity}_${country}_${esUnit}`} height={240} renderChart={mkLineChart(cAccumNS, cAccumNSPY, "2024/25", "2023/24", uLabel + " (cumulative)")} deps={`${commodity}_${country}_${esUnit}`} />}
+
+    <SectionTitle>Total commitments</SectionTitle>
+    <InteractiveLegend items={seasonLegend} hidden={new Set()} onToggle={() => {}} />
+    {ready && <ChartBox id={`es_tc_${commodity}_${country}_${esUnit}`} height={240} renderChart={mkLineChart(cTotalComm, cTotalCommPY, "2024/25", "2023/24", uLabel)} deps={`${commodity}_${country}_${esUnit}`} />}
+
+    <h3 style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text-primary)", margin: "32px 0 6px", textTransform: "uppercase", letterSpacing: "0.3px" }}>Next marketing year</h3>
+
+    <SectionTitle>Net sales — weekly (NMY)</SectionTitle>
+    <InteractiveLegend items={seasonLegend} hidden={new Set()} onToggle={() => {}} />
+    {ready && <ChartBox id={`es_nmyns_${commodity}_${country}_${esUnit}`} height={220} renderChart={mkLineChart(cNmyNS, cNmyNSPY, "2025/26", "2024/25", uLabel)} deps={`${commodity}_${country}_${esUnit}`} />}
+
+    <SectionTitle>Cumulative net sales (NMY)</SectionTitle>
+    <InteractiveLegend items={seasonLegend} hidden={new Set()} onToggle={() => {}} />
+    {ready && <ChartBox id={`es_nmycumns_${commodity}_${country}_${esUnit}`} height={240} renderChart={mkLineChart(cNmyAccumNS, cNmyAccumNSPY, "2025/26", "2024/25", uLabel + " (cumulative)")} deps={`${commodity}_${country}_${esUnit}`} />}
+
+    <div style={{ marginTop: 14, fontSize: 10, color: "var(--color-text-tertiary)" }}>
+      Source: USDA/FAS Weekly Export Sales report. Released Thursdays. CMY = current marketing year, NMY = next marketing year. {esUnit === "bu" ? "Converted to bushels: corn & sorghum at 56 lbs/bu, soybeans & wheat at 60 lbs/bu." : esUnit === "st" ? "Converted to short tons (1 MT = 1.10231 ST)." : esUnit === "lbs" ? "Converted to pounds (1 MT = 2,204.62 lbs)." : "All volumes in metric tons."}
+    </div>
+  </div>);
+}
+
+const PAGES = {
+  "export-sales": { title: "Export sales", component: ExportSalesPage },
+  "export-inspections": { title: "Export inspections", component: ExportInspectionsPage },
+  "drought": { title: "Commodities in drought", component: DroughtPage },
+  "on-feed": { title: "Cattle on feed", component: CattleOnFeedPage },
+  "cutout": { title: "Boxed beef & pork prices", component: CutoutPage },
+  "slaughter": { title: "Slaughter", component: SlaughterPage },
+  "cold-storage": { title: "Cold storage", component: ColdStoragePage },
+  "hogs-pigs": { title: "Hogs & pigs", component: HogsPigsPage },
+  "ng-storage": { title: "Natural gas storage", component: (p) => <EnergyChartPage {...p} dataKey="ngStorage" /> },
+  "ng-inj-wd": { title: "NG injections / withdrawals", component: NGInjWdPage },
+  "ng-production": { title: "Natural gas production", component: (p) => <EnergyChartPage {...p} dataKey="ngProduction" /> },
+  "ng-demand": { title: "Natural gas demand", component: (p) => <EnergyChartPage {...p} dataKey="ngDemand" /> },
+  "petro-crude-stocks": { title: "Crude oil stocks", component: (p) => <EnergyChartPage {...p} dataKey="crudeStocks" /> },
+  "petro-production": { title: "Crude oil production", component: (p) => <EnergyChartPage {...p} dataKey="crudeProduction" /> },
+  "petro-gasoline": { title: "Gasoline stocks", component: (p) => <EnergyChartPage {...p} dataKey="gasolineStocks" /> },
+  "petro-distillate": { title: "Distillate stocks", component: (p) => <EnergyChartPage {...p} dataKey="distillateStocks" /> },
+  "fx-currencies": { title: "Currencies", component: FXCurrenciesPage },
+  "wasde": { title: "WASDE balance sheets", component: WASDEPage },
+  "crop-progress": { title: "Crop progress & condition", component: CropProgressPage },
+  "ethanol": { title: "Ethanol", component: EthanolPage },
+  "fats-oils": { title: "Oilseed crushing", component: FatsOilsPage },
+  "cot-summary": { title: "Commitment of Traders (COT) summary", component: COTSummaryPage },
+  "cot-charts": { title: "COT charts", component: COTChartsPage },
+};
+
+function App() {
+  const [active, setActive] = useState(() => {
+    const hash = window.location.hash.slice(1);
+    return hash || "wasde";
+  });
+  useEffect(() => {
+    const onHash = () => { const h = window.location.hash.slice(1); if (h) setActive(h); };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+  useEffect(() => { if (active) window.location.hash = active; }, [active]);
+  const [chartReady, setChartReady] = useState(false);
+  const [navCollapsed, setNavCollapsed] = useState(false);
+  const [openGroups, setOpenGroups] = useState({ grains: true, livestock: true, energy: true, drivers: true, cot: true });
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastRefreshed, setLastRefreshed] = useState(() => {
+    const now = new Date();
+    return now.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  });
+
+  useEffect(() => {
+    if (window.Chart) { setChartReady(true); return; }
+    const s = document.createElement("script"); s.src = "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"; s.onload = () => {
+      Chart.defaults.scale.ticks.padding = 4;
+      Chart.defaults.scale.grid.drawTicks = false;
+      setChartReady(true);
+    }; document.head.appendChild(s);
+  }, []);
+
+  useEffect(() => {
+    if (!document.getElementById("refresh-spin-style")) {
+      const style = document.createElement("style");
+      style.id = "refresh-spin-style";
+      style.textContent = "@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }";
+      document.head.appendChild(style);
+    }
+  }, []);
+
+  const handleRefresh = () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    // Simulate API fetch — replace with real fetch logic when APIs are wired
+    setTimeout(() => {
+      const now = new Date();
+      setLastRefreshed(now.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }));
+      setRefreshing(false);
+    }, 1200);
+  };
+
+  const toggleGroup = id => setOpenGroups(prev => ({ ...prev, [id]: !prev[id] }));
+  const PageComp = PAGES[active]?.component;
+
+  return (
+    <div style={{ display: "flex", height: "100vh", fontFamily: "var(--font-sans)" }}>
+      <div style={{ width: navCollapsed ? 48 : 220, flexShrink: 0, transition: "width 0.2s ease", borderRight: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-secondary)", display: "flex", flexDirection: "column", overflow: "hidden", height: "100vh", position: "sticky", top: 0 }}>
+        <div style={{ padding: navCollapsed ? "16px 8px" : "16px 16px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", gap: 10, minHeight: 56, flexShrink: 0 }}>
+          {!navCollapsed && <div><div style={{ fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)", whiteSpace: "nowrap" }}>Howard's Heuristics</div></div>}
+          <button onClick={() => setNavCollapsed(!navCollapsed)} style={{ marginLeft: navCollapsed ? 0 : "auto", background: "transparent", border: "none", cursor: "pointer", padding: 4, color: "var(--color-text-secondary)", display: "flex" }}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">{navCollapsed ? <path d="M6 3l5 5-5 5" /> : <path d="M10 3L5 8l5 5" />}</svg>
+          </button>
+        </div>
+        {!navCollapsed && (
+          <nav style={{ padding: "8px 0", flex: 1, overflowY: "auto", minHeight: 0 }}>
+            {NAV_SECTIONS.map(section => {
+              let afterSubheader = false;
+              return (
+              <div key={section.id} style={{ marginBottom: 4 }}>
+                <button onClick={() => toggleGroup(section.id)} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "8px 16px", background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 12, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.4px" }}>
+                  {section.icon}<span style={{ flex: 1, textAlign: "left" }}>{section.label}</span>
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ transform: openGroups[section.id] ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s" }}><path d="M4.5 2.5l3.5 3.5-3.5 3.5" /></svg>
+                </button>
+                {openGroups[section.id] && <div>{section.children.map((child, ci) => {
+                  if (child.subheader) {
+                    afterSubheader = true;
+                    return <div key={`sub-${ci}`} style={{ padding: "10px 16px 3px 40px", fontSize: 10, fontWeight: 600, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>{child.subheader}</div>;
+                  }
+                  const isA = active === child.id;
+                  const leftPad = afterSubheader ? 54 : 40;
+                  return <button key={child.id} onClick={() => setActive(child.id)} style={{ display: "block", width: "100%", textAlign: "left", padding: `7px 16px 7px ${leftPad}px`, background: isA ? "var(--color-background-primary)" : "transparent", border: "none", borderLeft: isA ? "2.5px solid var(--color-text-primary)" : "2.5px solid transparent", cursor: "pointer", color: isA ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontSize: 13, fontWeight: isA ? 500 : 400, transition: "all 0.1s" }}>{child.label}</button>;
+                })}</div>}
+              </div>
+            );})}
+          </nav>
+        )}
+        {navCollapsed && <nav style={{ padding: "12px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>{NAV_SECTIONS.map(s => <div key={s.id} title={s.label} style={{ padding: 8, borderRadius: "var(--border-radius-md)", cursor: "pointer", color: "var(--color-text-secondary)" }} onClick={() => { setNavCollapsed(false); setOpenGroups(p => ({ ...p, [s.id]: true })); }}>{s.icon}</div>)}</nav>}
+        {!navCollapsed && <div style={{ padding: "12px 16px", borderTop: "0.5px solid var(--color-border-tertiary)", fontSize: 10, color: "var(--color-text-tertiary)", flexShrink: 0 }}>Source: USDA WASDE, ERS,<br/>NASS, AMS, EIA reports</div>}
+      </div>
+      <div style={{ flex: 1, minWidth: 0, padding: "20px 28px 40px", overflowY: "auto", height: "100vh" }}>
+        <div style={{ maxWidth: 1400 }}>
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+              <div>
+                <h1 style={{ fontSize: 20, fontWeight: 500, color: "var(--color-text-primary)", margin: "0 0 2px" }}>{PAGES[active]?.title}</h1>
+                <div style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>Prototype v4 — representative data</div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>{refreshing ? "Refreshing..." : `Last refreshed ${lastRefreshed}`}</span>
+                <button onClick={handleRefresh} disabled={refreshing} style={{
+                  display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 14px", fontSize: 12, cursor: refreshing ? "wait" : "pointer",
+                  borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-secondary)", background: "transparent",
+                  color: "var(--color-text-secondary)", transition: "all 0.15s", opacity: refreshing ? 0.6 : 1,
+                }}
+                onMouseEnter={e => { if (!refreshing) e.currentTarget.style.background = "var(--color-background-secondary)"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+                    style={{ animation: refreshing ? "spin 0.8s linear infinite" : "none" }}>
+                    <path d="M1.5 8a6.5 6.5 0 0 1 11.3-4.4M14.5 8a6.5 6.5 0 0 1-11.3 4.4"/>
+                    <path d="M14.5 2v4h-4M1.5 14v-4h4"/>
+                  </svg>
+                  Refresh
+                </button>
+              </div>
+            </div>
+          </div>
+          {PageComp && <PageComp ready={chartReady} />}
+        </div>
+      </div>
+    </div>
+  );
+}

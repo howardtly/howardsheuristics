@@ -20,21 +20,31 @@ OUTPUT_DIR = os.path.join(REPO_ROOT, "data")
 CFTC_URL = "https://www.cftc.gov/files/dea/history/com_disagg_txt_{year}.zip"
 
 # Map CFTC Market_and_Exchange_Names to our IDs
-# The CFTC CSV has the commodity name and exchange in one field
+# The CFTC CSV field format: "COMMODITY - EXCHANGE NAME"
+# We match the commodity portion (before " - ") exactly.
+# Multiple aliases handle name changes over the years.
 COMMODITY_MAP = {
+    # Exact commodity name (before " - ") -> our ID
     "CORN": "cot-corn",
     "WHEAT-SRW": "cot-chi-wheat",
+    "WHEAT SRW": "cot-chi-wheat",
     "SOYBEANS": "cot-soybeans",
     "WHEAT-HRW": "cot-kc-wheat",
+    "WHEAT HRW": "cot-kc-wheat",
     "WHEAT-HRSPRING": "cot-mpls-wheat",
+    "WHEAT HRSPRING": "cot-mpls-wheat",
     "SOYBEAN OIL": "cot-oil",
     "SOYBEAN MEAL": "cot-meal",
     "LIVE CATTLE": "cot-live-cattle",
     "FEEDER CATTLE": "cot-feeder-cattle",
     "LEAN HOGS": "cot-lean-hogs",
     "CRUDE OIL, LIGHT SWEET": "cot-crude-oil",
+    "CRUDE OIL, LIGHT SWEET - NEW YORK MERCANTILE EXCHANGE": "cot-crude-oil",
     "NY HARBOR ULSD": "cot-heating-oil",
+    "NO. 2 HEATING OIL, NY HARBOR": "cot-heating-oil",
+    "#2 HEATING OIL,NY HARBOR-N.Y.M.E.": "cot-heating-oil",
     "NATURAL GAS": "cot-nat-gas",
+    "NATURAL GAS - NEW YORK MERCANTILE EXCHANGE": "cot-nat-gas",
 }
 
 COMMODITY_META = {
@@ -82,13 +92,31 @@ def download_cftc_zip(year):
         return None
 
 
+_unmatched_names = set()
+
 def identify_commodity(market_name):
-    """Match CFTC market name to our commodity ID."""
-    name_upper = market_name.upper().strip()
-    # Try exact prefix match
-    for cftc_name, cot_id in COMMODITY_MAP.items():
-        if name_upper.startswith(cftc_name):
-            return cot_id
+    """Match CFTC market name to our commodity ID using exact commodity name matching."""
+    full_name = market_name.strip()
+    full_upper = full_name.upper()
+    
+    # First try exact match on full name
+    if full_upper in COMMODITY_MAP:
+        return COMMODITY_MAP[full_upper]
+    
+    # Extract commodity portion (before " - EXCHANGE")
+    if " - " in full_name:
+        commodity_part = full_name.split(" - ")[0].strip().upper()
+    else:
+        commodity_part = full_upper
+    
+    # Exact match on commodity portion
+    if commodity_part in COMMODITY_MAP:
+        return COMMODITY_MAP[commodity_part]
+    
+    # Track unmatched for debugging (only first occurrence)
+    if commodity_part not in _unmatched_names and len(_unmatched_names) < 50:
+        _unmatched_names.add(commodity_part)
+    
     return None
 
 
@@ -340,6 +368,17 @@ def main():
         }
 
         print(f"  {cot_id}: {len(recent)} wks, {len(yearly_out)} yrs, latest {latest['date']}, MM net={latest['mm_net']:,}, recL={rec_long:,}, recS={rec_short:,}")
+
+        # Debug: print corn 2025 first 12 weeks for verification
+        if cot_id == "cot-corn" and "2025" in yearly_out:
+            corn_25 = yearly_out["2025"]["mm_net"][:12]
+            print(f"    Corn 2025 MM net wks 1-12: {corn_25}")
+
+    # Log unmatched commodity names
+    if _unmatched_names:
+        print(f"\n  Unmatched CFTC commodity names ({len(_unmatched_names)}):")
+        for n in sorted(_unmatched_names)[:20]:
+            print(f"    {n}")
 
     # Output
     result = {

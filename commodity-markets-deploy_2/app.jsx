@@ -3481,14 +3481,25 @@ function COTChartsPage({ ready }) {
   const toggleYear = (label) => setHiddenYears(prev => { const next = new Set(prev); next.has(label) ? next.delete(label) : next.add(label); return next; });
   useEffect(() => { setHiddenYears(new Set()); }, [sel, timeRange]);
 
-  // 53 x-axis slots (index 0-52). Labels: month name at fixed positions matching (doy-1)//7
-  // ISO week index of month starts (2025 reference): Jan wk1=idx0, Feb wk5=idx4, etc.
-    const monthStarts = { 0: "Jan", 4: "Feb", 8: "Mar", 13: "Apr", 17: "May", 21: "Jun", 26: "Jul", 30: "Aug", 35: "Sep", 39: "Oct", 43: "Nov", 48: "Dec" };
+  // X-axis: 53 ISO week slots. Month labels at midpoints, gridlines at boundaries.
+  const monthBoundaries = [0, 4, 8, 13, 17, 21, 26, 30, 35, 39, 43, 48];
+  const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   const NUM_SLOTS = 53;
-  const xLabels = Array.from({ length: NUM_SLOTS }, (_, i) => monthStarts[i] || "");
-  const xGridColors = Array.from({ length: NUM_SLOTS }, (_, i) => i in monthStarts && i > 0 ? "rgba(0,0,0,0.12)" : "transparent");
+  const monthMids = {};
+  for (let m = 0; m < 12; m++) {
+    const s = monthBoundaries[m], e = m < 11 ? monthBoundaries[m + 1] : NUM_SLOTS;
+    monthMids[Math.floor((s + e) / 2)] = monthNames[m];
+  }
+  const boundarySet = new Set(monthBoundaries.slice(1));
+  const xLabels = Array.from({ length: NUM_SLOTS }, (_, i) => monthMids[i] || "");
+  const xGridColors = Array.from({ length: NUM_SLOTS }, (_, i) => boundarySet.has(i) ? "rgba(0,0,0,0.15)" : "transparent");
 
-  const fmtAxis = (v) => v == null ? "" : (v / 1000).toLocaleString(undefined, { maximumFractionDigits: 0 });
+  const fmtAxis = (v) => {
+      if (v == null) return "";
+      const k = v / 1000;
+      if (Math.abs(k) < 10) return k.toFixed(1);  // show 1 decimal for small values
+      return k.toLocaleString(undefined, { maximumFractionDigits: 0 });
+    };
 
   const mkChart = useCallback((field) => (canvas) => {
     const datasets = [];
@@ -3502,7 +3513,9 @@ function COTChartsPage({ ready }) {
     const range = dataMax - dataMin, pad = Math.max(range * 0.12, Math.abs(dataMax) * 0.03 || 100);
     const rawStep = (range + pad * 2) / 5, mag = Math.pow(10, Math.floor(Math.log10(rawStep || 1)));
     const norm = rawStep / mag, niceNorm = norm <= 1.5 ? 1 : norm <= 3.5 ? 2 : norm <= 7.5 ? 5 : 10;
-    const step = niceNorm * mag;
+    let step = niceNorm * mag;
+    // Ensure step is at least 1000 (1K on the axis) to avoid duplicate labels
+    if (step < 1000) step = Math.max(500, step);
     new Chart(canvas, { type: "line", data: { labels: xLabels, datasets }, options: {
       responsive: true, maintainAspectRatio: false,
       interaction: { mode: "nearest", intersect: false, axis: "xy" },

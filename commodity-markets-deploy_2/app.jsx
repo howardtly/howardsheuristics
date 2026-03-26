@@ -3204,72 +3204,7 @@ function useLiveCOT() {
       .then(r => { if (!r.ok) throw new Error("not found"); return r.json(); })
       .then(data => {
         if (data && data.data && Object.keys(data.data).length > 0) {
-          // Transform live data to match the format charts expect
-          const transformed = {};
-          for (const [id, d] of Object.entries(data.data)) {
-            // Build bands in the format: bands.managed.net = { min, max, median, thisYear, lastYear, history }
-            // Live JSON has: bands.mm_net = { min[], max[], median[] }
-            // We need to extract thisYear and lastYear from the weekly series by ISO week
-            const keyMap = {
-              managed: { net: "mm_net", long: "mm_long", short: "mm_short" },
-              producer: { net: "prod_net", long: "prod_long", short: "prod_short" },
-              swap: { net: "swap_net", long: "swap_long", short: "swap_short" },
-              other: { net: "other_net", long: "other_long", short: "other_short" },
-            };
-
-            const liveBands = d.bands || {};
-            const dates = d.dates || [];
-            const chartBands = {};
-
-            // Helper: extract values by year from the series
-            const getByYear = (series, targetYear) => {
-              const byWeek = new Array(52).fill(null);
-              for (let i = 0; i < dates.length; i++) {
-                const dt = new Date(dates[i]);
-                const yr = dt.getFullYear();
-                if (yr === targetYear) {
-                  // ISO week approximation
-                  const jan1 = new Date(yr, 0, 1);
-                  const wk = Math.min(51, Math.floor((dt - jan1) / (7 * 86400000)));
-                  byWeek[wk] = series[i];
-                }
-              }
-              return byWeek;
-            };
-
-            // Determine current and last year from latest date
-            const latestDate = dates.length > 0 ? new Date(dates[dates.length - 1]) : new Date();
-            const curYear = latestDate.getFullYear();
-            const lastYear = curYear - 1;
-
-            for (const [catKey, fieldMap] of Object.entries(keyMap)) {
-              chartBands[catKey] = {};
-              for (const [posKey, jsonKey] of Object.entries(fieldMap)) {
-                const bandData = liveBands[jsonKey] || {};
-                // Get the full series for this position type from the commodity data
-                let series = [];
-                if (catKey === "managed") series = posKey === "net" ? d.managed.net : posKey === "long" ? d.managed.long : d.managed.short;
-                else if (catKey === "producer") series = posKey === "net" ? d.producer.net : posKey === "long" ? d.producer.long : d.producer.short;
-                else if (catKey === "swap") series = posKey === "net" ? d.swap.net : posKey === "long" ? d.swap.long : d.swap.short;
-                else if (catKey === "other") series = posKey === "net" ? d.other.net : posKey === "long" ? d.other.long : d.other.short;
-
-                chartBands[catKey][posKey] = {
-                  min: bandData.min || new Array(52).fill(0),
-                  max: bandData.max || new Array(52).fill(0),
-                  median: bandData.median || new Array(52).fill(0),
-                  thisYear: getByYear(series, curYear),
-                  lastYear: getByYear(series, lastYear),
-                  history: series,  // full contiguous series for contiguous mode
-                };
-              }
-            }
-
-            // Also build oi band
-            chartBands.oi = { net: { history: d.oi.net, min: new Array(52).fill(0), max: new Array(52).fill(0), median: new Array(52).fill(0), thisYear: getByYear(d.oi.net, curYear), lastYear: getByYear(d.oi.net, lastYear) } };
-
-            transformed[id] = { ...d, bands: chartBands };
-          }
-          setLiveCOT(transformed);
+          setLiveCOT(data.data);
           setCotMeta({ weeks: data.weeks, fetched: data.fetched_at });
         }
       })
@@ -3527,38 +3462,46 @@ const COT_COMMODITY_LIST = [
 function COTChartsPage({ ready }) {
   const { cotData } = useLiveCOT();
   const [sel, setSel] = useState("cot-corn");
-  const [chartMode, setChartMode] = useState("seasonal");
+  const [timeRange, setTimeRange] = useState("5");
   const d = cotData[sel];
   if (!d) return <div>No data available</div>;
 
-  const bands = d.bands;
+  const curYear = new Date().getFullYear();
+  const yearly = d.yearly || {};
+  const medians = d.medians || {};
+  const availYears = Object.keys(yearly).map(Number).sort();
 
-  // Month-label x-axis for seasonal (evenly spaced months)
-  const { displayLabels: cotDisplayLabels, gridColors: cotGridColors } = buildMonthAxis(COT_WEEK_LABELS);
-  const cotSeasonalXAxis = { ticks: { autoSkip: false, maxRotation: 0, font: { size: 9 } }, grid: { color: (ctx) => cotGridColors[ctx.index] || "transparent", lineWidth: 0.75 } };
-  const cotSeasonalXAxisLg = { ...cotSeasonalXAxis, ticks: { ...cotSeasonalXAxis.ticks, font: { size: 10 } } };
+  // Determine which years to show based on timeRange
+  let displayYears;
+  if (timeRange === "all") {
+    displayYears = availYears;
+  } else {
+    const n = parseInt(timeRange);
+    displayYears = availYears.filter(y => y >= curYear - n);
+  }
 
-  // Year-label x-axis for contiguous (520 points -> show year at week 0 of each year)
-  const cotContigLabels = (() => {
-    const out = [];
-    for (let y = 0; y < 10; y++) {
-      for (let w = 0; w < 52; w++) {
-        out.push(w === 0 ? String(2016 + y) : "");
-      }
-    }
-    return out;
-  })();
-  const cotContigGridColors = (() => {
-    const out = [];
-    for (let y = 0; y < 10; y++) {
-      for (let w = 0; w < 52; w++) {
-        out.push(w === 0 ? "rgba(0,0,0,0.12)" : "transparent");
-      }
-    }
-    return out;
-  })();
-  const cotContigXAxis = { ticks: { autoSkip: false, maxRotation: 0, font: { size: 9 } }, grid: { color: (ctx) => cotContigGridColors[ctx.index] || "transparent", lineWidth: 0.75 } };
-  const cotContigXAxisLg = { ...cotContigXAxis, ticks: { ...cotContigXAxis.ticks, font: { size: 10 } } };
+  // Color palette for years — current year is bold, others cycle through colors
+  const yearColors = [
+    "#A32D2D", "#D85A30", "#E8A735", "#639922", "#1D9E75",
+    "#378ADD", "#534AB7", "#8B5CF6", "#EC4899", "#6B7280",
+    "#0EA5E9", "#14B8A6", "#F97316", "#7C3AED", "#BE185D",
+    "#059669", "#B45309", "#4338CA", "#DC2626", "#0284C7",
+  ];
+
+  const getYearColor = (yr) => {
+    if (yr === curYear) return "#333";
+    const idx = displayYears.indexOf(yr);
+    return yearColors[idx % yearColors.length];
+  };
+  const getYearWidth = (yr) => yr === curYear ? 2.5 : 1.2;
+  const getYearDash = (yr) => yr === curYear - 1 ? [5, 3] : [];
+
+  // Week labels (1-52 as month names)
+  const weekLabels = Array.from({ length: 52 }, (_, i) => {
+    const dt = new Date(2025, 0, 6 + i * 7);
+    return `${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][dt.getMonth()]} ${dt.getDate()}`;
+  });
+  const { displayLabels: xLabels, gridColors: xGridColors } = buildMonthAxis(weekLabels);
 
   const fmtContracts = (v) => {
     if (v == null) return "—";
@@ -3567,10 +3510,38 @@ function COTChartsPage({ ready }) {
     return v.toLocaleString();
   };
 
-  const mkContigChart = useCallback((band, catColor) => (canvas) => {
-    if (!band || !band.history || band.history.length === 0) return;
-    const data = band.history;
-    const allVals = data.filter(v => v != null);
+  const mkChart = useCallback((field, title) => (canvas) => {
+    const datasets = [];
+    // Add median line
+    if (medians[field]) {
+      datasets.push({
+        label: "Median",
+        data: medians[field],
+        borderColor: "#999",
+        borderWidth: 1.5,
+        borderDash: [3, 3],
+        pointRadius: 0,
+        tension: 0.3,
+        fill: false,
+      });
+    }
+    // Add each year as a line
+    displayYears.forEach(yr => {
+      const yrData = yearly[String(yr)];
+      if (!yrData || !yrData[field]) return;
+      datasets.push({
+        label: String(yr),
+        data: yrData[field],
+        borderColor: getYearColor(yr),
+        borderWidth: getYearWidth(yr),
+        borderDash: getYearDash(yr),
+        pointRadius: 0,
+        tension: 0.3,
+        fill: false,
+      });
+    });
+
+    const allVals = datasets.flatMap(ds => (ds.data || []).filter(v => v != null));
     if (allVals.length === 0) return;
     const dataMin = Math.min(...allVals); const dataMax = Math.max(...allVals);
     const range = dataMax - dataMin; const pad = Math.max(range * 0.1, Math.abs(dataMax) * 0.02 || 100);
@@ -3581,157 +3552,55 @@ function COTChartsPage({ ready }) {
     const step = niceNorm * mag;
     const yMin = Math.floor((dataMin - pad) / step) * step;
     const yMax = Math.ceil((dataMax + pad) / step) * step;
-    // Build labels from dates if available, otherwise index-based
-    const labels = (d.dates && d.dates.length === data.length)
-      ? d.dates.map((dt, i) => { const m = dt.slice(5,7); const prev = i > 0 ? d.dates[i-1].slice(5,7) : ""; return m !== prev ? dt.slice(0,7) : ""; })
-      : data.map((_, i) => i % 13 === 0 ? String(i) : "");
-    new Chart(canvas, {
-      type: "line",
-      data: { labels, datasets: [
-        { label: "Position", data, borderColor: catColor, backgroundColor: catColor + "0F", fill: true, borderWidth: 1.5, pointRadius: 0, tension: 0.3 },
-      ]},
-      options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
-        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.parsed.y != null ? c.parsed.y.toLocaleString() : "n/a"} contracts` } } },
-        scales: {
-          x: { ticks: { autoSkip: true, maxTicksLimit: 12, maxRotation: 0, font: { size: 9 } }, grid: { color: "rgba(0,0,0,0.06)" } },
-          y: { min: yMin, max: yMax, ticks: { font: { size: 9 }, callback: v => fmtContracts(v) }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
-        },
-      },
-    });
-  }, [sel, d]);
 
-  const mkContigOIChart = useCallback((canvas) => {
-    const band = bands.oi && bands.oi.net;
-    if (!band || !band.history || band.history.length === 0) return;
-    const data = band.history;
-    const allVals = data.filter(v => v != null);
-    if (allVals.length === 0) return;
-    const dataMin = Math.min(...allVals); const dataMax = Math.max(...allVals);
-    const range = dataMax - dataMin; const pad = Math.max(range * 0.1, 100);
-    const rawStep = (range + pad * 2) / 5;
-    const mag = Math.pow(10, Math.floor(Math.log10(rawStep || 1)));
-    const norm = rawStep / mag;
-    const niceNorm = norm <= 1.5 ? 1 : norm <= 3.5 ? 2 : norm <= 7.5 ? 5 : 10;
-    const step = niceNorm * mag;
-    const yMin = Math.floor((dataMin - pad) / step) * step;
-    const yMax = Math.ceil((dataMax + pad) / step) * step;
-    const labels = (d.dates && d.dates.length === data.length)
-      ? d.dates.map((dt, i) => { const m = dt.slice(5,7); const prev = i > 0 ? d.dates[i-1].slice(5,7) : ""; return m !== prev ? dt.slice(0,7) : ""; })
-      : data.map((_, i) => i % 13 === 0 ? String(i) : "");
     new Chart(canvas, {
       type: "line",
-      data: { labels, datasets: [
-        { label: "Open Interest", data, borderColor: "#333", backgroundColor: "rgba(0,0,0,0.04)", fill: true, borderWidth: 1.5, pointRadius: 0, tension: 0.3 },
-      ]},
-      options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
-        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.parsed.y != null ? c.parsed.y.toLocaleString() : "n/a"} contracts` } } },
+      data: { labels: xLabels, datasets },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: {
+            display: true, position: "bottom",
+            labels: { usePointStyle: true, pointStyle: "line", boxWidth: 20, font: { size: 11 }, padding: 10,
+              generateLabels: (chart) => chart.data.datasets.map((ds, i) => ({
+                text: ds.label, strokeStyle: ds.borderColor, fillStyle: "transparent",
+                lineDash: ds.borderDash || [], lineWidth: ds.borderWidth,
+                hidden: !chart.isDatasetVisible(i), datasetIndex: i, pointStyle: "line",
+              })),
+            },
+            onClick: (e, legendItem, legend) => {
+              const idx = legendItem.datasetIndex;
+              const ci = legend.chart;
+              ci.isDatasetVisible(idx) ? ci.hide(idx) : ci.show(idx);
+            },
+          },
+          tooltip: {
+            filter: (item) => item.parsed.y != null,
+            callbacks: {
+              title: (items) => items.length > 0 ? weekLabels[items[0].dataIndex] : "",
+              label: c => `${c.dataset.label}: ${c.parsed.y != null ? c.parsed.y.toLocaleString() : "n/a"}`,
+            },
+          },
+        },
         scales: {
-          x: { ticks: { autoSkip: true, maxTicksLimit: 12, maxRotation: 0, font: { size: 10 } }, grid: { color: "rgba(0,0,0,0.06)" } },
-          y: { min: yMin, max: yMax, title: { display: true, text: "Contracts", font: { size: 11 } }, ticks: { font: { size: 10 }, callback: v => fmtContracts(v) }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+          x: { ticks: { autoSkip: false, maxRotation: 0, font: { size: 10 } }, grid: { color: (ctx) => xGridColors[ctx.index] || "transparent", lineWidth: 0.75 } },
+          y: { min: yMin, max: yMax, ticks: { font: { size: 10 }, callback: v => fmtContracts(v) }, grid: { color: "rgba(0,0,0,0.08)", lineWidth: 0.75 } },
         },
       },
     });
-  }, [sel, d]);
-
-  const mkBandChart = useCallback((band, catColor) => (canvas) => {
-    if (!band) return;
-    const allVals = [...(band.min||[]), ...(band.max||[]), ...(band.thisYear||[]), ...(band.lastYear||[])].filter(v => v != null);
-    if (allVals.length === 0) return;
-    const dataMin = Math.min(...allVals); const dataMax = Math.max(...allVals);
-    const range = dataMax - dataMin; const pad = Math.max(range * 0.1, Math.abs(dataMax) * 0.02 || 100);
-    const rawStep = (range + pad * 2) / 5;
-    const mag = Math.pow(10, Math.floor(Math.log10(rawStep || 1)));
-    const norm = rawStep / mag;
-    const niceNorm = norm <= 1.5 ? 1 : norm <= 3.5 ? 2 : norm <= 7.5 ? 5 : 10;
-    const step = niceNorm * mag;
-    const yMin = Math.floor((dataMin - pad) / step) * step;
-    const yMax = Math.ceil((dataMax + pad) / step) * step;
-    new Chart(canvas, {
-      type: "line",
-      data: { labels: cotDisplayLabels, datasets: [
-        { label: "_base", data: band.min, fill: true, backgroundColor: "transparent", borderColor: "transparent", borderWidth: 0, pointRadius: 0, tension: 0.3 },
-        { label: "10-yr range", data: band.max, fill: "-1", backgroundColor: "rgba(0,0,0,0.06)", borderColor: "transparent", borderWidth: 0, pointRadius: 0, tension: 0.3 },
-        { label: "Median", data: band.median, borderColor: "#333", borderWidth: 1.5, borderDash: [2,3], pointRadius: 0, tension: 0.3, fill: false },
-        { label: String(new Date().getFullYear() - 1), data: band.lastYear, borderColor: "#378ADD", borderWidth: 1.5, borderDash: [5,3], pointRadius: 0, tension: 0.3, fill: false },
-        { label: String(new Date().getFullYear()), data: band.thisYear, borderColor: catColor, borderWidth: 2.5, pointRadius: 0, tension: 0.3, fill: false },
-      ]},
-      options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
-        plugins: { legend: { display: false },
-          tooltip: { filter: (item) => !item.dataset.label.startsWith("_"), callbacks: { title: (items) => items.length > 0 ? COT_WEEK_LABELS[items[0].dataIndex] : "", label: c => `${c.dataset.label}: ${c.parsed.y != null ? c.parsed.y.toLocaleString() : "n/a"} contracts` } },
-        },
-        scales: {
-          x: cotSeasonalXAxis,
-          y: { min: yMin, max: yMax, ticks: { font: { size: 9 }, callback: v => fmtContracts(v) }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
-        },
-      },
-    });
-  }, [sel, d]);
-
-  const mkOIBandChart = useCallback((canvas) => {
-    const band = bands.oi && bands.oi.net;
-    if (!band) return;
-    const allVals = [...(band.min||[]), ...(band.max||[]), ...(band.thisYear||[]), ...(band.lastYear||[])].filter(v => v != null);
-    if (allVals.length === 0) return;
-    const dataMin = Math.min(...allVals); const dataMax = Math.max(...allVals);
-    const range = dataMax - dataMin; const pad = Math.max(range * 0.1, 100);
-    const rawStep = (range + pad * 2) / 5;
-    const mag = Math.pow(10, Math.floor(Math.log10(rawStep || 1)));
-    const norm = rawStep / mag;
-    const niceNorm = norm <= 1.5 ? 1 : norm <= 3.5 ? 2 : norm <= 7.5 ? 5 : 10;
-    const step = niceNorm * mag;
-    const yMin = Math.floor((dataMin - pad) / step) * step;
-    const yMax = Math.ceil((dataMax + pad) / step) * step;
-    new Chart(canvas, {
-      type: "line",
-      data: { labels: cotDisplayLabels, datasets: [
-        { label: "_base", data: band.min, fill: true, backgroundColor: "transparent", borderColor: "transparent", borderWidth: 0, pointRadius: 0, tension: 0.3 },
-        { label: "10-yr range", data: band.max, fill: "-1", backgroundColor: "rgba(0,0,0,0.06)", borderColor: "transparent", borderWidth: 0, pointRadius: 0, tension: 0.3 },
-        { label: "Median", data: band.median, borderColor: "#333", borderWidth: 1.5, borderDash: [2,3], pointRadius: 0, tension: 0.3, fill: false },
-        { label: String(new Date().getFullYear() - 1), data: band.lastYear, borderColor: "#378ADD", borderWidth: 1.5, borderDash: [5,3], pointRadius: 0, tension: 0.3, fill: false },
-        { label: String(new Date().getFullYear()), data: band.thisYear, borderColor: "#1D9E75", borderWidth: 2.5, pointRadius: 0, tension: 0.3, fill: false },
-      ]},
-      options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
-        plugins: { legend: { display: false },
-          tooltip: { filter: (item) => !item.dataset.label.startsWith("_"), callbacks: { title: (items) => items.length > 0 ? COT_WEEK_LABELS[items[0].dataIndex] : "", label: c => `${c.dataset.label}: ${c.parsed.y != null ? c.parsed.y.toLocaleString() : "n/a"} contracts` } },
-        },
-        scales: {
-          x: cotSeasonalXAxisLg,
-          y: { min: yMin, max: yMax, title: { display: true, text: "Contracts", font: { size: 11 } }, ticks: { font: { size: 10 }, callback: v => fmtContracts(v) }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
-        },
-      },
-    });
-  }, [sel, d]);
+  }, [sel, timeRange, d]);
 
   const chevronSvg = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%23666' stroke-width='1.5'/%3E%3C/svg%3E")`;
   const selectStyle = { padding: "7px 28px 7px 12px", fontSize: 13, fontWeight: 500, border: "1px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-primary)", color: "var(--color-text-primary)", fontFamily: "inherit", cursor: "pointer", appearance: "none", backgroundImage: chevronSvg, backgroundRepeat: "no-repeat", backgroundPosition: "right 8px center" };
   const labelStyle2 = { fontSize: 11, fontWeight: 600, color: "#fff", background: "#333", padding: "4px 10px", borderRadius: 4, textTransform: "uppercase", letterSpacing: "0.4px" };
 
   const categories = [
-    { key: "managed", title: "Managed Money", color: "#1D9E75" },
-    { key: "producer", title: "Producer / Merchant", color: "#A32D2D" },
-    { key: "swap", title: "Swap Dealers", color: "#534AB7" },
-    { key: "other", title: "Other Reportables", color: "#D85A30" },
+    { key: "managed", title: "Managed Money", fields: ["mm_net", "mm_long", "mm_short"] },
+    { key: "producer", title: "Producer / Merchant", fields: ["prod_net", "prod_long", "prod_short"] },
+    { key: "swap", title: "Swap Dealers", fields: ["swap_net", "swap_long", "swap_short"] },
+    { key: "other", title: "Other Reportables", fields: ["other_net", "other_long", "other_short"] },
   ];
-
-  const tripleRow = (cat) => (
-    <div key={cat.key}>
-      <h3 style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)", margin: "20px 0 8px" }}>{cat.title}</h3>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-        <div>
-          <div style={{ fontSize: 11, fontWeight: 500, color: "var(--color-text-secondary)", marginBottom: 4, textAlign: "center" }}>Net</div>
-          {ready && <ChartBox id={`cot2_${cat.key}_net_${sel}_${chartMode}`} height={200} renderChart={chartMode === "contiguous" ? mkContigChart(bands[cat.key].net, cat.color) : mkBandChart(bands[cat.key].net, cat.color)} deps={`${sel}_${chartMode}`} />}
-        </div>
-        <div>
-          <div style={{ fontSize: 11, fontWeight: 500, color: "var(--color-text-secondary)", marginBottom: 4, textAlign: "center" }}>Long</div>
-          {ready && <ChartBox id={`cot2_${cat.key}_long_${sel}_${chartMode}`} height={200} renderChart={chartMode === "contiguous" ? mkContigChart(bands[cat.key].long, "#639922") : mkBandChart(bands[cat.key].long, "#639922")} deps={`${sel}_${chartMode}`} />}
-        </div>
-        <div>
-          <div style={{ fontSize: 11, fontWeight: 500, color: "var(--color-text-secondary)", marginBottom: 4, textAlign: "center" }}>Short</div>
-          {ready && <ChartBox id={`cot2_${cat.key}_short_${sel}_${chartMode}`} height={200} renderChart={chartMode === "contiguous" ? mkContigChart(bands[cat.key].short, "#A32D2D") : mkBandChart(bands[cat.key].short, "#A32D2D")} deps={`${sel}_${chartMode}`} />}
-        </div>
-      </div>
-    </div>
-  );
 
   return (<div>
     <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
@@ -3741,26 +3610,44 @@ function COTChartsPage({ ready }) {
           {COT_COMMODITY_LIST.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
         </select>
       </div>
-      <ChartModeToggle mode={chartMode} setMode={setChartMode} />
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={labelStyle2}>Range</span>
+        <select value={timeRange} onChange={e => setTimeRange(e.target.value)} style={selectStyle}>
+          <option value="5">5 Year</option>
+          <option value="10">10 Year</option>
+          <option value="all">All</option>
+        </select>
+      </div>
     </div>
 
-    <div style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginBottom: 6 }}>
-      {d.label} — {d.exchange} — Contract size: {d.contract}. Positions in contracts.
+    <div style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginBottom: 10 }}>
+      {d.label} — {d.exchange} — Contract size: {d.contract}. Positions in contracts. {displayYears.length} years shown.
     </div>
 
-    {chartMode === "seasonal" && <InteractiveLegend items={[
-      { label: "2025", color: "#1D9E75", key: "2025" },
-      { label: "2024", color: "#378ADD", key: "2024", dash: "dashed" },
-      { label: "Median", color: "#333", key: "Median", dash: "dotted" },
-      { label: "10-yr range", color: "rgba(0,0,0,0.15)", key: "range" },
-    ]} hidden={new Set()} onToggle={() => {}} />}
+    {categories.map(cat => (
+      <div key={cat.key}>
+        <h3 style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text-primary)", margin: "24px 0 10px" }}>{cat.title}</h3>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-secondary)", marginBottom: 6, textAlign: "center" }}>Net</div>
+            {ready && <ChartBox id={`cot2_${cat.key}_net_${sel}_${timeRange}`} height={220} renderChart={mkChart(cat.fields[0])} deps={`${sel}_${timeRange}`} />}
+          </div>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-secondary)", marginBottom: 6, textAlign: "center" }}>Long</div>
+            {ready && <ChartBox id={`cot2_${cat.key}_long_${sel}_${timeRange}`} height={220} renderChart={mkChart(cat.fields[1])} deps={`${sel}_${timeRange}`} />}
+          </div>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-secondary)", marginBottom: 6, textAlign: "center" }}>Short</div>
+            {ready && <ChartBox id={`cot2_${cat.key}_short_${sel}_${timeRange}`} height={220} renderChart={mkChart(cat.fields[2])} deps={`${sel}_${timeRange}`} />}
+          </div>
+        </div>
+      </div>
+    ))}
 
-    {categories.map(tripleRow)}
+    <h3 style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text-primary)", margin: "24px 0 10px" }}>Open Interest</h3>
+    {ready && <ChartBox id={`cot2_oi_${sel}_${timeRange}`} height={260} renderChart={mkChart("oi")} deps={`${sel}_${timeRange}`} />}
 
-    <h3 style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)", margin: "20px 0 8px" }}>Open Interest</h3>
-    {ready && <ChartBox id={`cot2_oi_${sel}_${chartMode}`} height={240} renderChart={chartMode === "contiguous" ? mkContigOIChart : mkOIBandChart} deps={`${sel}_${chartMode}`} />}
-
-    <div style={{ marginTop: 12, fontSize: 10, color: "var(--color-text-tertiary)" }}>Source: CFTC Disaggregated Commitments of Traders report. Futures & Options combined. Shaded band = 10-year historical min/max range. Jan–Dec calendar weeks.</div>
+    <div style={{ marginTop: 14, fontSize: 11, color: "var(--color-text-tertiary)" }}>Source: CFTC Disaggregated Commitments of Traders report. Futures & Options combined. Jan–Dec calendar weeks. Median from last 10 years.</div>
   </div>);
 }
 

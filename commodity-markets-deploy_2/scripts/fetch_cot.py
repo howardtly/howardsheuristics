@@ -54,7 +54,8 @@ COMMODITY_META = {
 }
 
 CURRENT_YEAR = datetime.utcnow().year
-HISTORY_YEARS = 10  # For band charts
+START_YEAR = 2006  # First year of CFTC disaggregated report
+BAND_YEARS = 10  # Use most recent N years for seasonal band charts
 
 
 def download_cftc_zip(year):
@@ -188,20 +189,19 @@ def main():
     print("=" * 60)
     print("CFTC COT Data Fetch")
     print(f"Time: {datetime.utcnow().isoformat()}Z")
-    print(f"History: {CURRENT_YEAR - HISTORY_YEARS} to {CURRENT_YEAR}")
+    print(f"Full history: {START_YEAR} to {CURRENT_YEAR}")
+    print(f"Band charts: last {BAND_YEARS} years")
     print("=" * 60)
 
-    # Fetch all years
-    all_years_parsed = []  # list of parsed year dicts for band building
-    all_records = defaultdict(list)  # combined records for recent weekly series
+    # Fetch all years from 2006
+    all_years_parsed = {}  # {year: parsed_dict} for band building
+    all_records = defaultdict(list)  # combined records across all years
     
-    start_year = CURRENT_YEAR - HISTORY_YEARS
-    for year in range(start_year, CURRENT_YEAR + 1):
+    for year in range(START_YEAR, CURRENT_YEAR + 1):
         lines = download_cftc_zip(year)
         if lines:
             parsed = parse_cftc_csv(lines)
-            all_years_parsed.append(parsed)
-            # Accumulate all records
+            all_years_parsed[year] = parsed
             for cot_id, recs in parsed.items():
                 all_records[cot_id].extend(recs)
         time.sleep(0.5)
@@ -260,18 +260,27 @@ def main():
         other_short_series = [r["other_short"] for r in recent]
         oi_series = [r["oi"] for r in recent]
 
-        # Build seasonal bands from historical data
+        # Build seasonal bands from last BAND_YEARS years only
+        band_start = CURRENT_YEAR - BAND_YEARS
+        band_years_data = [all_years_parsed[y] for y in range(band_start, CURRENT_YEAR + 1) if y in all_years_parsed]
         band_fields = ["mm_net", "mm_long", "mm_short", "prod_net", "prod_long", "prod_short",
                         "swap_net", "swap_long", "swap_short", "other_net", "other_long", "other_short"]
         bands = {}
         for field in band_fields:
-            b = build_bands(all_years_parsed, cot_id, field)
+            b = build_bands(band_years_data, cot_id, field)
             if b:
                 bands[field] = {
                     "min": [b.get(w, {}).get("min") for w in range(1, 53)],
                     "max": [b.get(w, {}).get("max") for w in range(1, 53)],
                     "median": [b.get(w, {}).get("median") for w in range(1, 53)],
                 }
+
+        # Compute record long and short from ALL history (back to 2006)
+        all_mm_long = [r["mm_long"] for r in recs]
+        all_mm_short = [r["mm_short"] for r in recs]
+        rec_long = max(all_mm_long) if all_mm_long else latest["mm_long"]
+        rec_short = min([-s for s in all_mm_short]) if all_mm_short else -abs(latest["mm_short"])
+        # rec_short stored as negative (short position convention)
 
         cot_output[cot_id] = {
             **meta,
@@ -287,8 +296,8 @@ def main():
             "managed": {
                 "net": mm_net_series, "long": mm_long_series, "short": mm_short_series,
                 "chg": mm_chg,
-                "recLong": latest["mm_long"],
-                "recShort": -abs(latest["mm_short"]),
+                "recLong": rec_long,
+                "recShort": rec_short,
             },
             "other": {
                 "net": other_net_series, "long": other_long_series, "short": other_short_series,
@@ -302,7 +311,7 @@ def main():
             "bands": bands,
         }
 
-        print(f"  {cot_id}: {len(recent)} weeks, latest {latest['date']}, MM net={latest['mm_net']:,}")
+        print(f"  {cot_id}: {len(recent)} weeks, latest {latest['date']}, MM net={latest['mm_net']:,}, recL={rec_long:,}, recS={rec_short:,}")
 
     # Output
     result = {

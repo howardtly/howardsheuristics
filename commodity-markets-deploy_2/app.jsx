@@ -3196,7 +3196,25 @@ function HogsPigsPage({ ready }) {
 // COT — COMMITMENT OF TRADERS PAGES
 // ════════════════════════════════════════════════════════════════════════
 
+function useLiveCOT() {
+  const [liveCOT, setLiveCOT] = useState(null);
+  const [cotMeta, setCotMeta] = useState(null);
+  useEffect(() => {
+    fetch("data/cot.json")
+      .then(r => { if (!r.ok) throw new Error("not found"); return r.json(); })
+      .then(data => {
+        if (data && data.data && Object.keys(data.data).length > 0) {
+          setLiveCOT(data.data);
+          setCotMeta({ weeks: data.weeks, fetched: data.fetched_at });
+        }
+      })
+      .catch(() => {});
+  }, []);
+  return { cotData: liveCOT || COT_DATA, cotMeta };
+}
+
 function COTSummaryPage() {
+  const { cotData, cotMeta } = useLiveCOT();
   const fmt = (v) => {
     if (v == null) return "—";
     const abs = Math.abs(v);
@@ -3216,15 +3234,20 @@ function COTSummaryPage() {
   const dlSummary = () => {
     const headers = ["Commodity","Prod Net","Prod Chg","Swap Net","Swap Chg","MM Net","MM Chg","MM Rec Long","MM Rec Short","Other Net","Other Chg","Open Interest","OI Chg"];
     const rows = COT_GROUPS.flatMap(g => g.items.map(item => {
-      const d = COT_DATA[item.id]; const li = 19;
+      const d = cotData[item.id]; if (!d) return [item.label]; const li = d.managed.net.length - 1;
       return [item.label, d.producer.net[li], d.producer.chg, d.swap.net[li], d.swap.chg, d.managed.net[li], d.managed.chg, d.managed.recLong, d.managed.recShort, d.other.net[li], d.other.chg, d.oi.net[li], d.oi.chg];
     }));
     downloadCSV("cot_disaggregated_summary.csv", headers, rows);
   };
 
+  // Date range label
+  const dateLabel = cotMeta && cotMeta.weeks && cotMeta.weeks.length >= 2
+    ? `${cotMeta.weeks[cotMeta.weeks.length - 2]} – ${cotMeta.weeks[cotMeta.weeks.length - 1]}`
+    : "03/03/2026 – 03/10/2026";
+
   return (<div>
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
-      <div style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>CFTC Disaggregated Futures & Options — 03/03/2026 – 03/10/2026</div>
+      <div style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>CFTC Disaggregated Futures & Options — {dateLabel}</div>
       <DownloadBtn onClick={dlSummary} />
     </div>
     <div style={{ overflowX: "auto", border: "0.5px solid var(--color-border-tertiary)", borderRadius: "var(--border-radius-lg)" }}>
@@ -3260,7 +3283,7 @@ function COTSummaryPage() {
               <td colSpan={18} style={{ padding: "8px 10px 4px", fontWeight: 600, fontSize: 12.5, color: "var(--color-text-primary)", background: "#e8e8e8", position: "sticky", left: 0, textTransform: "uppercase", letterSpacing: "0.3px" }}>{g.header}</td>
             </tr>
             {g.items.map(item => {
-              const d = COT_DATA[item.id]; const li = 19;
+              const d = cotData[item.id]; if (!d) return null; const li = d.managed.net.length - 1;
               return (
                 <tr key={item.id} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}
                   onMouseEnter={e => e.currentTarget.style.background = "var(--color-background-secondary)"}
@@ -3294,12 +3317,13 @@ function COTSummaryPage() {
 }
 
 function COTDetailPage({ ready, commodityId }) {
-  const d = COT_DATA[commodityId];
+  const { cotData } = useLiveCOT();
+  const d = cotData[commodityId];
   const [hCats, tCats] = useToggle();
 
   if (!d) return <div>No data available</div>;
 
-  const li = 19;
+  const li = d.managed.net.length - 1;
   const mmNet = d.managed.net[li];
   const mmPrev = li > 0 ? d.managed.net[li - 1] : null;
   const mmChg = mmPrev != null ? mmNet - mmPrev : null;
@@ -3436,9 +3460,10 @@ const COT_COMMODITY_LIST = [
 ];
 
 function COTChartsPage({ ready }) {
+  const { cotData } = useLiveCOT();
   const [sel, setSel] = useState("cot-corn");
   const [chartMode, setChartMode] = useState("seasonal");
-  const d = COT_DATA[sel];
+  const d = cotData[sel];
   if (!d) return <div>No data available</div>;
 
   const bands = d.bands;

@@ -261,49 +261,53 @@ def main():
         oi_series = [r["oi"] for r in recent]
 
         # Build yearly data for multi-year line charts
-        # Structure: { year: [ {week: 1-52, mm_net, mm_long, mm_short, prod_net, ...}, ... ] }
+        # Group records by calendar year, then assign ordinal position within year
         yearly = defaultdict(list)
         fields_to_track = ["mm_net", "mm_long", "mm_short", "prod_net", "prod_long", "prod_short",
                            "swap_net", "swap_long", "swap_short", "other_net", "other_long", "other_short", "oi"]
+        by_year_recs = defaultdict(list)
         for rec in recs:
             try:
                 dt = datetime.strptime(rec["date"], "%Y-%m-%d")
-                yr = dt.year
-                wk = dt.isocalendar()[1]
-                if wk > 52: wk = 52
-                entry = {"week": wk}
-                for f in fields_to_track:
-                    entry[f] = rec.get(f)
-                yearly[yr].append(entry)
+                by_year_recs[dt.year].append(rec)
             except: pass
 
-        # Build median per week from last 10 years
-        median_start = CURRENT_YEAR - BAND_YEARS
-        median_by_week = defaultdict(lambda: defaultdict(list))
-        for yr in range(median_start, CURRENT_YEAR + 1):
-            for entry in yearly.get(yr, []):
-                wk = entry["week"]
-                for f in fields_to_track:
-                    if entry[f] is not None:
-                        median_by_week[f][wk].append(entry[f])
-        medians = {}
-        for f in fields_to_track:
-            med_vals = []
-            for wk in range(1, 53):
-                vals = sorted(median_by_week[f].get(wk, []))
-                med_vals.append(vals[len(vals)//2] if vals else None)
-            medians[f] = med_vals
+        for yr in by_year_recs:
+            by_year_recs[yr].sort(key=lambda r: r["date"])
 
-        # Convert yearly to arrays indexed by week (1-52) for Chart.js
+        # Build median per week from last N years (computed dynamically by app)
+        # We output ALL yearly data; the app picks the median range
+        # For the JSON, just output each year as array of values per report week
         yearly_out = {}
-        for yr, entries in sorted(yearly.items()):
-            by_week = {}
-            for e in entries:
-                by_week[e["week"]] = e
+        for yr, yr_recs in sorted(by_year_recs.items()):
             year_data = {}
             for f in fields_to_track:
-                year_data[f] = [by_week.get(wk, {}).get(f) for wk in range(1, 53)]
+                # Pad/truncate to exactly 52 slots
+                vals = [r.get(f) for r in yr_recs]
+                # If more than 52 reports, take last 52
+                if len(vals) > 52: vals = vals[-52:]
+                # Pad to 52 if fewer
+                while len(vals) < 52: vals.append(None)
+                year_data[f] = vals
             yearly_out[str(yr)] = year_data
+
+        # Build median per report-week position from ALL years
+        # The app will dynamically recalculate median based on selected range
+        # But we also pre-compute from all available data as a fallback
+        medians = {}
+        all_years_list = sorted(yearly_out.keys())
+        for f in fields_to_track:
+            by_pos = defaultdict(list)
+            for yr_key in all_years_list:
+                vals = yearly_out[yr_key].get(f, [])
+                for pos, v in enumerate(vals):
+                    if v is not None:
+                        by_pos[pos].append(v)
+            med_vals = []
+            for pos in range(52):
+                vals = sorted(by_pos.get(pos, []))
+                med_vals.append(vals[len(vals)//2] if vals else None)
+            medians[f] = med_vals
 
         # Compute record long and short from ALL history (back to 2006)
         all_mm_long = [r["mm_long"] for r in recs]

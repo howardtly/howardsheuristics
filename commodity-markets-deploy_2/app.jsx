@@ -1030,12 +1030,12 @@ function mkFullCOT(prod, prodChg, swap, swapChg, mm, mmChg, mmLong, mmShort, oth
 const COT_GROUPS = [
   { header: "GRAINS", items: [
     { id: "cot-corn", label: "Corn" },
-    { id: "cot-chi-wheat", label: "Wheat" },
     { id: "cot-soybeans", label: "Soybeans" },
+    { id: "cot-meal", label: "Soybean Meal" },
+    { id: "cot-oil", label: "Soybean Oil" },
+    { id: "cot-chi-wheat", label: "Chicago Wheat" },
     { id: "cot-kc-wheat", label: "KC Wheat" },
     { id: "cot-mpls-wheat", label: "MN Wheat" },
-    { id: "cot-oil", label: "Soybean Oil" },
-    { id: "cot-meal", label: "Soybean Meal" },
   ]},
   { header: "LIVESTOCK", items: [
     { id: "cot-live-cattle", label: "Live Cattle" },
@@ -3204,7 +3204,72 @@ function useLiveCOT() {
       .then(r => { if (!r.ok) throw new Error("not found"); return r.json(); })
       .then(data => {
         if (data && data.data && Object.keys(data.data).length > 0) {
-          setLiveCOT(data.data);
+          // Transform live data to match the format charts expect
+          const transformed = {};
+          for (const [id, d] of Object.entries(data.data)) {
+            // Build bands in the format: bands.managed.net = { min, max, median, thisYear, lastYear, history }
+            // Live JSON has: bands.mm_net = { min[], max[], median[] }
+            // We need to extract thisYear and lastYear from the weekly series by ISO week
+            const keyMap = {
+              managed: { net: "mm_net", long: "mm_long", short: "mm_short" },
+              producer: { net: "prod_net", long: "prod_long", short: "prod_short" },
+              swap: { net: "swap_net", long: "swap_long", short: "swap_short" },
+              other: { net: "other_net", long: "other_long", short: "other_short" },
+            };
+
+            const liveBands = d.bands || {};
+            const dates = d.dates || [];
+            const chartBands = {};
+
+            // Helper: extract values by year from the series
+            const getByYear = (series, targetYear) => {
+              const byWeek = new Array(52).fill(null);
+              for (let i = 0; i < dates.length; i++) {
+                const dt = new Date(dates[i]);
+                const yr = dt.getFullYear();
+                if (yr === targetYear) {
+                  // ISO week approximation
+                  const jan1 = new Date(yr, 0, 1);
+                  const wk = Math.min(51, Math.floor((dt - jan1) / (7 * 86400000)));
+                  byWeek[wk] = series[i];
+                }
+              }
+              return byWeek;
+            };
+
+            // Determine current and last year from latest date
+            const latestDate = dates.length > 0 ? new Date(dates[dates.length - 1]) : new Date();
+            const curYear = latestDate.getFullYear();
+            const lastYear = curYear - 1;
+
+            for (const [catKey, fieldMap] of Object.entries(keyMap)) {
+              chartBands[catKey] = {};
+              for (const [posKey, jsonKey] of Object.entries(fieldMap)) {
+                const bandData = liveBands[jsonKey] || {};
+                // Get the full series for this position type from the commodity data
+                let series = [];
+                if (catKey === "managed") series = posKey === "net" ? d.managed.net : posKey === "long" ? d.managed.long : d.managed.short;
+                else if (catKey === "producer") series = posKey === "net" ? d.producer.net : posKey === "long" ? d.producer.long : d.producer.short;
+                else if (catKey === "swap") series = posKey === "net" ? d.swap.net : posKey === "long" ? d.swap.long : d.swap.short;
+                else if (catKey === "other") series = posKey === "net" ? d.other.net : posKey === "long" ? d.other.long : d.other.short;
+
+                chartBands[catKey][posKey] = {
+                  min: bandData.min || new Array(52).fill(0),
+                  max: bandData.max || new Array(52).fill(0),
+                  median: bandData.median || new Array(52).fill(0),
+                  thisYear: getByYear(series, curYear),
+                  lastYear: getByYear(series, lastYear),
+                  history: series,  // full contiguous series for contiguous mode
+                };
+              }
+            }
+
+            // Also build oi band
+            chartBands.oi = { net: { history: d.oi.net, min: new Array(52).fill(0), max: new Array(52).fill(0), median: new Array(52).fill(0), thisYear: getByYear(d.oi.net, curYear), lastYear: getByYear(d.oi.net, lastYear) } };
+
+            transformed[id] = { ...d, bands: chartBands };
+          }
+          setLiveCOT(transformed);
           setCotMeta({ weeks: data.weeks, fetched: data.fetched_at });
         }
       })
@@ -3290,21 +3355,21 @@ function COTSummaryPage() {
                   onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                   <td style={{ padding: "5px 10px", fontWeight: 500, fontSize: 13, color: "var(--color-text-primary)", position: "sticky", left: 0, background: "inherit", borderRight: "0.5px solid var(--color-border-tertiary)", zIndex: 1 }}>{item.label}</td>
                   <td style={{ ...tdNum, color: netColor(d.producer.net[li]) }}>{fmt(d.producer.net[li])}</td>
-                  <td style={{ ...tdNum, color: chgColor(d.producer.chg), fontSize: 11 }}>{fmtChg(d.producer.chg)}</td>
+                  <td style={{ ...tdNum, color: chgColor(d.producer.chg) }}>{fmtChg(d.producer.chg)}</td>
                   <td style={{ padding: 0, border: "none" }}></td>
                   <td style={{ ...tdNum, color: netColor(d.swap.net[li]) }}>{fmt(d.swap.net[li])}</td>
-                  <td style={{ ...tdNum, color: chgColor(d.swap.chg), fontSize: 11 }}>{fmtChg(d.swap.chg)}</td>
+                  <td style={{ ...tdNum, color: chgColor(d.swap.chg) }}>{fmtChg(d.swap.chg)}</td>
                   <td style={{ padding: 0, border: "none" }}></td>
                   <td style={{ ...tdNum, color: netColor(d.managed.net[li]), fontWeight: 500, background: "rgba(163,45,45,0.02)" }}>{fmt(d.managed.net[li])}</td>
-                  <td style={{ ...tdNum, color: chgColor(d.managed.chg), fontSize: 11, background: "rgba(163,45,45,0.02)" }}>{fmtChg(d.managed.chg)}</td>
-                  <td style={{ ...tdNum, color: "var(--color-text-secondary)", fontSize: 11, background: "rgba(163,45,45,0.02)" }}>{d.managed.recLong.toLocaleString()}</td>
-                  <td style={{ ...tdNum, color: "var(--color-text-secondary)", fontSize: 11, background: "rgba(163,45,45,0.02)" }}>({Math.abs(d.managed.recShort).toLocaleString()})</td>
+                  <td style={{ ...tdNum, color: chgColor(d.managed.chg), background: "rgba(163,45,45,0.02)" }}>{fmtChg(d.managed.chg)}</td>
+                  <td style={{ ...tdNum, color: "var(--color-text-secondary)", background: "rgba(163,45,45,0.02)" }}>{d.managed.recLong.toLocaleString()}</td>
+                  <td style={{ ...tdNum, color: "var(--color-text-secondary)", background: "rgba(163,45,45,0.02)" }}>({Math.abs(d.managed.recShort).toLocaleString()})</td>
                   <td style={{ padding: 0, border: "none" }}></td>
                   <td style={{ ...tdNum, color: netColor(d.other.net[li]) }}>{fmt(d.other.net[li])}</td>
-                  <td style={{ ...tdNum, color: chgColor(d.other.chg), fontSize: 11 }}>{fmtChg(d.other.chg)}</td>
+                  <td style={{ ...tdNum, color: chgColor(d.other.chg) }}>{fmtChg(d.other.chg)}</td>
                   <td style={{ padding: 0, border: "none" }}></td>
                   <td style={{ ...tdNum, color: "var(--color-text-primary)" }}>{d.oi.net[li].toLocaleString()}</td>
-                  <td style={{ ...tdNum, color: chgColor(d.oi.chg), fontSize: 11 }}>{fmtChg(d.oi.chg)}</td>
+                  <td style={{ ...tdNum, color: chgColor(d.oi.chg) }}>{fmtChg(d.oi.chg)}</td>
                 </tr>
               );
             })}

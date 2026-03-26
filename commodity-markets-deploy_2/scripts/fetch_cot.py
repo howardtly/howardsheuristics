@@ -260,20 +260,50 @@ def main():
         other_short_series = [r["other_short"] for r in recent]
         oi_series = [r["oi"] for r in recent]
 
-        # Build seasonal bands from last BAND_YEARS years only
-        band_start = CURRENT_YEAR - BAND_YEARS
-        band_years_data = [all_years_parsed[y] for y in range(band_start, CURRENT_YEAR + 1) if y in all_years_parsed]
-        band_fields = ["mm_net", "mm_long", "mm_short", "prod_net", "prod_long", "prod_short",
-                        "swap_net", "swap_long", "swap_short", "other_net", "other_long", "other_short"]
-        bands = {}
-        for field in band_fields:
-            b = build_bands(band_years_data, cot_id, field)
-            if b:
-                bands[field] = {
-                    "min": [b.get(w, {}).get("min") for w in range(1, 53)],
-                    "max": [b.get(w, {}).get("max") for w in range(1, 53)],
-                    "median": [b.get(w, {}).get("median") for w in range(1, 53)],
-                }
+        # Build yearly data for multi-year line charts
+        # Structure: { year: [ {week: 1-52, mm_net, mm_long, mm_short, prod_net, ...}, ... ] }
+        yearly = defaultdict(list)
+        fields_to_track = ["mm_net", "mm_long", "mm_short", "prod_net", "prod_long", "prod_short",
+                           "swap_net", "swap_long", "swap_short", "other_net", "other_long", "other_short", "oi"]
+        for rec in recs:
+            try:
+                dt = datetime.strptime(rec["date"], "%Y-%m-%d")
+                yr = dt.year
+                wk = dt.isocalendar()[1]
+                if wk > 52: wk = 52
+                entry = {"week": wk}
+                for f in fields_to_track:
+                    entry[f] = rec.get(f)
+                yearly[yr].append(entry)
+            except: pass
+
+        # Build median per week from last 10 years
+        median_start = CURRENT_YEAR - BAND_YEARS
+        median_by_week = defaultdict(lambda: defaultdict(list))
+        for yr in range(median_start, CURRENT_YEAR + 1):
+            for entry in yearly.get(yr, []):
+                wk = entry["week"]
+                for f in fields_to_track:
+                    if entry[f] is not None:
+                        median_by_week[f][wk].append(entry[f])
+        medians = {}
+        for f in fields_to_track:
+            med_vals = []
+            for wk in range(1, 53):
+                vals = sorted(median_by_week[f].get(wk, []))
+                med_vals.append(vals[len(vals)//2] if vals else None)
+            medians[f] = med_vals
+
+        # Convert yearly to arrays indexed by week (1-52) for Chart.js
+        yearly_out = {}
+        for yr, entries in sorted(yearly.items()):
+            by_week = {}
+            for e in entries:
+                by_week[e["week"]] = e
+            year_data = {}
+            for f in fields_to_track:
+                year_data[f] = [by_week.get(wk, {}).get(f) for wk in range(1, 53)]
+            yearly_out[str(yr)] = year_data
 
         # Compute record long and short from ALL history (back to 2006)
         all_mm_long = [r["mm_long"] for r in recs]
@@ -308,10 +338,12 @@ def main():
                 "chg": oi_chg,
             },
             "dates": dates,
-            "bands": bands,
+            "yearly": yearly_out,
+            "medians": medians,
+            "available_years": sorted(yearly_out.keys()),
         }
 
-        print(f"  {cot_id}: {len(recent)} weeks, latest {latest['date']}, MM net={latest['mm_net']:,}, recL={rec_long:,}, recS={rec_short:,}")
+        print(f"  {cot_id}: {len(recent)} wks, {len(yearly_out)} yrs, latest {latest['date']}, MM net={latest['mm_net']:,}, recL={rec_long:,}, recS={rec_short:,}")
 
     # Output
     result = {

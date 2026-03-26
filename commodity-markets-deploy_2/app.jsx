@@ -3443,7 +3443,7 @@ function COTDetailPage({ ready, commodityId }) {
 }
 
 // COT weeks labels (reuse from mkCOTSeries - 20 weeks)
-const COT_WEEK_LABELS = Array.from({ length: 52 }, (_, i) => {
+const COT_WEEK_LABELS = Array.from({ length: 53 }, (_, i) => {
   const d = new Date(2025, 0, 6); d.setDate(d.getDate() + i * 7);
   return `${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()]} ${d.getDate()}`;
 });
@@ -3485,7 +3485,7 @@ function COTChartsPage({ ready }) {
       const vals = (yearly[String(yr)] || {})[f] || [];
       vals.forEach((v, i) => { if (v != null) { if (!byPos[i]) byPos[i] = []; byPos[i].push(v); } });
     }
-    medians[f] = Array.from({ length: 52 }, (_, i) => {
+    medians[f] = Array.from({ length: 53 }, (_, i) => {
       const vals = (byPos[i] || []).sort((a, b) => a - b);
       return vals.length > 0 ? vals[Math.floor(vals.length / 2)] : null;
     });
@@ -3497,8 +3497,29 @@ function COTChartsPage({ ready }) {
   const toggleYear = (label) => setHiddenYears(prev => { const next = new Set(prev); next.has(label) ? next.delete(label) : next.add(label); return next; });
   useEffect(() => { setHiddenYears(new Set()); }, [sel, timeRange]);
 
-  const weekLabels = Array.from({ length: 52 }, (_, i) => { const dt = new Date(2025, 0, 6 + i * 7); return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][dt.getMonth()] + " " + dt.getDate(); });
-  const { displayLabels: xLabels, gridColors: xGridColors } = buildMonthAxis(weekLabels);
+  const weekLabels = (() => {
+    // 53 weeks based on 2025 calendar. Each label is the Tuesday of that week.
+    // 2025 Jan 1 = Wednesday. Monday of week 1 = Dec 29, 2024.
+    const jan1 = new Date(2025, 0, 1);
+    const jan1Dow = jan1.getDay(); // 0=Sun..6=Sat; Wed=3
+    // Monday-start: offset = (jan1Dow + 6) % 7 = days from Monday
+    const monWk1 = new Date(2025, 0, 1 - ((jan1Dow + 6) % 7));
+    return Array.from({ length: 53 }, (_, i) => {
+      const tue = new Date(monWk1.getTime() + (i * 7 + 1) * 86400000);
+      return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][tue.getMonth()] + " " + tue.getDate();
+    });
+  })();
+  // Build x-axis: show month label near the 1st of each month
+  const xLabels = weekLabels.map((lbl, i) => {
+    const day = parseInt(lbl.split(" ")[1]);
+    return day <= 7 ? lbl.split(" ")[0] : "";
+  });
+  const xGridColors = weekLabels.map((lbl, i) => {
+    const day = parseInt(lbl.split(" ")[1]);
+    return day <= 7 ? "rgba(0,0,0,0.12)" : "transparent";
+  });
+  // (skip buildMonthAxis — we build labels inline)
+  const _unused_bma = null;
 
   const fmtAxis = (v) => v == null ? "" : (v / 1000).toLocaleString(undefined, { maximumFractionDigits: 0 });
 
@@ -4294,7 +4315,7 @@ function DroughtPage({ ready }) {
 
 // Marketing year weeks (Sep–Aug for corn/soybeans, Jun–May for wheat)
 // 52 weeks of data, labeled by week number within marketing year
-const EI_WEEKS = Array.from({ length: 52 }, (_, i) => {
+const EI_WEEKS = Array.from({ length: 53 }, (_, i) => {
   const d = new Date(2024, 8, 1); // Sep 1 for corn/soy MY start
   d.setDate(d.getDate() + i * 7);
   const m = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()];

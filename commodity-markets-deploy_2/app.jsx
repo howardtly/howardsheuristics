@@ -3210,8 +3210,8 @@ function COTSummaryPage() {
   const chgColor = (v) => v > 0 ? "#639922" : v < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
   const netColor = (v) => v > 0 ? "#639922" : v < 0 ? "#A32D2D" : "var(--color-text-primary)";
 
-  const thStyle = { padding: "4px 8px", textAlign: "right", fontWeight: 500, fontSize: 10, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)", whiteSpace: "nowrap" };
-  const tdNum = { padding: "5px 8px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11 };
+  const thStyle = { padding: "4px 8px", textAlign: "right", fontWeight: 500, fontSize: 11.5, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)", whiteSpace: "nowrap" };
+  const tdNum = { padding: "5px 8px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12.5 };
 
   const dlSummary = () => {
     const headers = ["Commodity","Prod Net","Prod Chg","Swap Net","Swap Chg","MM Net","MM Chg","MM Rec Long","MM Rec Short","Other Net","Other Chg","Open Interest","OI Chg"];
@@ -3257,7 +3257,7 @@ function COTSummaryPage() {
         <tbody>
           {COT_GROUPS.map(g => (<>
             <tr key={`gh-${g.header}`} style={{ background: "#e8e8e8" }}>
-              <td colSpan={18} style={{ padding: "8px 10px 4px", fontWeight: 600, fontSize: 11, color: "var(--color-text-primary)", background: "#e8e8e8", position: "sticky", left: 0, textTransform: "uppercase", letterSpacing: "0.3px" }}>{g.header}</td>
+              <td colSpan={18} style={{ padding: "8px 10px 4px", fontWeight: 600, fontSize: 12.5, color: "var(--color-text-primary)", background: "#e8e8e8", position: "sticky", left: 0, textTransform: "uppercase", letterSpacing: "0.3px" }}>{g.header}</td>
             </tr>
             {g.items.map(item => {
               const d = COT_DATA[item.id]; const li = 19;
@@ -3265,23 +3265,23 @@ function COTSummaryPage() {
                 <tr key={item.id} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}
                   onMouseEnter={e => e.currentTarget.style.background = "var(--color-background-secondary)"}
                   onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                  <td style={{ padding: "5px 10px", fontWeight: 500, color: "var(--color-text-primary)", position: "sticky", left: 0, background: "inherit", borderRight: "0.5px solid var(--color-border-tertiary)", zIndex: 1 }}>{item.label}</td>
+                  <td style={{ padding: "5px 10px", fontWeight: 500, fontSize: 13, color: "var(--color-text-primary)", position: "sticky", left: 0, background: "inherit", borderRight: "0.5px solid var(--color-border-tertiary)", zIndex: 1 }}>{item.label}</td>
                   <td style={{ ...tdNum, color: netColor(d.producer.net[li]) }}>{fmt(d.producer.net[li])}</td>
-                  <td style={{ ...tdNum, color: chgColor(d.producer.chg), fontSize: 10 }}>{fmtChg(d.producer.chg)}</td>
+                  <td style={{ ...tdNum, color: chgColor(d.producer.chg), fontSize: 11 }}>{fmtChg(d.producer.chg)}</td>
                   <td style={{ padding: 0, border: "none" }}></td>
                   <td style={{ ...tdNum, color: netColor(d.swap.net[li]) }}>{fmt(d.swap.net[li])}</td>
-                  <td style={{ ...tdNum, color: chgColor(d.swap.chg), fontSize: 10 }}>{fmtChg(d.swap.chg)}</td>
+                  <td style={{ ...tdNum, color: chgColor(d.swap.chg), fontSize: 11 }}>{fmtChg(d.swap.chg)}</td>
                   <td style={{ padding: 0, border: "none" }}></td>
                   <td style={{ ...tdNum, color: netColor(d.managed.net[li]), fontWeight: 500, background: "rgba(163,45,45,0.02)" }}>{fmt(d.managed.net[li])}</td>
-                  <td style={{ ...tdNum, color: chgColor(d.managed.chg), fontSize: 10, background: "rgba(163,45,45,0.02)" }}>{fmtChg(d.managed.chg)}</td>
-                  <td style={{ ...tdNum, color: "var(--color-text-secondary)", fontSize: 10, background: "rgba(163,45,45,0.02)" }}>{d.managed.recLong.toLocaleString()}</td>
-                  <td style={{ ...tdNum, color: "var(--color-text-secondary)", fontSize: 10, background: "rgba(163,45,45,0.02)" }}>({Math.abs(d.managed.recShort).toLocaleString()})</td>
+                  <td style={{ ...tdNum, color: chgColor(d.managed.chg), fontSize: 11, background: "rgba(163,45,45,0.02)" }}>{fmtChg(d.managed.chg)}</td>
+                  <td style={{ ...tdNum, color: "var(--color-text-secondary)", fontSize: 11, background: "rgba(163,45,45,0.02)" }}>{d.managed.recLong.toLocaleString()}</td>
+                  <td style={{ ...tdNum, color: "var(--color-text-secondary)", fontSize: 11, background: "rgba(163,45,45,0.02)" }}>({Math.abs(d.managed.recShort).toLocaleString()})</td>
                   <td style={{ padding: 0, border: "none" }}></td>
                   <td style={{ ...tdNum, color: netColor(d.other.net[li]) }}>{fmt(d.other.net[li])}</td>
-                  <td style={{ ...tdNum, color: chgColor(d.other.chg), fontSize: 10 }}>{fmtChg(d.other.chg)}</td>
+                  <td style={{ ...tdNum, color: chgColor(d.other.chg), fontSize: 11 }}>{fmtChg(d.other.chg)}</td>
                   <td style={{ padding: 0, border: "none" }}></td>
                   <td style={{ ...tdNum, color: "var(--color-text-primary)" }}>{d.oi.net[li].toLocaleString()}</td>
-                  <td style={{ ...tdNum, color: chgColor(d.oi.chg), fontSize: 10 }}>{fmtChg(d.oi.chg)}</td>
+                  <td style={{ ...tdNum, color: chgColor(d.oi.chg), fontSize: 11 }}>{fmtChg(d.oi.chg)}</td>
                 </tr>
               );
             })}
@@ -3289,7 +3289,7 @@ function COTSummaryPage() {
         </tbody>
       </table>
     </div>
-    <div style={{ marginTop: 10, fontSize: 10, color: "var(--color-text-tertiary)" }}>Source: CFTC Disaggregated Commitments of Traders report. Futures & Options combined. Positions in contracts.</div>
+    <div style={{ marginTop: 10, fontSize: 11, color: "var(--color-text-tertiary)" }}>Source: CFTC Disaggregated Commitments of Traders report. Futures & Options combined. Positions in contracts.</div>
   </div>);
 }
 

@@ -17,7 +17,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(SCRIPT_DIR)
 OUTPUT_DIR = os.path.join(REPO_ROOT, "data")
 
-WASDE_URL_TEMPLATE = "https://esmis.nal.usda.gov/sites/default/release-files/wasde{mm}{yy}.xls"
+WASDE_URL_TEMPLATE = "https://www.usda.gov/oce/commodity/wasde/wasde{mm}{yy}.xls"
 
 
 def download_wasde(month, year):

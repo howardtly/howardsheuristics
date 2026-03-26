@@ -3568,9 +3568,10 @@ function COTChartsPage({ ready }) {
   };
 
   const mkContigChart = useCallback((band, catColor) => (canvas) => {
-    if (!band || !band.history) return;
+    if (!band || !band.history || band.history.length === 0) return;
     const data = band.history;
     const allVals = data.filter(v => v != null);
+    if (allVals.length === 0) return;
     const dataMin = Math.min(...allVals); const dataMax = Math.max(...allVals);
     const range = dataMax - dataMin; const pad = Math.max(range * 0.1, Math.abs(dataMax) * 0.02 || 100);
     const rawStep = (range + pad * 2) / 5;
@@ -3580,26 +3581,31 @@ function COTChartsPage({ ready }) {
     const step = niceNorm * mag;
     const yMin = Math.floor((dataMin - pad) / step) * step;
     const yMax = Math.ceil((dataMax + pad) / step) * step;
+    // Build labels from dates if available, otherwise index-based
+    const labels = (d.dates && d.dates.length === data.length)
+      ? d.dates.map((dt, i) => { const m = dt.slice(5,7); const prev = i > 0 ? d.dates[i-1].slice(5,7) : ""; return m !== prev ? dt.slice(0,7) : ""; })
+      : data.map((_, i) => i % 13 === 0 ? String(i) : "");
     new Chart(canvas, {
       type: "line",
-      data: { labels: cotContigLabels, datasets: [
+      data: { labels, datasets: [
         { label: "Position", data, borderColor: catColor, backgroundColor: catColor + "0F", fill: true, borderWidth: 1.5, pointRadius: 0, tension: 0.3 },
       ]},
       options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
         plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.parsed.y != null ? c.parsed.y.toLocaleString() : "n/a"} contracts` } } },
         scales: {
-          x: cotContigXAxis,
+          x: { ticks: { autoSkip: true, maxTicksLimit: 12, maxRotation: 0, font: { size: 9 } }, grid: { color: "rgba(0,0,0,0.06)" } },
           y: { min: yMin, max: yMax, ticks: { font: { size: 9 }, callback: v => fmtContracts(v) }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
         },
       },
     });
-  }, [sel]);
+  }, [sel, d]);
 
   const mkContigOIChart = useCallback((canvas) => {
-    const band = bands.oi.net;
-    if (!band || !band.history) return;
+    const band = bands.oi && bands.oi.net;
+    if (!band || !band.history || band.history.length === 0) return;
     const data = band.history;
     const allVals = data.filter(v => v != null);
+    if (allVals.length === 0) return;
     const dataMin = Math.min(...allVals); const dataMax = Math.max(...allVals);
     const range = dataMax - dataMin; const pad = Math.max(range * 0.1, 100);
     const rawStep = (range + pad * 2) / 5;
@@ -3609,24 +3615,28 @@ function COTChartsPage({ ready }) {
     const step = niceNorm * mag;
     const yMin = Math.floor((dataMin - pad) / step) * step;
     const yMax = Math.ceil((dataMax + pad) / step) * step;
+    const labels = (d.dates && d.dates.length === data.length)
+      ? d.dates.map((dt, i) => { const m = dt.slice(5,7); const prev = i > 0 ? d.dates[i-1].slice(5,7) : ""; return m !== prev ? dt.slice(0,7) : ""; })
+      : data.map((_, i) => i % 13 === 0 ? String(i) : "");
     new Chart(canvas, {
       type: "line",
-      data: { labels: cotContigLabels, datasets: [
+      data: { labels, datasets: [
         { label: "Open Interest", data, borderColor: "#333", backgroundColor: "rgba(0,0,0,0.04)", fill: true, borderWidth: 1.5, pointRadius: 0, tension: 0.3 },
       ]},
       options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
         plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.parsed.y != null ? c.parsed.y.toLocaleString() : "n/a"} contracts` } } },
         scales: {
-          x: cotContigXAxisLg,
+          x: { ticks: { autoSkip: true, maxTicksLimit: 12, maxRotation: 0, font: { size: 10 } }, grid: { color: "rgba(0,0,0,0.06)" } },
           y: { min: yMin, max: yMax, title: { display: true, text: "Contracts", font: { size: 11 } }, ticks: { font: { size: 10 }, callback: v => fmtContracts(v) }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
         },
       },
     });
-  }, [sel]);
+  }, [sel, d]);
 
   const mkBandChart = useCallback((band, catColor) => (canvas) => {
     if (!band) return;
-    const allVals = [...band.min, ...band.max, ...band.thisYear, ...band.lastYear];
+    const allVals = [...(band.min||[]), ...(band.max||[]), ...(band.thisYear||[]), ...(band.lastYear||[])].filter(v => v != null);
+    if (allVals.length === 0) return;
     const dataMin = Math.min(...allVals); const dataMax = Math.max(...allVals);
     const range = dataMax - dataMin; const pad = Math.max(range * 0.1, Math.abs(dataMax) * 0.02 || 100);
     const rawStep = (range + pad * 2) / 5;
@@ -3642,8 +3652,8 @@ function COTChartsPage({ ready }) {
         { label: "_base", data: band.min, fill: true, backgroundColor: "transparent", borderColor: "transparent", borderWidth: 0, pointRadius: 0, tension: 0.3 },
         { label: "10-yr range", data: band.max, fill: "-1", backgroundColor: "rgba(0,0,0,0.06)", borderColor: "transparent", borderWidth: 0, pointRadius: 0, tension: 0.3 },
         { label: "Median", data: band.median, borderColor: "#333", borderWidth: 1.5, borderDash: [2,3], pointRadius: 0, tension: 0.3, fill: false },
-        { label: "2024", data: band.lastYear, borderColor: "#378ADD", borderWidth: 1.5, borderDash: [5,3], pointRadius: 0, tension: 0.3, fill: false },
-        { label: "2025", data: band.thisYear, borderColor: catColor, borderWidth: 2.5, pointRadius: 0, tension: 0.3, fill: false },
+        { label: String(new Date().getFullYear() - 1), data: band.lastYear, borderColor: "#378ADD", borderWidth: 1.5, borderDash: [5,3], pointRadius: 0, tension: 0.3, fill: false },
+        { label: String(new Date().getFullYear()), data: band.thisYear, borderColor: catColor, borderWidth: 2.5, pointRadius: 0, tension: 0.3, fill: false },
       ]},
       options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
         plugins: { legend: { display: false },
@@ -3655,12 +3665,13 @@ function COTChartsPage({ ready }) {
         },
       },
     });
-  }, [sel]);
+  }, [sel, d]);
 
   const mkOIBandChart = useCallback((canvas) => {
-    const band = bands.oi.net;
+    const band = bands.oi && bands.oi.net;
     if (!band) return;
-    const allVals = [...band.min, ...band.max, ...band.thisYear, ...band.lastYear];
+    const allVals = [...(band.min||[]), ...(band.max||[]), ...(band.thisYear||[]), ...(band.lastYear||[])].filter(v => v != null);
+    if (allVals.length === 0) return;
     const dataMin = Math.min(...allVals); const dataMax = Math.max(...allVals);
     const range = dataMax - dataMin; const pad = Math.max(range * 0.1, 100);
     const rawStep = (range + pad * 2) / 5;
@@ -3676,8 +3687,8 @@ function COTChartsPage({ ready }) {
         { label: "_base", data: band.min, fill: true, backgroundColor: "transparent", borderColor: "transparent", borderWidth: 0, pointRadius: 0, tension: 0.3 },
         { label: "10-yr range", data: band.max, fill: "-1", backgroundColor: "rgba(0,0,0,0.06)", borderColor: "transparent", borderWidth: 0, pointRadius: 0, tension: 0.3 },
         { label: "Median", data: band.median, borderColor: "#333", borderWidth: 1.5, borderDash: [2,3], pointRadius: 0, tension: 0.3, fill: false },
-        { label: "2024", data: band.lastYear, borderColor: "#378ADD", borderWidth: 1.5, borderDash: [5,3], pointRadius: 0, tension: 0.3, fill: false },
-        { label: "2025", data: band.thisYear, borderColor: "#1D9E75", borderWidth: 2.5, pointRadius: 0, tension: 0.3, fill: false },
+        { label: String(new Date().getFullYear() - 1), data: band.lastYear, borderColor: "#378ADD", borderWidth: 1.5, borderDash: [5,3], pointRadius: 0, tension: 0.3, fill: false },
+        { label: String(new Date().getFullYear()), data: band.thisYear, borderColor: "#1D9E75", borderWidth: 2.5, pointRadius: 0, tension: 0.3, fill: false },
       ]},
       options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
         plugins: { legend: { display: false },
@@ -3689,7 +3700,7 @@ function COTChartsPage({ ready }) {
         },
       },
     });
-  }, [sel]);
+  }, [sel, d]);
 
   const chevronSvg = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%23666' stroke-width='1.5'/%3E%3C/svg%3E")`;
   const selectStyle = { padding: "7px 28px 7px 12px", fontSize: 13, fontWeight: 500, border: "1px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-primary)", color: "var(--color-text-primary)", fontFamily: "inherit", cursor: "pointer", appearance: "none", backgroundImage: chevronSvg, backgroundRepeat: "no-repeat", backgroundPosition: "right 8px center" };
@@ -5069,7 +5080,7 @@ function App() {
         {!navCollapsed && <div style={{ padding: "12px 16px", borderTop: "0.5px solid var(--color-border-tertiary)", fontSize: 10, color: "var(--color-text-tertiary)", flexShrink: 0 }}>Source: USDA WASDE, ERS,<br/>NASS, AMS, EIA reports</div>}
       </div>
       <div style={{ flex: 1, minWidth: 0, padding: "20px 28px 40px", overflowY: "auto", height: "100vh" }}>
-        <div style={{ maxWidth: 960 }}>
+        <div style={{ maxWidth: 1100 }}>
           <div style={{ marginBottom: 20 }}>
             <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
               <div>

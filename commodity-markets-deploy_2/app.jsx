@@ -3463,193 +3463,122 @@ function COTChartsPage({ ready }) {
   const { cotData } = useLiveCOT();
   const [sel, setSel] = useState("cot-corn");
   const [timeRange, setTimeRange] = useState("5");
+  const [hiddenYears, setHiddenYears] = useState(new Set());
   const d = cotData[sel];
   if (!d) return <div>No data available</div>;
 
   const curYear = new Date().getFullYear();
   const yearly = d.yearly || {};
-  const medians = d.medians || {};
   const availYears = Object.keys(yearly).map(Number).sort();
 
-  // Determine which years to show based on timeRange
   let displayYears;
-  if (timeRange === "all") {
-    displayYears = availYears;
-  } else {
-    const n = parseInt(timeRange);
-    displayYears = availYears.filter(y => y >= curYear - n);
+  if (timeRange === "all") { displayYears = availYears; }
+  else { const n = parseInt(timeRange); displayYears = availYears.filter(y => y >= curYear - n); }
+
+  // Compute median dynamically from selected range (excluding current year)
+  const fields_all = ["mm_net","mm_long","mm_short","prod_net","prod_long","prod_short","swap_net","swap_long","swap_short","other_net","other_long","other_short","oi"];
+  const medians = {};
+  const medianYears = displayYears.filter(y => y < curYear);
+  for (const f of fields_all) {
+    const byPos = {};
+    for (const yr of medianYears) {
+      const vals = (yearly[String(yr)] || {})[f] || [];
+      vals.forEach((v, i) => { if (v != null) { if (!byPos[i]) byPos[i] = []; byPos[i].push(v); } });
+    }
+    medians[f] = Array.from({ length: 52 }, (_, i) => {
+      const vals = (byPos[i] || []).sort((a, b) => a - b);
+      return vals.length > 0 ? vals[Math.floor(vals.length / 2)] : null;
+    });
   }
 
-  // Color palette for years — current year is bold, others cycle through colors
-  const yearColors = [
-    "#A32D2D", "#D85A30", "#E8A735", "#639922", "#1D9E75",
-    "#378ADD", "#534AB7", "#8B5CF6", "#EC4899", "#6B7280",
-    "#0EA5E9", "#14B8A6", "#F97316", "#7C3AED", "#BE185D",
-    "#059669", "#B45309", "#4338CA", "#DC2626", "#0284C7",
-  ];
+  const yearColors = ["#A32D2D","#D85A30","#E8A735","#639922","#1D9E75","#378ADD","#534AB7","#8B5CF6","#EC4899","#6B7280","#0EA5E9","#14B8A6","#F97316","#7C3AED","#BE185D","#059669","#B45309","#4338CA","#DC2626","#0284C7"];
+  const getYearColor = (yr) => yr === curYear ? "#333" : yearColors[displayYears.filter(y => y !== curYear).indexOf(yr) % yearColors.length];
 
-  const getYearColor = (yr) => {
-    if (yr === curYear) return "#333";
-    const idx = displayYears.indexOf(yr);
-    return yearColors[idx % yearColors.length];
-  };
-  const getYearWidth = (yr) => yr === curYear ? 2.5 : 1.2;
-  const getYearDash = (yr) => yr === curYear - 1 ? [5, 3] : [];
+  const toggleYear = (label) => setHiddenYears(prev => { const next = new Set(prev); next.has(label) ? next.delete(label) : next.add(label); return next; });
+  useEffect(() => { setHiddenYears(new Set()); }, [sel, timeRange]);
 
-  // Week labels (1-52 as month names)
-  const weekLabels = Array.from({ length: 52 }, (_, i) => {
-    const dt = new Date(2025, 0, 6 + i * 7);
-    return `${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][dt.getMonth()]} ${dt.getDate()}`;
-  });
+  const weekLabels = Array.from({ length: 52 }, (_, i) => { const dt = new Date(2025, 0, 6 + i * 7); return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][dt.getMonth()] + " " + dt.getDate(); });
   const { displayLabels: xLabels, gridColors: xGridColors } = buildMonthAxis(weekLabels);
 
-  const fmtContracts = (v) => {
-    if (v == null) return "—";
-    if (Math.abs(v) >= 1000000) return (v / 1000000).toFixed(1) + "M";
-    if (Math.abs(v) >= 1000) return (v / 1000).toFixed(0) + "K";
-    return v.toLocaleString();
-  };
+  const fmtAxis = (v) => v == null ? "" : (v / 1000).toLocaleString(undefined, { maximumFractionDigits: 0 });
 
-  const mkChart = useCallback((field, title) => (canvas) => {
+  const mkChart = useCallback((field) => (canvas) => {
     const datasets = [];
-    // Add median line
-    if (medians[field]) {
-      datasets.push({
-        label: "Median",
-        data: medians[field],
-        borderColor: "#999",
-        borderWidth: 1.5,
-        borderDash: [3, 3],
-        pointRadius: 0,
-        tension: 0.3,
-        fill: false,
-      });
-    }
-    // Add each year as a line
+    if (medians[field]) datasets.push({ label: "Median", data: medians[field], borderColor: "#999", borderWidth: 1.5, borderDash: [4,4], pointRadius: 0, tension: 0.3, fill: false, hidden: hiddenYears.has("Median") });
     displayYears.forEach(yr => {
-      const yrData = yearly[String(yr)];
-      if (!yrData || !yrData[field]) return;
-      datasets.push({
-        label: String(yr),
-        data: yrData[field],
-        borderColor: getYearColor(yr),
-        borderWidth: getYearWidth(yr),
-        borderDash: getYearDash(yr),
-        pointRadius: 0,
-        tension: 0.3,
-        fill: false,
-      });
+      const yrData = yearly[String(yr)]; if (!yrData || !yrData[field]) return;
+      datasets.push({ label: String(yr), data: yrData[field], borderColor: getYearColor(yr), borderWidth: yr === curYear ? 2.5 : 1.5, pointRadius: 0, tension: 0.3, fill: false, hidden: hiddenYears.has(String(yr)) });
     });
-
-    const allVals = datasets.flatMap(ds => (ds.data || []).filter(v => v != null));
-    if (allVals.length === 0) return;
-    const dataMin = Math.min(...allVals); const dataMax = Math.max(...allVals);
-    const range = dataMax - dataMin; const pad = Math.max(range * 0.1, Math.abs(dataMax) * 0.02 || 100);
-    const rawStep = (range + pad * 2) / 5;
-    const mag = Math.pow(10, Math.floor(Math.log10(rawStep || 1)));
-    const norm = rawStep / mag;
-    const niceNorm = norm <= 1.5 ? 1 : norm <= 3.5 ? 2 : norm <= 7.5 ? 5 : 10;
+    const visibleVals = datasets.filter(ds => !ds.hidden).flatMap(ds => (ds.data || []).filter(v => v != null));
+    if (visibleVals.length === 0) return;
+    const dataMin = Math.min(...visibleVals), dataMax = Math.max(...visibleVals);
+    const range = dataMax - dataMin, pad = Math.max(range * 0.12, Math.abs(dataMax) * 0.03 || 100);
+    const rawStep = (range + pad * 2) / 5, mag = Math.pow(10, Math.floor(Math.log10(rawStep || 1)));
+    const norm = rawStep / mag, niceNorm = norm <= 1.5 ? 1 : norm <= 3.5 ? 2 : norm <= 7.5 ? 5 : 10;
     const step = niceNorm * mag;
-    const yMin = Math.floor((dataMin - pad) / step) * step;
-    const yMax = Math.ceil((dataMax + pad) / step) * step;
-
-    new Chart(canvas, {
-      type: "line",
-      data: { labels: xLabels, datasets },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        interaction: { mode: "index", intersect: false },
-        plugins: {
-          legend: {
-            display: true, position: "bottom",
-            labels: { usePointStyle: true, pointStyle: "line", boxWidth: 20, font: { size: 11 }, padding: 10,
-              generateLabels: (chart) => chart.data.datasets.map((ds, i) => ({
-                text: ds.label, strokeStyle: ds.borderColor, fillStyle: "transparent",
-                lineDash: ds.borderDash || [], lineWidth: ds.borderWidth,
-                hidden: !chart.isDatasetVisible(i), datasetIndex: i, pointStyle: "line",
-              })),
-            },
-            onClick: (e, legendItem, legend) => {
-              const idx = legendItem.datasetIndex;
-              const ci = legend.chart;
-              ci.isDatasetVisible(idx) ? ci.hide(idx) : ci.show(idx);
-            },
-          },
-          tooltip: {
-            filter: (item) => item.parsed.y != null,
-            callbacks: {
-              title: (items) => items.length > 0 ? weekLabels[items[0].dataIndex] : "",
-              label: c => `${c.dataset.label}: ${c.parsed.y != null ? c.parsed.y.toLocaleString() : "n/a"}`,
-            },
-          },
-        },
-        scales: {
-          x: { ticks: { autoSkip: false, maxRotation: 0, font: { size: 10 } }, grid: { color: (ctx) => xGridColors[ctx.index] || "transparent", lineWidth: 0.75 } },
-          y: { min: yMin, max: yMax, ticks: { font: { size: 10 }, callback: v => fmtContracts(v) }, grid: { color: "rgba(0,0,0,0.08)", lineWidth: 0.75 } },
-        },
+    new Chart(canvas, { type: "line", data: { labels: xLabels, datasets }, options: {
+      responsive: true, maintainAspectRatio: false, interaction: { mode: "nearest", intersect: true },
+      plugins: { legend: { display: false }, tooltip: { mode: "nearest", intersect: true, callbacks: {
+        title: (items) => items.length > 0 ? weekLabels[items[0].dataIndex] : "",
+        label: c => c.dataset.label + ": " + (c.parsed.y != null ? (c.parsed.y / 1000).toFixed(1) + "K contracts" : "n/a"),
+      }}},
+      scales: {
+        x: { ticks: { autoSkip: false, maxRotation: 0, font: { size: 10 } }, grid: { color: ctx => xGridColors[ctx.index] || "transparent", lineWidth: 0.75 } },
+        y: { min: Math.floor((dataMin - pad) / step) * step, max: Math.ceil((dataMax + pad) / step) * step, ticks: { font: { size: 10 }, callback: v => fmtAxis(v) }, grid: { color: "rgba(0,0,0,0.08)", lineWidth: 0.75 } },
       },
-    });
-  }, [sel, timeRange, d]);
+    }});
+  }, [sel, timeRange, d, hiddenYears]);
 
   const chevronSvg = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%23666' stroke-width='1.5'/%3E%3C/svg%3E")`;
   const selectStyle = { padding: "7px 28px 7px 12px", fontSize: 13, fontWeight: 500, border: "1px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-primary)", color: "var(--color-text-primary)", fontFamily: "inherit", cursor: "pointer", appearance: "none", backgroundImage: chevronSvg, backgroundRepeat: "no-repeat", backgroundPosition: "right 8px center" };
   const labelStyle2 = { fontSize: 11, fontWeight: 600, color: "#fff", background: "#333", padding: "4px 10px", borderRadius: 4, textTransform: "uppercase", letterSpacing: "0.4px" };
 
   const categories = [
-    { key: "managed", title: "Managed Money", fields: ["mm_net", "mm_long", "mm_short"] },
-    { key: "producer", title: "Producer / Merchant", fields: ["prod_net", "prod_long", "prod_short"] },
-    { key: "swap", title: "Swap Dealers", fields: ["swap_net", "swap_long", "swap_short"] },
-    { key: "other", title: "Other Reportables", fields: ["other_net", "other_long", "other_short"] },
+    { title: "Managed Money", fields: ["mm_net","mm_long","mm_short"] },
+    { title: "Producer / Merchant", fields: ["prod_net","prod_long","prod_short"] },
+    { title: "Swap Dealers", fields: ["swap_net","swap_long","swap_short"] },
+    { title: "Other Reportables", fields: ["other_net","other_long","other_short"] },
   ];
 
+  const legendItems = [{ label: "Median", color: "#999", dash: true }, ...displayYears.map(yr => ({ label: String(yr), color: getYearColor(yr) }))];
+  const hk = [...hiddenYears].sort().join();
+
   return (<div>
-    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span style={labelStyle2}>Commodity</span>
-        <select value={sel} onChange={e => setSel(e.target.value)} style={selectStyle}>
-          {COT_COMMODITY_LIST.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
-        </select>
+        <select value={sel} onChange={e => setSel(e.target.value)} style={selectStyle}>{COT_COMMODITY_LIST.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}</select>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span style={labelStyle2}>Range</span>
         <select value={timeRange} onChange={e => setTimeRange(e.target.value)} style={selectStyle}>
-          <option value="5">5 Year</option>
-          <option value="10">10 Year</option>
-          <option value="all">All</option>
+          <option value="5">5 Year</option><option value="10">10 Year</option><option value="all">All</option>
         </select>
       </div>
     </div>
-
-    <div style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginBottom: 10 }}>
-      {d.label} — {d.exchange} — Contract size: {d.contract}. Positions in contracts. {displayYears.length} years shown.
+    <div style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginBottom: 10 }}>{d.label} — {d.exchange} — Contract size: {d.contract}. Y-axis in thousand contracts. Median computed from selected range.</div>
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 18, alignItems: "center" }}>
+      {legendItems.map(item => { const isH = hiddenYears.has(item.label); return (
+        <button key={item.label} onClick={() => toggleYear(item.label)} style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", border: "1px solid var(--color-border-secondary)", borderRadius: 5, background: isH ? "var(--color-background-secondary)" : "transparent", cursor: "pointer", opacity: isH ? 0.3 : 1, transition: "all 0.15s" }}>
+          <span style={{ width: 18, height: 0, borderTop: item.dash ? "2px dashed "+item.color : "2.5px solid "+item.color, display: "inline-block" }}></span>
+          <span style={{ fontSize: 11, fontWeight: 500, color: "var(--color-text-primary)" }}>{item.label}</span>
+        </button>); })}
     </div>
-
-    {categories.map(cat => (
-      <div key={cat.key}>
-        <h3 style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text-primary)", margin: "24px 0 10px" }}>{cat.title}</h3>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-secondary)", marginBottom: 6, textAlign: "center" }}>Net</div>
-            {ready && <ChartBox id={`cot2_${cat.key}_net_${sel}_${timeRange}`} height={220} renderChart={mkChart(cat.fields[0])} deps={`${sel}_${timeRange}`} />}
-          </div>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-secondary)", marginBottom: 6, textAlign: "center" }}>Long</div>
-            {ready && <ChartBox id={`cot2_${cat.key}_long_${sel}_${timeRange}`} height={220} renderChart={mkChart(cat.fields[1])} deps={`${sel}_${timeRange}`} />}
-          </div>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-secondary)", marginBottom: 6, textAlign: "center" }}>Short</div>
-            {ready && <ChartBox id={`cot2_${cat.key}_short_${sel}_${timeRange}`} height={220} renderChart={mkChart(cat.fields[2])} deps={`${sel}_${timeRange}`} />}
-          </div>
-        </div>
+    {categories.map(cat => (<div key={cat.title}>
+      <h3 style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text-primary)", margin: "22px 0 10px" }}>{cat.title}</h3>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
+        {["Net","Long","Short"].map((lbl, fi) => (<div key={lbl}>
+          <div style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-secondary)", marginBottom: 6, textAlign: "center" }}>{lbl}</div>
+          {ready && <ChartBox id={`cot2_${cat.title}_${lbl}_${sel}_${timeRange}_${hk}`} height={280} renderChart={mkChart(cat.fields[fi])} deps={`${sel}_${timeRange}_${hk}`} />}
+        </div>))}
       </div>
-    ))}
-
-    <h3 style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text-primary)", margin: "24px 0 10px" }}>Open Interest</h3>
-    {ready && <ChartBox id={`cot2_oi_${sel}_${timeRange}`} height={260} renderChart={mkChart("oi")} deps={`${sel}_${timeRange}`} />}
-
-    <div style={{ marginTop: 14, fontSize: 11, color: "var(--color-text-tertiary)" }}>Source: CFTC Disaggregated Commitments of Traders report. Futures & Options combined. Jan–Dec calendar weeks. Median from last 10 years.</div>
+    </div>))}
+    <h3 style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text-primary)", margin: "22px 0 10px" }}>Open Interest</h3>
+    {ready && <ChartBox id={`cot2_oi_${sel}_${timeRange}_${hk}`} height={320} renderChart={mkChart("oi")} deps={`${sel}_${timeRange}_${hk}`} />}
+    <div style={{ marginTop: 14, fontSize: 11, color: "var(--color-text-tertiary)" }}>Source: CFTC Disaggregated Commitments of Traders report. Futures & Options combined. Jan–Dec calendar weeks.</div>
   </div>);
 }
+
 
 // ════════════════════════════════════════════════════════════════════════
 // ENERGY PAGES — EIA Weekly Petroleum Status & Natural Gas Storage
@@ -4967,7 +4896,7 @@ function App() {
         {!navCollapsed && <div style={{ padding: "12px 16px", borderTop: "0.5px solid var(--color-border-tertiary)", fontSize: 10, color: "var(--color-text-tertiary)", flexShrink: 0 }}>Source: USDA WASDE, ERS,<br/>NASS, AMS, EIA reports</div>}
       </div>
       <div style={{ flex: 1, minWidth: 0, padding: "20px 28px 40px", overflowY: "auto", height: "100vh" }}>
-        <div style={{ maxWidth: 1100 }}>
+        <div style={{ maxWidth: 1280 }}>
           <div style={{ marginBottom: 20 }}>
             <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
               <div>

@@ -275,37 +275,53 @@ def main():
         for yr in by_year_recs:
             by_year_recs[yr].sort(key=lambda r: r["date"])
 
-        # Build median per week from last N years (computed dynamically by app)
-        # We output ALL yearly data; the app picks the median range
-        # For the JSON, just output each year as array of values per report week
+        # Build yearly data keyed by Excel-style week number of the Tuesday cutoff date
+        # WEEKNUM(date, 2) with Monday-start weeks: week 1 contains Jan 1
+        # COT reports are released Friday but reflect Tuesday positions
+        # We compute the Tuesday cutoff and get its week number
+        def excel_weeknum(dt):
+            """Excel WEEKNUM(date, 2) — Monday-start weeks, week 1 contains Jan 1."""
+            jan1 = datetime(dt.year, 1, 1)
+            offset = jan1.weekday()  # 0=Mon..6=Sun
+            doy = (dt - jan1).days
+            return (doy + offset) // 7 + 1
+
+        def get_tuesday(report_date):
+            """Get the Tuesday of the report week (data cutoff day)."""
+            # report_date.weekday(): 0=Mon, 1=Tue, 2=Wed, 3=Thu, 4=Fri, 5=Sat, 6=Sun
+            days_since_tue = (report_date.weekday() - 1) % 7
+            return report_date - timedelta(days=days_since_tue)
+
         yearly_out = {}
         for yr, yr_recs in sorted(by_year_recs.items()):
+            by_week = {}  # {week_num: record} — latest wins if duplicates
+            for rec in yr_recs:
+                try:
+                    dt = datetime.strptime(rec["date"], "%Y-%m-%d")
+                    tue = get_tuesday(dt)
+                    wk = excel_weeknum(tue)  # 1-53
+                    by_week[wk] = rec
+                except: pass
+
             year_data = {}
             for f in fields_to_track:
-                # Pad/truncate to exactly 52 slots
-                vals = [r.get(f) for r in yr_recs]
-                # If more than 52 reports, take last 52
-                if len(vals) > 52: vals = vals[-52:]
-                # Pad to 52 if fewer
-                while len(vals) < 52: vals.append(None)
-                year_data[f] = vals
+                # 53 slots: index 0 = week 1, index 52 = week 53
+                year_data[f] = [by_week[w].get(f) if w in by_week else None for w in range(1, 54)]
             yearly_out[str(yr)] = year_data
 
-        # Build median per report-week position from ALL years
-        # The app will dynamically recalculate median based on selected range
-        # But we also pre-compute from all available data as a fallback
+        # Build median per calendar week from ALL years
         medians = {}
         all_years_list = sorted(yearly_out.keys())
         for f in fields_to_track:
-            by_pos = defaultdict(list)
+            by_week = defaultdict(list)
             for yr_key in all_years_list:
                 vals = yearly_out[yr_key].get(f, [])
-                for pos, v in enumerate(vals):
+                for w, v in enumerate(vals):
                     if v is not None:
-                        by_pos[pos].append(v)
+                        by_week[w].append(v)
             med_vals = []
-            for pos in range(52):
-                vals = sorted(by_pos.get(pos, []))
+            for w in range(53):
+                vals = sorted(by_week.get(w, []))
                 med_vals.append(vals[len(vals)//2] if vals else None)
             medians[f] = med_vals
 

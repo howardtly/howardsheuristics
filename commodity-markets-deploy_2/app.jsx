@@ -3200,7 +3200,7 @@ function useLiveCOT() {
   const [liveCOT, setLiveCOT] = useState(null);
   const [cotMeta, setCotMeta] = useState(null);
   useEffect(() => {
-    fetch("data/cot.json")
+    fetch("data/cot.json?t=" + Date.now())
       .then(r => { if (!r.ok) throw new Error("not found"); return r.json(); })
       .then(data => {
         if (data && data.data && Object.keys(data.data).length > 0) {
@@ -3210,7 +3210,7 @@ function useLiveCOT() {
       })
       .catch(() => {});
   }, []);
-  return { cotData: liveCOT || COT_DATA, cotMeta };
+  return { cotData: liveCOT || COT_DATA, cotMeta, cotLoaded: !!liveCOT };
 }
 
 function COTSummaryPage() {
@@ -3460,12 +3460,13 @@ const COT_COMMODITY_LIST = [
 ];
 
 function COTChartsPage({ ready }) {
-  const { cotData } = useLiveCOT();
+  const { cotData, cotLoaded } = useLiveCOT();
   const [sel, setSel] = useState("cot-corn");
   const [timeRange, setTimeRange] = useState("5");
   const [hiddenYears, setHiddenYears] = useState(new Set());
   const d = cotData[sel];
-  if (!d) return <div>No data available</div>;
+  if (!d) return <div style={{ padding: 20, color: "var(--color-text-secondary)" }}>No data available for this commodity.</div>;
+  if (!d.yearly || Object.keys(d.yearly).length === 0) return <div style={{ padding: 20, color: "var(--color-text-secondary)" }}>Loading COT chart data...</div>;
 
   const curYear = new Date().getFullYear();
   const yearly = d.yearly || {};
@@ -3497,7 +3498,11 @@ function COTChartsPage({ ready }) {
   const fmtAxis = (v) => {
       if (v == null) return "";
       const k = v / 1000;
-      if (Math.abs(k) < 10) return k.toFixed(1);  // show 1 decimal for small values
+      if (Math.abs(k) < 0.001) return "0";
+      if (Math.abs(k) < 10) {
+        const rounded = Math.round(k * 10) / 10;
+        return rounded === Math.floor(rounded) ? String(Math.floor(rounded)) : rounded.toFixed(1);
+      }
       return k.toLocaleString(undefined, { maximumFractionDigits: 0 });
     };
 

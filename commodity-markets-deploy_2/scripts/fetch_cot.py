@@ -102,6 +102,7 @@ _unmatched_names = set()
 _natgas_matches = set()
 _heating_matches = set()
 _crude_matches = set()
+_crude_per_name_count = defaultdict(int)  # track how many records each crude name contributes
 
 # Exchange-based routing for commodities with generic names in older files
 # Key: (commodity_part, exchange_keyword) → cot_id
@@ -147,7 +148,9 @@ def identify_commodity(market_name):
         result = COMMODITY_MAP[commodity_part]
         if result == "cot-nat-gas": _natgas_matches.add(commodity_part)
         if result == "cot-heating-oil": _heating_matches.add(commodity_part)
-        if result == "cot-crude-oil": _crude_matches.add(commodity_part)
+        if result == "cot-crude-oil":
+            _crude_matches.add(commodity_part)
+            _crude_per_name_count[commodity_part] += 1
         return result
     
     # 2. Exchange-aware routing (handles "WHEAT" → SRW/HRW/HRS based on exchange)
@@ -162,7 +165,9 @@ def identify_commodity(market_name):
                 break
             if cot_id == "cot-nat-gas": _natgas_matches.add(commodity_part)
             if cot_id == "cot-heating-oil": _heating_matches.add(commodity_part)
-            if cot_id == "cot-crude-oil": _crude_matches.add(commodity_part)
+            if cot_id == "cot-crude-oil":
+                _crude_matches.add(commodity_part)
+                _crude_per_name_count[commodity_part] += 1
             return cot_id
     
     # Track unmatched for debugging
@@ -180,6 +185,25 @@ def parse_cftc_csv(lines, year=None):
     # Normalize headers: strip whitespace from the header line
     if lines:
         lines[0] = ",".join(h.strip() for h in lines[0].split(","))
+
+    # For gap years, dump all energy-related commodity names to find the real names
+    if year in (2016, 2024):
+        temp_reader = csv.DictReader(list(lines))
+        energy_names = set()
+        for row in temp_reader:
+            market = None
+            for cand in ["Market_and_Exchange_Names", "Market and Exchange Names"]:
+                market = row.get(cand)
+                if market: break
+            if not market: continue
+            name = market.strip()
+            # Check for energy keywords
+            name_up = name.upper()
+            if any(kw in name_up for kw in ["OIL", "GAS", "HEAT", "ULSD", "HENRY", "CRUDE", "PETROL", "FUEL", "RBOB"]):
+                energy_names.add(name.split(" - ")[0].strip() if " - " in name else name)
+        print(f"    ALL energy commodity names in {year}:")
+        for n in sorted(energy_names):
+            print(f"      {n}")
 
     reader = csv.DictReader(lines)
     records = defaultdict(list)
@@ -506,6 +530,7 @@ def main():
     print(f"    Nat gas:     {sorted(_natgas_matches)}")
     print(f"    Heating oil: {sorted(_heating_matches)}")
     print(f"    Crude oil:   {sorted(_crude_matches)}")
+    print(f"    Crude oil record counts per name: {dict(_crude_per_name_count)}")
 
     # Log unmatched commodity names (helps find CFTC name changes)
     if _unmatched_names:

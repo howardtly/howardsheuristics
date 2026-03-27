@@ -51,7 +51,7 @@ COMMODITY_MAP = {
     # Natural gas — name changed multiple times
     "NATURAL GAS": "cot-nat-gas",
     "HENRY HUB NATURAL GAS": "cot-nat-gas",
-    "HENRY HUB": "cot-nat-gas",
+    # NOTE: "HENRY HUB" alone is a different financial contract — do NOT include
     "NAT GAS NYME": "cot-nat-gas",
 }
 
@@ -189,7 +189,7 @@ def parse_cftc_csv(lines, year=None):
         lines[0] = ",".join(h.strip() for h in lines[0].split(","))
 
     # For gap years, dump all energy-related commodity names to find the real names
-    if year in (2016, 2024):
+    if year in (2016, 2019, 2024):
         temp_reader = csv.DictReader(list(lines))
         energy_names = set()
         for row in temp_reader:
@@ -316,18 +316,16 @@ def parse_cftc_csv(lines, year=None):
                 if i > 50: break
             print(f"    Sample commodity names: {sample_markets}")
 
-    # Sort each commodity by date and deduplicate (keep first record per date)
-    # This prevents issues when two CFTC name variants match the same commodity
-    # (e.g., "CRUDE OIL, LIGHT SWEET" and "CRUDE OIL, LIGHT SWEET-WTI")
+    # Sort each commodity by date and deduplicate (keep record with highest OI per date)
+    # This ensures the primary contract is kept when two CFTC name variants match
     for cot_id in records:
         records[cot_id].sort(key=lambda r: r["date"])
-        deduped = []
-        seen_dates = set()
+        by_date = {}
         for rec in records[cot_id]:
-            if rec["date"] not in seen_dates:
-                deduped.append(rec)
-                seen_dates.add(rec["date"])
-        records[cot_id] = deduped
+            d = rec["date"]
+            if d not in by_date or rec["oi"] > by_date[d]["oi"]:
+                by_date[d] = rec
+        records[cot_id] = [by_date[d] for d in sorted(by_date.keys())]
 
     return dict(records)
 

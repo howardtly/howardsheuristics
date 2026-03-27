@@ -3200,17 +3200,17 @@ function useLiveCOT() {
   const [liveCOT, setLiveCOT] = useState(null);
   const [cotMeta, setCotMeta] = useState(null);
   useEffect(() => {
-    fetch("data/cot.json?t=" + Date.now())
-      .then(r => { if (!r.ok) throw new Error("not found"); return r.json(); })
+    fetch("data/cot.json")
+      .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
       .then(data => {
         if (data && data.data && Object.keys(data.data).length > 0) {
           setLiveCOT(data.data);
           setCotMeta({ weeks: data.weeks, fetched: data.fetched_at });
         }
       })
-      .catch(() => {});
+      .catch(e => { console.warn("COT fetch:", e); });
   }, []);
-  return { cotData: liveCOT || COT_DATA, cotMeta, cotLoaded: !!liveCOT };
+  return { cotData: liveCOT || COT_DATA, cotMeta };
 }
 
 function COTSummaryPage() {
@@ -3460,13 +3460,12 @@ const COT_COMMODITY_LIST = [
 ];
 
 function COTChartsPage({ ready }) {
-  const { cotData, cotLoaded } = useLiveCOT();
+  const { cotData } = useLiveCOT();
   const [sel, setSel] = useState("cot-corn");
   const [timeRange, setTimeRange] = useState("5");
   const [hiddenYears, setHiddenYears] = useState(new Set());
   const d = cotData[sel];
   if (!d) return <div style={{ padding: 20, color: "var(--color-text-secondary)" }}>No data available for this commodity.</div>;
-  if (!d.yearly || Object.keys(d.yearly).length === 0) return <div style={{ padding: 20, color: "var(--color-text-secondary)" }}>Loading COT chart data...</div>;
 
   const curYear = new Date().getFullYear();
   const yearly = d.yearly || {};

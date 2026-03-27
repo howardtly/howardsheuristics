@@ -38,10 +38,9 @@ COMMODITY_MAP = {
     "LIVE CATTLE": "cot-live-cattle",
     "FEEDER CATTLE": "cot-feeder-cattle",
     "LEAN HOGS": "cot-lean-hogs",
-    # Crude oil — only match the primary contract name
-    # "CRUDE OIL, LIGHT SWEET-WTI" is a different sub-contract in years where both exist
-    # but becomes the only name post-2023 — handled by prefix fallback
+    # Crude oil — two names, both exact match. Smart dedup handles overlap.
     "CRUDE OIL, LIGHT SWEET": "cot-crude-oil",
+    "CRUDE OIL, LIGHT SWEET-WTI": "cot-crude-oil",
     # Heating oil — name changed multiple times
     "NY HARBOR ULSD": "cot-heating-oil",
     "NO 2 HEATING OIL  NY HARBOR": "cot-heating-oil",
@@ -119,7 +118,7 @@ _EXCHANGE_MAP = {
 
 # Prefix fallback for commodities with many name variants
 _PREFIX_MAP = [
-    ("CRUDE OIL, LIGHT SWEET", "cot-crude-oil"),  # most specific first
+    # NOTE: crude oil NOT here — handled by exact match + name-priority dedup
     ("NY HARBOR ULSD", "cot-heating-oil"),
     ("NO 2 HEATING OIL", "cot-heating-oil"),
     ("NO. 2 HEATING OIL", "cot-heating-oil"),
@@ -264,8 +263,10 @@ def parse_cftc_csv(lines, year=None):
             continue
 
         matched_count += 1
+        source_name = market.split(" - ")[0].strip().upper() if " - " in market else market.strip().upper()
         records[cot_id].append({
             "date": date_str,
+            "_source": source_name,  # track which CFTC name matched
             "prod_long": prod_long, "prod_short": prod_short,
             "prod_net": prod_long - prod_short,
             "swap_long": swap_long, "swap_short": swap_short,
@@ -299,15 +300,29 @@ def parse_cftc_csv(lines, year=None):
                 if i > 50: break
             print(f"    Sample commodity names: {sample_markets}")
 
-    # Sort each commodity by date and deduplicate (keep record with highest OI per date)
-    # This ensures the primary contract is kept when two CFTC name variants match
+    # Sort each commodity by date and deduplicate
+    # When two records exist for the same date (e.g., "CRUDE OIL, LIGHT SWEET" and
+    # "CRUDE OIL, LIGHT SWEET-WTI"), prefer the PRIMARY name (shorter/original).
+    # Primary names are the main futures contracts; secondary are sub-contracts or renames.
+    _PRIMARY_NAMES = {
+        "cot-crude-oil": "CRUDE OIL, LIGHT SWEET",
+        "cot-nat-gas": "NATURAL GAS",
+        "cot-heating-oil": "NY HARBOR ULSD",
+    }
     for cot_id in records:
         records[cot_id].sort(key=lambda r: r["date"])
         by_date = {}
+        primary = _PRIMARY_NAMES.get(cot_id)
         for rec in records[cot_id]:
             d = rec["date"]
-            if d not in by_date or rec["oi"] > by_date[d]["oi"]:
+            if d not in by_date:
                 by_date[d] = rec
+            elif primary and rec.get("_source") == primary:
+                by_date[d] = rec  # primary name always wins
+            # else keep existing (first occurrence)
+        # Remove _source from final records
+        for d in by_date:
+            by_date[d].pop("_source", None)
         records[cot_id] = [by_date[d] for d in sorted(by_date.keys())]
 
     return dict(records)

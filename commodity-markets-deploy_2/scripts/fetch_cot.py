@@ -98,24 +98,23 @@ def download_cftc_zip(year):
 
 
 _unmatched_names = set()
-_natgas_matches = set()  # Track what market names match nat gas
+_natgas_matches = set()
+_heating_matches = set()
+_crude_matches = set()
 
 # Prefix fallback for commodities with many name variants
 _PREFIX_MAP = [
     ("CRUDE OIL", "cot-crude-oil"),
     ("NO 2 HEATING OIL", "cot-heating-oil"),
     ("NO. 2 HEATING OIL", "cot-heating-oil"),
-    ("HEATING OIL", "cot-heating-oil"),
-    ("HENRY HUB NAT", "cot-nat-gas"),       # catches "HENRY HUB NATURAL GAS", "HENRY HUB NAT GAS", etc.
-    ("HENRY HUB NG", "cot-nat-gas"),
-    ("NATURAL GAS", "cot-nat-gas"),        # catches NYMEX variants but ICE excluded below
+    ("NY HARBOR ULSD", "cot-heating-oil"),
 ]
 
 # Words that indicate a derivative/sub-product, not the main contract
 _EXCLUDE_WORDS = {"OPTION", "SWAP", "SPREAD", "CALENDAR", "CAL ", "BASIS",
                   "CRACK", "FIN ", "FINANCIAL", "MINI", "AVG PRICE",
                   "LAST DAY", "ICE", "BALMO", "BRENT", "DUBAI", "CANADIAN",
-                  "EUR STYLE", "BIODIESEL", "GASOIL", "FUEL OIL", "NET ENRGY"}
+                  "EUR STYLE", "BIODIESEL", "GASOIL", "NET ENRGY"}
 
 def identify_commodity(market_name):
     """Match CFTC market name to our commodity ID using exact commodity name matching."""
@@ -135,8 +134,9 @@ def identify_commodity(market_name):
     # Exact match on commodity portion
     if commodity_part in COMMODITY_MAP:
         result = COMMODITY_MAP[commodity_part]
-        if result == "cot-nat-gas":
-            _natgas_matches.add(commodity_part)
+        if result == "cot-nat-gas": _natgas_matches.add(commodity_part)
+        if result == "cot-heating-oil": _heating_matches.add(commodity_part)
+        if result == "cot-crude-oil": _crude_matches.add(commodity_part)
         return result
     
     # Prefix fallback for energy names that vary across years
@@ -145,8 +145,9 @@ def identify_commodity(market_name):
             # Exclude derivative products (options, swaps, spreads, etc.)
             if any(excl in commodity_part for excl in _EXCLUDE_WORDS):
                 break
-            if cot_id == "cot-nat-gas":
-                _natgas_matches.add(commodity_part)
+            if cot_id == "cot-nat-gas": _natgas_matches.add(commodity_part)
+            if cot_id == "cot-heating-oil": _heating_matches.add(commodity_part)
+            if cot_id == "cot-crude-oil": _crude_matches.add(commodity_part)
             return cot_id
     
     # Track unmatched for debugging
@@ -254,7 +255,11 @@ def parse_cftc_csv(lines, year=None):
 
     if year:
         ids_found = sorted(set(records.keys()))
-        print(f"    {year}: {matched_count} matched rows → {len(ids_found)} commodities: {', '.join(ids_found[:8])}{'...' if len(ids_found) > 8 else ''}")
+        # Show which of our target commodities are missing
+        target_ids = set(COMMODITY_META.keys())
+        missing = sorted(target_ids - set(ids_found))
+        missing_str = f" | MISSING: {', '.join(missing)}" if missing else ""
+        print(f"    {year}: {matched_count} rows → {len(ids_found)} commodities{missing_str}")
         if matched_count == 0:
             print(f"    WARNING: 0 matches for {year}! All column names: {fieldnames[:20]}")
             # Also show a sample market name from the file
@@ -474,9 +479,11 @@ def main():
             corn_25 = yearly_out["2025"]["mm_net"][:12]
             print(f"    Corn 2025 MM net wks 1-12: {corn_25}")
 
-    # Debug: nat gas market names that matched
-    if _natgas_matches:
-        print(f"\n  Nat gas matched market names: {sorted(_natgas_matches)}")
+    # Debug: energy market names that matched
+    print(f"\n  Energy name matches:")
+    print(f"    Nat gas:     {sorted(_natgas_matches)}")
+    print(f"    Heating oil: {sorted(_heating_matches)}")
+    print(f"    Crude oil:   {sorted(_crude_matches)}")
 
     # Log unmatched commodity names (helps find CFTC name changes)
     if _unmatched_names:
@@ -487,6 +494,12 @@ def main():
         other_unmatched = sorted([n for n in _unmatched_names if n not in energy_unmatched])
         if energy_unmatched:
             print(f"    Energy-related ({len(energy_unmatched)} total):")
+            # Show ULSD, NATGAS, and HEATING specifically
+            priority = [n for n in energy_unmatched if any(kw in n for kw in ["ULSD", "NATURAL GAS", "HEATING", "HENRY HUB", "RBOB"])]
+            if priority:
+                print(f"    ** Priority (ULSD/NATGAS/HEATING/HENRY):")
+                for n in priority:
+                    print(f"      >>> {n}")
             for n in energy_unmatched[:30]:
                 print(f"      {n}")
         for n in other_unmatched[:15]:

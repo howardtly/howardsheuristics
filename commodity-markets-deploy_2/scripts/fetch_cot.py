@@ -38,19 +38,21 @@ COMMODITY_MAP = {
     "LIVE CATTLE": "cot-live-cattle",
     "FEEDER CATTLE": "cot-feeder-cattle",
     "LEAN HOGS": "cot-lean-hogs",
-    # Crude oil — name changed ~2023 (prefix fallback handles variants)
+    # Crude oil — only match the primary contract name
+    # "CRUDE OIL, LIGHT SWEET-WTI" is a different sub-contract in years where both exist
+    # but becomes the only name post-2023 — handled by prefix fallback
     "CRUDE OIL, LIGHT SWEET": "cot-crude-oil",
-    "CRUDE OIL, LIGHT SWEET (WTI)": "cot-crude-oil",
-    "CRUDE OIL, LIGHT SWEET-WTI": "cot-crude-oil",
     # Heating oil — name changed multiple times
     "NY HARBOR ULSD": "cot-heating-oil",
     "NO 2 HEATING OIL  NY HARBOR": "cot-heating-oil",
     "NO. 2 HEATING OIL, NY HARBOR": "cot-heating-oil",
     "NO. 2 HEATING OIL, N.Y. HARBOR": "cot-heating-oil",
-    # Natural gas — name changed ~2023
-    # NOTE: "NATURAL GAS ICE HENRY HUB" is a different ICE contract, do NOT include
+    "#2 HEATING OIL, NY HARBOR-ULSD": "cot-heating-oil",
+    # Natural gas — name changed multiple times
     "NATURAL GAS": "cot-nat-gas",
     "HENRY HUB NATURAL GAS": "cot-nat-gas",
+    "HENRY HUB": "cot-nat-gas",
+    "NAT GAS NYME": "cot-nat-gas",
 }
 
 COMMODITY_META = {
@@ -314,9 +316,18 @@ def parse_cftc_csv(lines, year=None):
                 if i > 50: break
             print(f"    Sample commodity names: {sample_markets}")
 
-    # Sort each commodity by date
+    # Sort each commodity by date and deduplicate (keep first record per date)
+    # This prevents issues when two CFTC name variants match the same commodity
+    # (e.g., "CRUDE OIL, LIGHT SWEET" and "CRUDE OIL, LIGHT SWEET-WTI")
     for cot_id in records:
         records[cot_id].sort(key=lambda r: r["date"])
+        deduped = []
+        seen_dates = set()
+        for rec in records[cot_id]:
+            if rec["date"] not in seen_dates:
+                deduped.append(rec)
+                seen_dates.add(rec["date"])
+        records[cot_id] = deduped
 
     return dict(records)
 

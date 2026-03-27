@@ -30,7 +30,6 @@ COMMODITY_MAP = {
     "SOYBEAN MEAL": "cot-meal",
     "WHEAT-SRW": "cot-chi-wheat",
     "WHEAT SRW": "cot-chi-wheat",
-    "WHEAT": "cot-chi-wheat",          # pre-2013 files use just "WHEAT"
     "WHEAT-HRW": "cot-kc-wheat",
     "WHEAT HRW": "cot-kc-wheat",
     "WHEAT-HRSPRING": "cot-mpls-wheat",
@@ -42,10 +41,12 @@ COMMODITY_MAP = {
     # Crude oil — name changed ~2023 (prefix fallback handles variants)
     "CRUDE OIL, LIGHT SWEET": "cot-crude-oil",
     "CRUDE OIL, LIGHT SWEET (WTI)": "cot-crude-oil",
-    # Heating oil — name changed ~2013
+    "CRUDE OIL, LIGHT SWEET-WTI": "cot-crude-oil",
+    # Heating oil — name changed multiple times
     "NY HARBOR ULSD": "cot-heating-oil",
     "NO 2 HEATING OIL  NY HARBOR": "cot-heating-oil",
     "NO. 2 HEATING OIL, NY HARBOR": "cot-heating-oil",
+    "NO. 2 HEATING OIL, N.Y. HARBOR": "cot-heating-oil",
     # Natural gas — name changed ~2023
     # NOTE: "NATURAL GAS ICE HENRY HUB" is a different ICE contract, do NOT include
     "NATURAL GAS": "cot-nat-gas",
@@ -102,36 +103,46 @@ _natgas_matches = set()
 _heating_matches = set()
 _crude_matches = set()
 
+# Exchange-based routing for commodities with generic names in older files
+# Key: (commodity_part, exchange_keyword) → cot_id
+_EXCHANGE_MAP = {
+    ("WHEAT", "CHICAGO"): "cot-chi-wheat",
+    ("WHEAT", "CBOT"): "cot-chi-wheat",
+    ("WHEAT", "KANSAS"): "cot-kc-wheat",
+    ("WHEAT", "KCBT"): "cot-kc-wheat",
+    ("WHEAT", "MINNEAPOLIS"): "cot-mpls-wheat",
+    ("WHEAT", "MGEX"): "cot-mpls-wheat",
+}
+
 # Prefix fallback for commodities with many name variants
 _PREFIX_MAP = [
-    ("CRUDE OIL", "cot-crude-oil"),
+    ("CRUDE OIL, LIGHT SWEET", "cot-crude-oil"),  # most specific first
+    ("NY HARBOR ULSD", "cot-heating-oil"),
     ("NO 2 HEATING OIL", "cot-heating-oil"),
     ("NO. 2 HEATING OIL", "cot-heating-oil"),
-    ("NY HARBOR ULSD", "cot-heating-oil"),
 ]
 
 # Words that indicate a derivative/sub-product, not the main contract
 _EXCLUDE_WORDS = {"OPTION", "SWAP", "SPREAD", "CALENDAR", "CAL ", "BASIS",
                   "CRACK", "FIN ", "FINANCIAL", "MINI", "AVG PRICE",
-                  "LAST DAY", "ICE", "BALMO", "BRENT", "DUBAI", "CANADIAN",
-                  "EUR STYLE", "BIODIESEL", "GASOIL", "NET ENRGY"}
+                  "LAST DAY", "BALMO", "BRENT", "DUBAI", "CANADIAN",
+                  "EUR STYLE", "BIODIESEL", "GASOIL", "NET ENRGY", "RBOB"}
 
 def identify_commodity(market_name):
-    """Match CFTC market name to our commodity ID using exact commodity name matching."""
+    """Match CFTC market name to our commodity ID using exact + exchange-aware matching."""
     full_name = market_name.strip()
     full_upper = full_name.upper()
     
-    # First try exact match on full name
-    if full_upper in COMMODITY_MAP:
-        return COMMODITY_MAP[full_upper]
-    
-    # Extract commodity portion (before " - EXCHANGE")
+    # Extract commodity and exchange portions
     if " - " in full_name:
-        commodity_part = full_name.split(" - ")[0].strip().upper()
+        parts = full_name.split(" - ", 1)
+        commodity_part = parts[0].strip().upper()
+        exchange_part = parts[1].strip().upper() if len(parts) > 1 else ""
     else:
         commodity_part = full_upper
+        exchange_part = ""
     
-    # Exact match on commodity portion
+    # 1. Try exact match on commodity portion
     if commodity_part in COMMODITY_MAP:
         result = COMMODITY_MAP[commodity_part]
         if result == "cot-nat-gas": _natgas_matches.add(commodity_part)
@@ -139,10 +150,14 @@ def identify_commodity(market_name):
         if result == "cot-crude-oil": _crude_matches.add(commodity_part)
         return result
     
-    # Prefix fallback for energy names that vary across years
+    # 2. Exchange-aware routing (handles "WHEAT" → SRW/HRW/HRS based on exchange)
+    for (name_key, exch_key), cot_id in _EXCHANGE_MAP.items():
+        if commodity_part == name_key and exch_key in exchange_part:
+            return cot_id
+    
+    # 3. Prefix fallback for energy names
     for prefix, cot_id in _PREFIX_MAP:
         if commodity_part.startswith(prefix):
-            # Exclude derivative products (options, swaps, spreads, etc.)
             if any(excl in commodity_part for excl in _EXCLUDE_WORDS):
                 break
             if cot_id == "cot-nat-gas": _natgas_matches.add(commodity_part)
@@ -478,6 +493,13 @@ def main():
         if cot_id == "cot-corn" and "2025" in yearly_out:
             corn_25 = yearly_out["2025"]["mm_net"][:12]
             print(f"    Corn 2025 MM net wks 1-12: {corn_25}")
+        # Debug: verify crude oil and wheat 2010 data
+        if cot_id == "cot-crude-oil" and "2010" in yearly_out:
+            cl_10 = yearly_out["2010"]["mm_net"][:6]
+            print(f"    Crude 2010 MM net wks 1-6: {cl_10}  (expect ~[157K, 176K, 173K, ...])")
+        if cot_id == "cot-chi-wheat" and "2010" in yearly_out:
+            w_10 = yearly_out["2010"]["mm_net"][:6]
+            print(f"    Wheat 2010 MM net wks 1-6: {w_10}  (expect ~[-3K, -10K, -19K, ...])")
 
     # Debug: energy market names that matched
     print(f"\n  Energy name matches:")

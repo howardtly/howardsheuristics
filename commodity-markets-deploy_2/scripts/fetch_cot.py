@@ -38,9 +38,9 @@ COMMODITY_MAP = {
     "LIVE CATTLE": "cot-live-cattle",
     "FEEDER CATTLE": "cot-feeder-cattle",
     "LEAN HOGS": "cot-lean-hogs",
-    # Crude oil — two names, both exact match. Smart dedup handles overlap.
+    # Crude oil — only match the primary contract
+    # NOTE: "CRUDE OIL, LIGHT SWEET-WTI" is a different, smaller contract — do NOT include
     "CRUDE OIL, LIGHT SWEET": "cot-crude-oil",
-    "CRUDE OIL, LIGHT SWEET-WTI": "cot-crude-oil",
     # Heating oil — name changed multiple times
     "NY HARBOR ULSD": "cot-heating-oil",
     "NO 2 HEATING OIL  NY HARBOR": "cot-heating-oil",

@@ -48,11 +48,11 @@ COMMODITY_MAP = {
     "NO. 2 HEATING OIL, NY HARBOR": "cot-heating-oil",
     "NO. 2 HEATING OIL, N.Y. HARBOR": "cot-heating-oil",
     "#2 HEATING OIL, NY HARBOR-ULSD": "cot-heating-oil",
-    # Natural gas — name changed multiple times
+    "#2 HEATING OIL- NY HARBOR-ULSD": "cot-heating-oil",
+    # Natural gas — name changed, post-2022 NYMEX contract may not be in disaggregated file
     "NATURAL GAS": "cot-nat-gas",
     "HENRY HUB NATURAL GAS": "cot-nat-gas",
-    # NOTE: "HENRY HUB" alone is a different financial contract — do NOT include
-    "NAT GAS NYME": "cot-nat-gas",
+    # NOTE: "NAT GAS NYME", "HENRY HUB" are different financial/mini contracts — do NOT include
 }
 
 COMMODITY_META = {
@@ -188,24 +188,7 @@ def parse_cftc_csv(lines, year=None):
     if lines:
         lines[0] = ",".join(h.strip() for h in lines[0].split(","))
 
-    # For gap years, dump all energy-related commodity names to find the real names
-    if year in (2016, 2019, 2024):
-        temp_reader = csv.DictReader(list(lines))
-        energy_names = set()
-        for row in temp_reader:
-            market = None
-            for cand in ["Market_and_Exchange_Names", "Market and Exchange Names"]:
-                market = row.get(cand)
-                if market: break
-            if not market: continue
-            name = market.strip()
-            # Check for energy keywords
-            name_up = name.upper()
-            if any(kw in name_up for kw in ["OIL", "GAS", "HEAT", "ULSD", "HENRY", "CRUDE", "PETROL", "FUEL", "RBOB"]):
-                energy_names.add(name.split(" - ")[0].strip() if " - " in name else name)
-        print(f"    ALL energy commodity names in {year}:")
-        for n in sorted(energy_names):
-            print(f"      {n}")
+    # Energy name diagnostics disabled — all names identified
 
     reader = csv.DictReader(lines)
     records = defaultdict(list)

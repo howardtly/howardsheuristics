@@ -3468,6 +3468,8 @@ function COTChartsPage({ ready }) {
   var timeRange = _tr[0], setTimeRange = _tr[1];
   var _hy = useState(new Set());
   var hiddenYears = _hy[0], setHiddenYears = _hy[1];
+  var _mode = useState("seasonal");
+  var chartMode = _mode[0], setChartMode = _mode[1];
   var d = cotData[sel];
   if (!d) return React.createElement("div", {style:{padding:20}}, "No data for this commodity.");
 
@@ -3486,13 +3488,9 @@ function COTChartsPage({ ready }) {
   };
   useEffect(function(){ setHiddenYears(new Set()); }, [sel, timeRange]);
 
-  // Map 53 ISO week slots to day-of-year (0-364) for proportional month spacing
-  // ISO week n (1-indexed) ≈ Tuesday of that week in a reference year
+  // ISO week to day-of-year mapping for seasonal chart
   var weekToDoy = [];
-  for (var wk = 0; wk < 53; wk++) {
-    // Approximate: week 1 Tuesday ≈ day 2, each subsequent week +7
-    weekToDoy.push(wk * 7 + 2);
-  }
+  for (var wk = 0; wk < 53; wk++) { weekToDoy.push(wk * 7 + 2); }
 
   // Month boundaries and labels on 0-365 scale
   var monthBounds = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
@@ -3510,12 +3508,12 @@ function COTChartsPage({ ready }) {
     return k.toLocaleString(undefined, {maximumFractionDigits: 0});
   };
 
-  var mkChart = useCallback(function(field) { return function(canvas) {
+  // Seasonal chart: each year overlaid on 0-365 x-axis
+  var mkSeasonalChart = useCallback(function(field) { return function(canvas) {
     var datasets = [];
     displayYears.forEach(function(yr) {
       var yrData = yearly[String(yr)]; if (!yrData || !yrData[field]) return;
       var raw = yrData[field];
-      // Convert to {x: dayOfYear, y: value} pairs, skip nulls
       var points = [];
       for (var i = 0; i < raw.length; i++) {
         if (raw[i] != null) points.push({x: weekToDoy[i], y: raw[i]});
@@ -3528,7 +3526,7 @@ function COTChartsPage({ ready }) {
     var dataMin = Math.min.apply(null, visibleVals), dataMax = Math.max.apply(null, visibleVals);
     var range = dataMax - dataMin, pad = Math.max(range * 0.12, Math.abs(dataMax) * 0.03 || 100);
     var rawStep = (range + pad * 2) / 5, mag = Math.pow(10, Math.floor(Math.log10(rawStep || 1)));
-    var norm = rawStep / mag, niceNorm = norm <= 1.5 ? 1 : norm <= 3.5 ? 2 : norm <= 7.5 ? 5 : 10;
+    var norm2 = rawStep / mag, niceNorm = norm2 <= 1.5 ? 1 : norm2 <= 3.5 ? 2 : norm2 <= 7.5 ? 5 : 10;
     var step = niceNorm * mag;
     if (step < 1000) step = Math.max(500, step);
     new Chart(canvas, {type: "scatter", data: {datasets: datasets}, options: {
@@ -3540,11 +3538,9 @@ function COTChartsPage({ ready }) {
           title: function(items) {
             if (items.length === 0) return "";
             var doy = items[0].parsed.x;
-            // Convert day-of-year to month name
             var mi = 11;
             for (var m = 0; m < 11; m++) { if (doy < monthBounds[m+1]) { mi = m; break; } }
-            var dayInMonth = Math.floor(doy - monthBounds[mi]) + 1;
-            return monthLabels[mi] + " " + dayInMonth;
+            return monthLabels[mi] + " " + (Math.floor(doy - monthBounds[mi]) + 1);
           },
           label: function(c2){return c2.dataset.label + ": " + (c2.parsed.y != null ? (c2.parsed.y / 1000).toFixed(1) + "K" : "n/a");}
         },
@@ -3553,30 +3549,20 @@ function COTChartsPage({ ready }) {
         x: {
           type: "linear", min: 0, max: 365,
           ticks: {
-            callback: function(val) {
-              // Show month label only at midpoints, hide boundary ticks
-              var mi = monthMids.indexOf(val);
-              return mi >= 0 ? monthLabels[mi] : "";
-            },
+            callback: function(val) { var mi = monthMids.indexOf(val); return mi >= 0 ? monthLabels[mi] : ""; },
             autoSkip: false, maxRotation: 0, font: {size: 11},
           },
           afterBuildTicks: function(axis) {
-            // Combine boundary positions (for gridlines) and midpoints (for labels)
             var ticks = [];
-            for (var i = 0; i < 12; i++) {
-              ticks.push({value: monthBounds[i]});  // boundary - gridline drawn here
-              ticks.push({value: monthMids[i]});     // midpoint - label shown here
-            }
+            for (var i = 0; i < 12; i++) { ticks.push({value: monthBounds[i]}); ticks.push({value: monthMids[i]}); }
             axis.ticks = ticks;
           },
           grid: {
             color: function(ctx) {
               var val = ctx.tick.value;
-              // Only draw gridlines at month boundaries (skip Jan=0 for clean left edge)
               if (val > 0 && monthBounds.indexOf(val) >= 0) return "rgba(0,0,0,0.12)";
               return "transparent";
-            },
-            lineWidth: 0.75,
+            }, lineWidth: 0.75,
           },
         },
         y: {min: Math.floor((dataMin - pad) / step) * step, max: Math.ceil((dataMax + pad) / step) * step, ticks: {font: {size: 11}, callback: function(v){return fmtAxis(v);}}, grid: {color: "rgba(0,0,0,0.08)", lineWidth: 0.75}},
@@ -3584,9 +3570,107 @@ function COTChartsPage({ ready }) {
     }});
   };}, [sel, timeRange, d, hiddenYears]);
 
+  // Contiguous chart: all years concatenated on a continuous timeline
+  var mkContigChart = useCallback(function(field) { return function(canvas) {
+    var allPoints = [];
+    var yearBoundaries = [];
+    var yearLabelPositions = [];
+    displayYears.forEach(function(yr) {
+      var yrData = yearly[String(yr)]; if (!yrData || !yrData[field]) return;
+      var raw = yrData[field];
+      var yrStart = allPoints.length > 0 ? allPoints[allPoints.length - 1].x + 7 : 0;
+      if (allPoints.length > 0) yearBoundaries.push(yrStart);
+      var yrMid = yrStart;
+      var count = 0;
+      for (var i = 0; i < raw.length; i++) {
+        if (raw[i] != null) {
+          var x = yrStart + i * 7;
+          allPoints.push({x: x, y: raw[i]});
+          yrMid += x;
+          count++;
+        }
+      }
+      if (count > 0) yearLabelPositions.push({x: Math.round(yrMid / count), label: String(yr)});
+    });
+    if (allPoints.length === 0) return;
+    var visibleVals = allPoints.map(function(p){return p.y;});
+    var dataMin = Math.min.apply(null, visibleVals), dataMax = Math.max.apply(null, visibleVals);
+    var range = dataMax - dataMin, pad = Math.max(range * 0.12, Math.abs(dataMax) * 0.03 || 100);
+    var rawStep = (range + pad * 2) / 5, mag = Math.pow(10, Math.floor(Math.log10(rawStep || 1)));
+    var norm2 = rawStep / mag, niceNorm = norm2 <= 1.5 ? 1 : norm2 <= 3.5 ? 2 : norm2 <= 7.5 ? 5 : 10;
+    var step = niceNorm * mag;
+    if (step < 1000) step = Math.max(500, step);
+    var xMax = allPoints[allPoints.length - 1].x + 7;
+    new Chart(canvas, {type: "scatter", data: {datasets: [{label: field, data: allPoints, borderColor: "#333", borderWidth: 1.5, pointRadius: 0, pointHitRadius: 6, tension: 0.3, fill: false, showLine: true}]}, options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: {mode: "nearest", intersect: false, axis: "xy"},
+      plugins: {legend: {display: false}, tooltip: {mode: "nearest", intersect: false,
+        callbacks: {
+          label: function(c2){return (c2.parsed.y != null ? (c2.parsed.y / 1000).toFixed(1) + "K" : "n/a");}
+        },
+      }},
+      scales: {
+        x: {
+          type: "linear", min: 0, max: xMax,
+          ticks: {
+            callback: function(val) {
+              for (var i = 0; i < yearLabelPositions.length; i++) {
+                if (Math.abs(val - yearLabelPositions[i].x) < 20) return yearLabelPositions[i].label;
+              }
+              return "";
+            },
+            autoSkip: true, maxTicksLimit: displayYears.length, maxRotation: 0, font: {size: 10},
+          },
+          afterBuildTicks: function(axis) {
+            axis.ticks = yearLabelPositions.map(function(p){return {value: p.x};});
+          },
+          grid: {
+            color: function(ctx) {
+              var val = ctx.tick.value;
+              for (var i = 0; i < yearBoundaries.length; i++) {
+                if (Math.abs(val - yearBoundaries[i]) < 20) return "rgba(0,0,0,0.15)";
+              }
+              return "transparent";
+            }, lineWidth: 0.75,
+          },
+        },
+        y: {min: Math.floor((dataMin - pad) / step) * step, max: Math.ceil((dataMax + pad) / step) * step, ticks: {font: {size: 11}, callback: function(v){return fmtAxis(v);}}, grid: {color: "rgba(0,0,0,0.08)", lineWidth: 0.75}},
+      },
+    }});
+  };}, [sel, timeRange, d, hiddenYears]);
+
+  // CSV download
+  var downloadCSV = function() {
+    var fields = ["mm_net","mm_long","mm_short","prod_net","prod_long","prod_short","swap_net","swap_long","swap_short","other_net","other_long","other_short","oi"];
+    var headers = ["Year","Week"].concat(fields);
+    var rows = [headers.join(",")];
+    displayYears.forEach(function(yr) {
+      var yrData = yearly[String(yr)]; if (!yrData) return;
+      for (var w = 0; w < 53; w++) {
+        var hasData = false;
+        for (var fi = 0; fi < fields.length; fi++) {
+          if (yrData[fields[fi]] && yrData[fields[fi]][w] != null) { hasData = true; break; }
+        }
+        if (!hasData) continue;
+        var row = [yr, w + 1];
+        for (var fi2 = 0; fi2 < fields.length; fi2++) {
+          var val = yrData[fields[fi2]] ? yrData[fields[fi2]][w] : null;
+          row.push(val != null ? val : "");
+        }
+        rows.push(row.join(","));
+      }
+    });
+    var blob = new Blob([rows.join("\n")], {type: "text/csv"});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url; a.download = sel + "_cot_" + timeRange + "yr.csv"; a.click();
+    URL.revokeObjectURL(url);
+  };
+
   var chevronSvg = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%23666' stroke-width='1.5'/%3E%3C/svg%3E\")";
   var selectStyle = {padding: "7px 28px 7px 12px", fontSize: 14, fontWeight: 500, border: "1px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-primary)", color: "var(--color-text-primary)", fontFamily: "inherit", cursor: "pointer", appearance: "none", backgroundImage: chevronSvg, backgroundRepeat: "no-repeat", backgroundPosition: "right 8px center"};
   var labelStyle2 = {fontSize: 12, fontWeight: 600, color: "#fff", background: "#333", padding: "4px 10px", borderRadius: 4, textTransform: "uppercase", letterSpacing: "0.4px"};
+  var toggleBtnStyle = function(active) { return {padding: "6px 14px", fontSize: 12, fontWeight: 500, border: "1px solid var(--color-border-secondary)", borderRadius: 5, cursor: "pointer", background: active ? "#333" : "transparent", color: active ? "#fff" : "var(--color-text-secondary)", transition: "all 0.15s"}; };
 
   var categories = [
     {title: "Managed Money", fields: ["mm_net","mm_long","mm_short"]},
@@ -3597,6 +3681,7 @@ function COTChartsPage({ ready }) {
 
   var legendItems = displayYears.map(function(yr){return {label: String(yr), color: getYearColor(yr)};});
   var hk = Array.from(hiddenYears).sort().join(",");
+  var mkChart = chartMode === "seasonal" ? mkSeasonalChart : mkContigChart;
 
   return (<div>
     <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,flexWrap:"wrap"}}>
@@ -3610,26 +3695,34 @@ function COTChartsPage({ ready }) {
           <option value="5">5 Year</option><option value="10">10 Year</option><option value="all">All</option>
         </select>
       </div>
+      <div style={{display:"flex",gap:4}}>
+        <button onClick={function(){setChartMode("seasonal");}} style={toggleBtnStyle(chartMode==="seasonal")}>Seasonal</button>
+        <button onClick={function(){setChartMode("contiguous");}} style={toggleBtnStyle(chartMode==="contiguous")}>Contiguous</button>
+      </div>
+      <button onClick={downloadCSV} style={{padding:"6px 14px",fontSize:12,fontWeight:500,border:"1px solid var(--color-border-secondary)",borderRadius:5,cursor:"pointer",background:"transparent",color:"var(--color-text-secondary)",display:"flex",alignItems:"center",gap:5}}>
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8 2v8m0 0l-3-3m3 3l3-3M3 12h10"/></svg>
+        CSV
+      </button>
     </div>
     <div style={{fontSize:13,color:"var(--color-text-tertiary)",marginBottom:12}}>{d.label} — {d.exchange} — Contract size: {d.contract}. Y-axis in thousand contracts.</div>
-    <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:20,alignItems:"center"}}>
+    {chartMode === "seasonal" && <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:20,alignItems:"center"}}>
       {legendItems.map(function(item){var isH = hiddenYears.has(item.label); return (
         <button key={item.label} onClick={function(){toggleYear(item.label);}} style={{display:"flex",alignItems:"center",gap:5,padding:"4px 10px",border:"1px solid var(--color-border-secondary)",borderRadius:5,background:isH?"var(--color-background-secondary)":"transparent",cursor:"pointer",opacity:isH?0.3:1,transition:"all 0.15s"}}>
           <span style={{width:18,height:0,borderTop:"2.5px solid "+item.color,display:"inline-block"}}></span>
           <span style={{fontSize:12,fontWeight:500,color:"var(--color-text-primary)"}}>{item.label}</span>
-        </button>);})}</div>
+        </button>);})}</div>}
     {categories.map(function(cat){return (<div key={cat.title}>
       <h3 style={{fontSize:15,fontWeight:600,color:"var(--color-text-primary)",margin:"24px 0 12px"}}>{cat.title}</h3>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:18}}>
         {["Net","Long","Short"].map(function(lbl,fi){return (<div key={lbl}>
           <div style={{fontSize:13,fontWeight:500,color:"var(--color-text-secondary)",marginBottom:8,textAlign:"center"}}>{lbl}</div>
-          {ready && <ChartBox id={"cot_"+cat.fields[fi]+"_"+sel+"_"+timeRange+"_"+hk} height={300} renderChart={mkChart(cat.fields[fi])} deps={sel+"_"+timeRange+"_"+hk} />}
+          {ready && <ChartBox id={"cot_"+cat.fields[fi]+"_"+sel+"_"+timeRange+"_"+chartMode+"_"+hk} height={300} renderChart={mkChart(cat.fields[fi])} deps={sel+"_"+timeRange+"_"+chartMode+"_"+hk} />}
         </div>);})}</div>
     </div>);})
     }
     <h3 style={{fontSize:15,fontWeight:600,color:"var(--color-text-primary)",margin:"24px 0 12px"}}>Open Interest</h3>
-    {ready && <ChartBox id={"cot_oi_"+sel+"_"+timeRange+"_"+hk} height={340} renderChart={mkChart("oi")} deps={sel+"_"+timeRange+"_"+hk} />}
-    <div style={{marginTop:14,fontSize:12,color:"var(--color-text-tertiary)"}}>Source: CFTC Disaggregated Commitments of Traders report. Futures & Options combined. Jan–Dec calendar weeks.</div>
+    {ready && <ChartBox id={"cot_oi_"+sel+"_"+timeRange+"_"+chartMode+"_"+hk} height={340} renderChart={mkChart("oi")} deps={sel+"_"+timeRange+"_"+chartMode+"_"+hk} />}
+    <div style={{marginTop:14,fontSize:12,color:"var(--color-text-tertiary)"}}>Source: CFTC Disaggregated Commitments of Traders report. Futures & Options combined.</div>
   </div>);
 }
 

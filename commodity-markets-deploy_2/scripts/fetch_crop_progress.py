@@ -332,18 +332,39 @@ def main():
         result["crops"][crop_id] = crop_out
 
     # ── Pasture condition (poor + very poor %) ──
+    # Fetch year by year to avoid 413 Payload Too Large
     print(f"\n  Pasture:")
     print(f"    condition...", end=" ", flush=True)
     try:
-        rows = api_get({
-            "source_desc": "SURVEY",
-            "commodity_desc": "PASTURELAND",
-            "freq_desc": "WEEKLY",
-            "year__GE": str(min(FETCH_YEARS)),
-            "year__LE": str(max(FETCH_YEARS)),
-        })
+        all_rows = []
+        for yr in FETCH_YEARS:
+            yr_rows = api_get({
+                "source_desc": "SURVEY",
+                "commodity_desc": "PASTURELAND",
+                "statisticcat_desc": "CONDITION",
+                "freq_desc": "WEEKLY",
+                "year": str(yr),
+            })
+            all_rows.extend(yr_rows)
+            time.sleep(0.3)
+
+        # Also fetch NASS-provided 5yr avg and prev year for current year
+        for cat in ["CONDITION, 5 YEAR AVG", "CONDITION, PREVIOUS YEAR"]:
+            try:
+                extra = api_get({
+                    "source_desc": "SURVEY",
+                    "commodity_desc": "PASTURELAND",
+                    "statisticcat_desc": cat,
+                    "freq_desc": "WEEKLY",
+                    "year": str(CUR_YEAR),
+                })
+                all_rows.extend(extra)
+            except:
+                pass
+            time.sleep(0.3)
+
         # Separate current, prev year, 5yr avg
-        current_rows, prev_rows, avg_rows = process_condition_with_builtins(rows)
+        current_rows, prev_rows, avg_rows = process_condition_with_builtins(all_rows)
 
         # Process poor + very poor
         def sum_poor(row_list):
@@ -368,37 +389,40 @@ def main():
         avg_weekly = compute_5yr_avg(cur_weekly, AVG_YEARS)
         result["pasture"]["poor_very_poor"] = build_state_output(cur_weekly, avg_weekly, CUR_YEAR, CUR_YEAR - 1)
 
-        # Also get built-in 5yr avg from NASS
+        # Override with NASS-provided 5yr avg if available
         if avg_rows:
             nass_avg = sum_poor(avg_rows)
-            # Override computed avg with NASS-provided avg for US
             if "US" in nass_avg and str(CUR_YEAR) in nass_avg["US"]:
                 result["pasture"]["poor_very_poor"].setdefault("US", {})["5yr_avg"] = weekly_to_points(nass_avg["US"][str(CUR_YEAR)])
 
         us_cur = len(cur_weekly.get("US", {}).get(str(CUR_YEAR), {}))
-        print(f"{len(rows)} rows, US {CUR_YEAR}: {us_cur} weeks")
+        print(f"{len(all_rows)} rows, US {CUR_YEAR}: {us_cur} weeks")
     except Exception as e:
         print(f"ERROR: {e}")
     time.sleep(0.3)
 
     # ── Soil moisture (adequate + surplus %) ──
+    # Fetch year by year to stay under API limits
     print(f"\n  Soil Moisture:")
     for soil_class in ["TOPSOIL", "SUBSOIL"]:
         soil_key = soil_class.lower() + "_adequate_surplus"
         print(f"    {soil_class}...", end=" ", flush=True)
         try:
-            rows = api_get({
-                "source_desc": "SURVEY",
-                "commodity_desc": "SOIL",
-                "class_desc": soil_class,
-                "statisticcat_desc": "MOISTURE",
-                "freq_desc": "WEEKLY",
-                "year__GE": str(min(FETCH_YEARS)),
-                "year__LE": str(max(FETCH_YEARS)),
-            })
+            all_rows = []
+            for yr in FETCH_YEARS:
+                yr_rows = api_get({
+                    "source_desc": "SURVEY",
+                    "commodity_desc": "SOIL",
+                    "class_desc": soil_class,
+                    "statisticcat_desc": "MOISTURE",
+                    "freq_desc": "WEEKLY",
+                    "year": str(yr),
+                })
+                all_rows.extend(yr_rows)
+                time.sleep(0.3)
             # Sum adequate + surplus
             grouped = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))
-            for r in rows:
+            for r in all_rows:
                 state = r.get("state_alpha", "US")
                 year = str(r.get("year", ""))
                 week = parse_week(r.get("reference_period_desc"))
@@ -417,7 +441,7 @@ def main():
             avg = compute_5yr_avg(weekly, AVG_YEARS)
             result["soil"][soil_key] = build_state_output(weekly, avg, CUR_YEAR, CUR_YEAR - 1)
             us_cur = len(weekly.get("US", {}).get(str(CUR_YEAR), {}))
-            print(f"{len(rows)} rows, US {CUR_YEAR}: {us_cur} weeks")
+            print(f"{len(all_rows)} rows, US {CUR_YEAR}: {us_cur} weeks")
         except Exception as e:
             print(f"ERROR: {e}")
         time.sleep(0.3)

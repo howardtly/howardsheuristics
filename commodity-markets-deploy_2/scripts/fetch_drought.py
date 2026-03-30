@@ -16,7 +16,7 @@ COMMODITIES = {
     "winter_wheat": {"ctype": "winter wheat", "label": "Winter Wheat", "color": "#A32D2D"},
     "spring_wheat": {"ctype": "spring wheat", "label": "Spring Wheat", "color": "#D85A30"},
     "cattle":       {"ctype": "cattle",       "label": "Cattle",       "color": "#378ADD"},
-    "hay":          {"ctype": "hay",          "label": "Hay",          "color": "#888780"},
+    "hay":          {"ctype": "hay",          "label": "Hay",          "color": "#8B5CF6"},
 }
 
 BASE_URL = "https://agindrought.unl.edu/Home.aspx/ReturnCropData2020"

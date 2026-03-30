@@ -4379,7 +4379,7 @@ function DroughtPage({ ready }) {
     var avgPts = d.seasonal["5yr_avg"] || [];
     if (curPts.length > 0) datasets.push({label: String(curYear), data: curPts, borderColor: d.color, borderWidth: 2.5, pointRadius: 0, pointHitRadius: 6, tension: 0.3, fill: false, showLine: true});
     if (lastPts.length > 0) datasets.push({label: String(lastYear), data: lastPts, borderColor: d.color, borderWidth: 1.5, borderDash: [5,3], pointRadius: 0, tension: 0.3, fill: false, showLine: true});
-    if (avgPts.length > 0) datasets.push({label: "5-yr avg", data: avgPts, borderColor: "#999", borderWidth: 1.5, borderDash: [3,3], pointRadius: 0, tension: 0.3, fill: false, showLine: true});
+    if (avgPts.length > 0) datasets.push({label: "5-yr avg", data: avgPts, borderColor: "#333", borderWidth: 1.5, borderDash: [2,4], pointRadius: 2.5, pointStyle: "circle", pointBackgroundColor: "#333", pointBorderColor: "#333", tension: 0.3, fill: false, showLine: true});
     var allVals = datasets.flatMap(function(ds){return ds.data.map(function(p){return p.y;});});
     if (allVals.length === 0) return;
     var yMax = Math.min(100, Math.ceil((Math.max.apply(null, allVals) + 10) / 10) * 10);
@@ -4423,15 +4423,48 @@ function DroughtPage({ ready }) {
   return (<div>
     <div style={{fontSize: 12, color: "var(--color-text-tertiary)", marginBottom: 14}}>USDA Commodities in Drought — percentage of domestic production area in drought conditions (D1 or worse). Source: agindrought.unl.edu</div>
 
-    <div style={{display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 16}}>
+    <div style={{display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10, marginBottom: 16}}>
       {DROUGHT_COMMODITIES.map(function(id) {
         var d = droughtData[id]; if (!d) return null;
         var cur = d.latest_d1_d4;
+        var seasonal = d.seasonal || {};
+        var curPts = seasonal[String(curYear)] || [];
+        var lastYrPts = seasonal[String(lastYear)] || [];
+        var avgPts = seasonal["5yr_avg"] || [];
+        // Find previous week value (second-to-last point in current year)
+        var prevWk = curPts.length >= 2 ? curPts[curPts.length - 2].y : null;
+        // Find last year same approx DOY
+        var curDoy = curPts.length > 0 ? curPts[curPts.length - 1].x : null;
+        var lastYrVal = null;
+        if (curDoy != null && lastYrPts.length > 0) {
+          var closest = lastYrPts.reduce(function(best, p) { return Math.abs(p.x - curDoy) < Math.abs(best.x - curDoy) ? p : best; });
+          if (Math.abs(closest.x - curDoy) < 14) lastYrVal = closest.y;
+        }
+        // Find 5yr avg at same approx DOY
+        var avgVal = null;
+        if (curDoy != null && avgPts.length > 0) {
+          var closestAvg = avgPts.reduce(function(best, p) { return Math.abs(p.x - curDoy) < Math.abs(best.x - curDoy) ? p : best; });
+          if (Math.abs(closestAvg.x - curDoy) < 14) avgVal = closestAvg.y;
+        }
+        var DiffLine = function(props) {
+          if (props.comp == null || cur == null) return null;
+          var diff = cur - props.comp;
+          var col = diff > 0 ? "#A32D2D" : diff < 0 ? "#639922" : "var(--color-text-tertiary)";
+          return React.createElement("div", {style:{display:"flex",justifyContent:"space-between",fontSize:10.5,padding:"1px 0"}},
+            React.createElement("span", {style:{color:"var(--color-text-tertiary)"}}, props.label),
+            React.createElement("span", {style:{color:col,fontWeight:500}}, (diff > 0 ? "+" : "") + diff + "%")
+          );
+        };
         return (
           <div key={id} style={{background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px", minWidth: 0, borderLeft: "3px solid " + d.color}}>
             <div style={{fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.4px"}}>{d.label}</div>
-            <div style={{fontSize: 22, fontWeight: 500, color: "var(--color-text-primary)"}}>{cur != null ? cur + "%" : "—"}</div>
-            {d.latest_date && <div style={{fontSize: 10, color: "var(--color-text-tertiary)", marginTop: 2}}>as of {d.latest_date}</div>}
+            <div style={{fontSize: 22, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 4}}>{cur != null ? cur + "%" : "—"}</div>
+            {d.latest_date && <div style={{fontSize: 10, color: "var(--color-text-tertiary)", marginBottom: 6}}>as of {d.latest_date}</div>}
+            <div style={{borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 5}}>
+              {React.createElement(DiffLine, {label: "vs. last week", comp: prevWk})}
+              {React.createElement(DiffLine, {label: "vs. last year", comp: lastYrVal})}
+              {React.createElement(DiffLine, {label: "vs. 5-yr avg", comp: avgVal})}
+            </div>
           </div>
         );
       })}
@@ -4448,7 +4481,7 @@ function DroughtPage({ ready }) {
           <div style={{display: "flex", gap: 12, marginBottom: 6, fontSize: 11}}>
             <span><span style={{display:"inline-block",width:16,borderTop:"2.5px solid "+d.color,verticalAlign:"middle",marginRight:4}}></span>{curYear}</span>
             <span><span style={{display:"inline-block",width:16,borderTop:"2px dashed "+d.color,verticalAlign:"middle",marginRight:4}}></span>{lastYear}</span>
-            <span><span style={{display:"inline-block",width:16,borderTop:"2px dashed #999",verticalAlign:"middle",marginRight:4}}></span>5-yr avg</span>
+            <span><span style={{display:"inline-block",width:16,borderTop:"2px dotted #333",verticalAlign:"middle",marginRight:4}}></span>5-yr avg</span>
           </div>
           {ready && <ChartBox id={"drought_" + id} height={220} renderChart={mkCommodityChart(id)} deps={"drought_" + id} />}
         </div>

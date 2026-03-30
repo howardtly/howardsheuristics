@@ -1,6 +1,0 @@
-[build]
-  publish = "commodity-markets-deploy_2"
-  command = "echo 'No build needed'"
-
-[build.environment]
-  NODE_VERSION = "20"

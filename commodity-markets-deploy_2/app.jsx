@@ -4293,7 +4293,7 @@ const DROUGHT_FALLBACK = {
   winter_wheat: {label:"Winter Wheat", color:"#A32D2D", latest_d1_d4: 0, seasonal:{}},
   spring_wheat: {label:"Spring Wheat", color:"#D85A30", latest_d1_d4: 0, seasonal:{}},
   cattle:       {label:"Cattle",       color:"#378ADD", latest_d1_d4: 0, seasonal:{}},
-  hay:          {label:"Hay",          color:"#888780", latest_d1_d4: 0, seasonal:{}},
+  hay:          {label:"Hay",          color:"#8B5CF6", latest_d1_d4: 0, seasonal:{}},
 };
 
 function useLiveDrought() {
@@ -4379,7 +4379,7 @@ function DroughtPage({ ready }) {
     var avgPts = d.seasonal["5yr_avg"] || [];
     if (curPts.length > 0) datasets.push({label: String(curYear), data: curPts, borderColor: d.color, borderWidth: 2.5, pointRadius: 0, pointHitRadius: 6, tension: 0.3, fill: false, showLine: true});
     if (lastPts.length > 0) datasets.push({label: String(lastYear), data: lastPts, borderColor: d.color, borderWidth: 1.5, borderDash: [5,3], pointRadius: 0, tension: 0.3, fill: false, showLine: true});
-    if (avgPts.length > 0) datasets.push({label: "5-yr avg", data: avgPts, borderColor: "#333", borderWidth: 1.5, borderDash: [2,4], pointRadius: 2.5, pointStyle: "circle", pointBackgroundColor: "#333", pointBorderColor: "#333", tension: 0.3, fill: false, showLine: true});
+    if (avgPts.length > 0) datasets.push({label: "5-yr avg", data: avgPts, borderColor: "#333", borderWidth: 1.5, borderDash: [2,4], pointRadius: 0, pointHitRadius: 6, tension: 0.3, fill: false, showLine: true});
     var allVals = datasets.flatMap(function(ds){return ds.data.map(function(p){return p.y;});});
     if (allVals.length === 0) return;
     var yMax = Math.min(100, Math.ceil((Math.max.apply(null, allVals) + 10) / 10) * 10);
@@ -4403,21 +4403,51 @@ function DroughtPage({ ready }) {
 
   // CSV download
   var dlDrought = function() {
-    var headers = ["Date"].concat(DROUGHT_COMMODITIES.map(function(id){return droughtData[id].label;}));
+    var headers = ["Date"];
+    DROUGHT_COMMODITIES.forEach(function(id) {
+      var lbl = droughtData[id] ? droughtData[id].label : id;
+      headers.push(lbl + " " + curYear);
+      headers.push(lbl + " " + lastYear);
+      headers.push(lbl + " 5yr Avg");
+    });
     var rows = [];
-    // Use corn dates as the reference
-    var curPts = (droughtData.corn && droughtData.corn.seasonal) ? droughtData.corn.seasonal[String(curYear)] || [] : [];
-    curPts.forEach(function(p) {
-      var row = [p.date || ""];
+    // Collect all unique dates from current year
+    var allDates = {};
+    DROUGHT_COMMODITIES.forEach(function(id) {
+      var d = droughtData[id]; if (!d || !d.seasonal) return;
+      var pts = d.seasonal[String(curYear)] || [];
+      pts.forEach(function(p) { if (p.date) allDates[p.date] = p.x; });
+    });
+    var sortedDates = Object.keys(allDates).sort();
+    sortedDates.forEach(function(date) {
+      var doy = allDates[date];
+      var row = [date];
       DROUGHT_COMMODITIES.forEach(function(id) {
-        var d = droughtData[id]; if (!d || !d.seasonal) { row.push(""); return; }
-        var pts = d.seasonal[String(curYear)] || [];
-        var match = pts.find(function(pt){return pt.x === p.x;});
-        row.push(match ? match.y : "");
+        var d = droughtData[id]; if (!d || !d.seasonal) { row.push("","",""); return; }
+        // Current year
+        var curPts = d.seasonal[String(curYear)] || [];
+        var curMatch = curPts.find(function(p){return p.date === date;});
+        row.push(curMatch ? curMatch.y : "");
+        // Last year - closest DOY
+        var lyPts = d.seasonal[String(lastYear)] || [];
+        var lyMatch = null;
+        if (lyPts.length > 0) {
+          var best = lyPts.reduce(function(b,p){return Math.abs(p.x-doy)<Math.abs(b.x-doy)?p:b;});
+          if (Math.abs(best.x - doy) < 14) lyMatch = best;
+        }
+        row.push(lyMatch ? lyMatch.y : "");
+        // 5yr avg - closest DOY
+        var avgPts = d.seasonal["5yr_avg"] || [];
+        var avgMatch = null;
+        if (avgPts.length > 0) {
+          var bestA = avgPts.reduce(function(b,p){return Math.abs(p.x-doy)<Math.abs(b.x-doy)?p:b;});
+          if (Math.abs(bestA.x - doy) < 14) avgMatch = bestA;
+        }
+        row.push(avgMatch ? avgMatch.y : "");
       });
       rows.push(row);
     });
-    downloadCSV("commodities_in_drought_" + curYear + ".csv", headers, rows);
+    downloadCSV("commodities_in_drought_all.csv", headers, rows);
   };
 
   return (<div>
@@ -4450,9 +4480,13 @@ function DroughtPage({ ready }) {
           if (props.comp == null || cur == null) return null;
           var diff = cur - props.comp;
           var col = diff > 0 ? "#A32D2D" : diff < 0 ? "#639922" : "var(--color-text-tertiary)";
+          var diffStr = (diff > 0 ? "+" : "") + diff + "%";
           return React.createElement("div", {style:{display:"flex",justifyContent:"space-between",fontSize:10.5,padding:"1px 0"}},
             React.createElement("span", {style:{color:"var(--color-text-tertiary)"}}, props.label),
-            React.createElement("span", {style:{color:col,fontWeight:500}}, (diff > 0 ? "+" : "") + diff + "%")
+            React.createElement("span", null,
+              React.createElement("span", {style:{color:"var(--color-text-secondary)"}}, props.comp + "% "),
+              React.createElement("span", {style:{color:col,fontWeight:500}}, "(" + diffStr + ")")
+            )
           );
         };
         return (

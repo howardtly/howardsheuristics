@@ -3488,9 +3488,20 @@ function COTChartsPage({ ready }) {
   };
   useEffect(function(){ setHiddenYears(new Set()); }, [sel, timeRange]);
 
-  // ISO week to day-of-year mapping
-  var weekToDoy = [];
-  for (var wk = 0; wk < 53; wk++) { weekToDoy.push(wk * 7 + 2); }
+  // Convert a date string to day-of-year offset from Jan 1 of the given display year
+  // Handles year-boundary weeks (e.g., Dec 30, 2024 for ISO year 2025 → day ~0)
+  var dateToDoy = function(dateStr, isoYear) {
+    var parts = dateStr.split("-");
+    var m = parseInt(parts[1]) - 1, day = parseInt(parts[2]), yr = parseInt(parts[0]);
+    // Day-of-year within the date's own calendar year
+    var jan1 = new Date(isoYear, 0, 1);
+    var dt = new Date(yr, m, day);
+    var diff = Math.round((dt - jan1) / 86400000);
+    // Clamp: late-Dec dates for next year's ISO week 1 → ~0, early-Jan for prev year's week 52/53 → ~365
+    if (diff < 0) return 0;
+    if (diff > 365) return 365;
+    return diff;
+  };
 
   // Month layout on 0-365 scale
   var monthBounds = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
@@ -3511,15 +3522,18 @@ function COTChartsPage({ ready }) {
     return k < 0 ? "(" + str + ")" : str;
   };
 
-  // Seasonal chart
+  // Seasonal chart — each year overlaid on 0-365 using actual report dates
   var mkSeasonalChart = useCallback(function(field) { return function(canvas) {
     var datasets = [];
     displayYears.forEach(function(yr) {
       var yrData = yearly[String(yr)]; if (!yrData || !yrData[field]) return;
       var raw = yrData[field];
+      var dates = yrData._dates || [];
       var points = [];
       for (var i = 0; i < raw.length; i++) {
-        if (raw[i] != null) points.push({x: weekToDoy[i], y: raw[i]});
+        if (raw[i] != null && dates[i]) {
+          points.push({x: dateToDoy(dates[i], yr), y: raw[i]});
+        }
       }
       if (points.length === 0) return;
       datasets.push({label: String(yr), data: points, borderColor: getYearColor(yr), borderWidth: yr === curYear ? 2.5 : 1.5, pointRadius: 0, pointHitRadius: 8, tension: 0.3, fill: false, hidden: hiddenYears.has(String(yr)), showLine: true});
@@ -3568,12 +3582,12 @@ function COTChartsPage({ ready }) {
             }, lineWidth: 0.75,
           },
         },
-        y: {min: Math.floor((dataMin - pad) / step) * step, max: Math.ceil((dataMax + pad) / step) * step, ticks: {font: {size: 11}, color: function(ctx) { return ctx.tick.value < 0 ? '#A32D2D' : '#666'; }, callback: function(v){return fmtAxis(v);}}, grid: {color: "rgba(0,0,0,0.08)", lineWidth: 0.75}},
+        y: {min: Math.floor((dataMin - pad) / step) * step, max: Math.ceil((dataMax + pad) / step) * step, ticks: {font: {size: 11}, color: function(ctx) { return ctx.tick.value < 0 ? "#A32D2D" : "#666"; }, callback: function(v){return fmtAxis(v);}}, grid: {color: "rgba(0,0,0,0.08)", lineWidth: 0.75}},
       },
     }});
   };}, [sel, timeRange, d, hiddenYears]);
 
-  // Contiguous chart — all years concatenated
+  // Contiguous chart — all years concatenated using actual report dates
   var mkContigChart = useCallback(function(field) { return function(canvas) {
     var allPoints = [];
     var yearBounds2 = [];
@@ -3582,10 +3596,13 @@ function COTChartsPage({ ready }) {
     displayYears.forEach(function(yr) {
       var yrData = yearly[String(yr)]; if (!yrData || !yrData[field]) return;
       var raw = yrData[field];
+      var dates = yrData._dates || [];
       var yrStart = xOffset;
       if (xOffset > 0) yearBounds2.push(xOffset);
       for (var i = 0; i < raw.length; i++) {
-        if (raw[i] != null) allPoints.push({x: xOffset + weekToDoy[i], y: raw[i]});
+        if (raw[i] != null && dates[i]) {
+          allPoints.push({x: xOffset + dateToDoy(dates[i], yr), y: raw[i]});
+        }
       }
       yearMids.push({x: xOffset + 182, label: String(yr)});
       xOffset += 365;
@@ -3599,7 +3616,6 @@ function COTChartsPage({ ready }) {
     var step = niceNorm * mag;
     if (step < 1000) step = Math.max(500, step);
     var xMax = xOffset;
-    // Rotate labels when >8 years displayed
     var needsRotation = displayYears.length > 8;
     new Chart(canvas, {type: "scatter", data: {datasets: [{label: field, data: allPoints, borderColor: "#333", borderWidth: 1.5, pointRadius: 0, pointHitRadius: 6, tension: 0.3, fill: false, showLine: true}]}, options: {
       responsive: true, maintainAspectRatio: false,
@@ -3609,9 +3625,7 @@ function COTChartsPage({ ready }) {
           title: function(items) {
             if (items.length === 0) return "";
             var xVal = items[0].parsed.x;
-            // Find which year
-            var yrIdx = Math.floor(xVal / 365);
-            if (yrIdx >= displayYears.length) yrIdx = displayYears.length - 1;
+            var yrIdx = Math.min(Math.floor(xVal / 365), displayYears.length - 1);
             var doy = xVal - yrIdx * 365;
             var mi = 11;
             for (var m = 0; m < 11; m++) { if (doy < monthBounds[m+1]) { mi = m; break; } }
@@ -3649,25 +3663,27 @@ function COTChartsPage({ ready }) {
             }, lineWidth: 0.75,
           },
         },
-        y: {min: Math.floor((dataMin - pad) / step) * step, max: Math.ceil((dataMax + pad) / step) * step, ticks: {font: {size: 11}, color: function(ctx) { return ctx.tick.value < 0 ? '#A32D2D' : '#666'; }, callback: function(v){return fmtAxis(v);}}, grid: {color: "rgba(0,0,0,0.08)", lineWidth: 0.75}},
+        y: {min: Math.floor((dataMin - pad) / step) * step, max: Math.ceil((dataMax + pad) / step) * step, ticks: {font: {size: 11}, color: function(ctx) { return ctx.tick.value < 0 ? "#A32D2D" : "#666"; }, callback: function(v){return fmtAxis(v);}}, grid: {color: "rgba(0,0,0,0.08)", lineWidth: 0.75}},
       },
     }});
   };}, [sel, timeRange, d, hiddenYears]);
 
-  // CSV download using shared DownloadBtn
+  // CSV download
   var dlCSV = function() {
     var fields = ["mm_net","mm_long","mm_short","prod_net","prod_long","prod_short","swap_net","swap_long","swap_short","other_net","other_long","other_short","oi"];
-    var headers = ["Year","Week"].concat(fields);
+    var headers = ["Year","Date"].concat(fields);
     var rows = [];
     displayYears.forEach(function(yr) {
       var yrData = yearly[String(yr)]; if (!yrData) return;
+      var dates = yrData._dates || [];
       for (var w = 0; w < 53; w++) {
+        if (!dates[w]) continue;
         var hasData = false;
         for (var fi = 0; fi < fields.length; fi++) {
           if (yrData[fields[fi]] && yrData[fields[fi]][w] != null) { hasData = true; break; }
         }
         if (!hasData) continue;
-        var row = [yr, w + 1];
+        var row = [yr, dates[w]];
         for (var fi2 = 0; fi2 < fields.length; fi2++) {
           var val = yrData[fields[fi2]] ? yrData[fields[fi2]][w] : null;
           row.push(val != null ? val : "");

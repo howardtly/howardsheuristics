@@ -3486,17 +3486,18 @@ function COTChartsPage({ ready }) {
   };
   useEffect(function(){ setHiddenYears(new Set()); }, [sel, timeRange]);
 
-  var monthBoundaries = [0, 4, 8, 13, 17, 21, 26, 30, 35, 39, 43, 48];
-  var monthNames2 = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  var NUM_SLOTS = 53;
-  var monthMids = {};
-  for (var m = 0; m < 12; m++) {
-    var s2 = monthBoundaries[m], e2 = m < 11 ? monthBoundaries[m + 1] : NUM_SLOTS;
-    monthMids[Math.floor((s2 + e2) / 2)] = monthNames2[m];
+  // Map 53 ISO week slots to day-of-year (0-364) for proportional month spacing
+  // ISO week n (1-indexed) ≈ Tuesday of that week in a reference year
+  var weekToDoy = [];
+  for (var wk = 0; wk < 53; wk++) {
+    // Approximate: week 1 Tuesday ≈ day 2, each subsequent week +7
+    weekToDoy.push(wk * 7 + 2);
   }
-  var bSet = new Set(monthBoundaries.slice(1));
-  var xLabels = Array.from({length: NUM_SLOTS}, function(_, i) { return monthMids[i] || ""; });
-  var xGridColors = Array.from({length: NUM_SLOTS}, function(_, i) { return bSet.has(i) ? "rgba(0,0,0,0.15)" : "transparent"; });
+
+  // Month boundaries and labels on 0-365 scale
+  var monthBounds = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+  var monthMids = [15, 45, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349];
+  var monthLabels = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
   var fmtAxis = function(v) {
     if (v == null) return "";
@@ -3513,9 +3514,16 @@ function COTChartsPage({ ready }) {
     var datasets = [];
     displayYears.forEach(function(yr) {
       var yrData = yearly[String(yr)]; if (!yrData || !yrData[field]) return;
-      datasets.push({label: String(yr), data: yrData[field], borderColor: getYearColor(yr), borderWidth: yr === curYear ? 2.5 : 1.5, pointRadius: 0, pointHitRadius: 8, tension: 0.3, fill: false, hidden: hiddenYears.has(String(yr)), spanGaps: true});
+      var raw = yrData[field];
+      // Convert to {x: dayOfYear, y: value} pairs, skip nulls
+      var points = [];
+      for (var i = 0; i < raw.length; i++) {
+        if (raw[i] != null) points.push({x: weekToDoy[i], y: raw[i]});
+      }
+      if (points.length === 0) return;
+      datasets.push({label: String(yr), data: points, borderColor: getYearColor(yr), borderWidth: yr === curYear ? 2.5 : 1.5, pointRadius: 0, pointHitRadius: 8, tension: 0.3, fill: false, hidden: hiddenYears.has(String(yr)), showLine: true});
     });
-    var visibleVals = datasets.filter(function(ds){return !ds.hidden;}).flatMap(function(ds){return (ds.data||[]).filter(function(v){return v!=null;});});
+    var visibleVals = datasets.filter(function(ds){return !ds.hidden;}).flatMap(function(ds){return ds.data.map(function(p){return p.y;});});
     if (visibleVals.length === 0) return;
     var dataMin = Math.min.apply(null, visibleVals), dataMax = Math.max.apply(null, visibleVals);
     var range = dataMax - dataMin, pad = Math.max(range * 0.12, Math.abs(dataMax) * 0.03 || 100);
@@ -3523,15 +3531,54 @@ function COTChartsPage({ ready }) {
     var norm = rawStep / mag, niceNorm = norm <= 1.5 ? 1 : norm <= 3.5 ? 2 : norm <= 7.5 ? 5 : 10;
     var step = niceNorm * mag;
     if (step < 1000) step = Math.max(500, step);
-    new Chart(canvas, {type: "line", data: {labels: xLabels, datasets: datasets}, options: {
+    new Chart(canvas, {type: "scatter", data: {datasets: datasets}, options: {
       responsive: true, maintainAspectRatio: false,
       interaction: {mode: "nearest", intersect: false, axis: "xy"},
       hover: {mode: "nearest", intersect: false},
       plugins: {legend: {display: false}, tooltip: {mode: "nearest", intersect: false,
-        callbacks: {label: function(c2){return c2.dataset.label + ": " + (c2.parsed.y != null ? (c2.parsed.y / 1000).toFixed(1) + "K" : "n/a");}},
+        callbacks: {
+          title: function(items) {
+            if (items.length === 0) return "";
+            var doy = items[0].parsed.x;
+            // Convert day-of-year to month name
+            var mi = 11;
+            for (var m = 0; m < 11; m++) { if (doy < monthBounds[m+1]) { mi = m; break; } }
+            var dayInMonth = Math.floor(doy - monthBounds[mi]) + 1;
+            return monthLabels[mi] + " " + dayInMonth;
+          },
+          label: function(c2){return c2.dataset.label + ": " + (c2.parsed.y != null ? (c2.parsed.y / 1000).toFixed(1) + "K" : "n/a");}
+        },
       }},
       scales: {
-        x: {offset: false, ticks: {autoSkip: false, maxRotation: 0, font: {size: 11}, padding: 0}, grid: {color: function(ctx){return xGridColors[ctx.index] || "transparent";}, lineWidth: 0.75}},
+        x: {
+          type: "linear", min: 0, max: 365,
+          ticks: {
+            callback: function(val) {
+              // Show month label only at midpoints, hide boundary ticks
+              var mi = monthMids.indexOf(val);
+              return mi >= 0 ? monthLabels[mi] : "";
+            },
+            autoSkip: false, maxRotation: 0, font: {size: 11},
+          },
+          afterBuildTicks: function(axis) {
+            // Combine boundary positions (for gridlines) and midpoints (for labels)
+            var ticks = [];
+            for (var i = 0; i < 12; i++) {
+              ticks.push({value: monthBounds[i]});  // boundary - gridline drawn here
+              ticks.push({value: monthMids[i]});     // midpoint - label shown here
+            }
+            axis.ticks = ticks;
+          },
+          grid: {
+            color: function(ctx) {
+              var val = ctx.tick.value;
+              // Only draw gridlines at month boundaries (skip Jan=0 for clean left edge)
+              if (val > 0 && monthBounds.indexOf(val) >= 0) return "rgba(0,0,0,0.12)";
+              return "transparent";
+            },
+            lineWidth: 0.75,
+          },
+        },
         y: {min: Math.floor((dataMin - pad) / step) * step, max: Math.ceil((dataMax + pad) / step) * step, ticks: {font: {size: 11}, callback: function(v){return fmtAxis(v);}}, grid: {color: "rgba(0,0,0,0.08)", lineWidth: 0.75}},
       },
     }});

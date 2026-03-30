@@ -457,11 +457,12 @@ def main():
                 iso_yr, iso_wk, _ = dt.isocalendar()
                 yr_key = str(iso_yr)
                 if yr_key not in yearly_out:
-                    yearly_out[yr_key] = {}
+                    yearly_out[yr_key] = {"_dates": [None] * NUM_SLOTS}
                     for f in fields_to_track:
                         yearly_out[yr_key][f] = [None] * NUM_SLOTS
                 idx = iso_wk - 1  # week 1 → index 0
                 if 0 <= idx < NUM_SLOTS:
+                    yearly_out[yr_key]["_dates"][idx] = rec["date"]
                     for f in fields_to_track:
                         yearly_out[yr_key][f][idx] = rec.get(f)
             except: pass

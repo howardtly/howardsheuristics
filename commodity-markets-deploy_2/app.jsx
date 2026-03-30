@@ -3568,7 +3568,7 @@ function COTChartsPage({ ready }) {
             }, lineWidth: 0.75,
           },
         },
-        y: {min: Math.floor((dataMin - pad) / step) * step, max: Math.ceil((dataMax + pad) / step) * step, ticks: {font: {size: 11}, color: function(ctx) { return ctx.tick.value < 0 ? '#A32D2D' : 'var(--color-text-secondary)'; }, callback: function(v){return fmtAxis(v);}}, grid: {color: "rgba(0,0,0,0.08)", lineWidth: 0.75}},
+        y: {min: Math.floor((dataMin - pad) / step) * step, max: Math.ceil((dataMax + pad) / step) * step, ticks: {font: {size: 11}, color: function(ctx) { return ctx.tick.value < 0 ? '#A32D2D' : '#666'; }, callback: function(v){return fmtAxis(v);}}, grid: {color: "rgba(0,0,0,0.08)", lineWidth: 0.75}},
       },
     }});
   };}, [sel, timeRange, d, hiddenYears]);
@@ -3649,7 +3649,7 @@ function COTChartsPage({ ready }) {
             }, lineWidth: 0.75,
           },
         },
-        y: {min: Math.floor((dataMin - pad) / step) * step, max: Math.ceil((dataMax + pad) / step) * step, ticks: {font: {size: 11}, color: function(ctx) { return ctx.tick.value < 0 ? '#A32D2D' : 'var(--color-text-secondary)'; }, callback: function(v){return fmtAxis(v);}}, grid: {color: "rgba(0,0,0,0.08)", lineWidth: 0.75}},
+        y: {min: Math.floor((dataMin - pad) / step) * step, max: Math.ceil((dataMax + pad) / step) * step, ticks: {font: {size: 11}, color: function(ctx) { return ctx.tick.value < 0 ? '#A32D2D' : '#666'; }, callback: function(v){return fmtAxis(v);}}, grid: {color: "rgba(0,0,0,0.08)", lineWidth: 0.75}},
       },
     }});
   };}, [sel, timeRange, d, hiddenYears]);

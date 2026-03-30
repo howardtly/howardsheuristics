@@ -1,8 +1,11 @@
 name: Fetch Drought Data (Weekly)
 on:
   schedule:
-    - cron: '0 18 * * 4'  # Every Thursday 6PM UTC (after Drought Monitor release)
+    - cron: '0 18 * * 4'
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   fetch:

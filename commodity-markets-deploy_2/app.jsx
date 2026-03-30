@@ -3199,6 +3199,7 @@ function HogsPigsPage({ ready }) {
 function useLiveCOT() {
   const [liveCOT, setLiveCOT] = useState(null);
   const [cotMeta, setCotMeta] = useState(null);
+  const [loaded, setLoaded] = useState(false);
   useEffect(() => {
     fetch("data/cot.json")
       .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
@@ -3207,14 +3208,15 @@ function useLiveCOT() {
           setLiveCOT(data.data);
           setCotMeta({ weeks: data.weeks, fetched: data.fetched_at });
         }
+        setLoaded(true);
       })
-      .catch(e => { console.warn("COT fetch:", e); });
+      .catch(e => { console.warn("COT fetch:", e); setLoaded(true); });
   }, []);
-  return { cotData: liveCOT || COT_DATA, cotMeta };
+  return { cotData: liveCOT || COT_DATA, cotMeta, cotLoaded: loaded };
 }
 
 function COTSummaryPage() {
-  const { cotData, cotMeta } = useLiveCOT();
+  const { cotData, cotMeta, cotLoaded } = useLiveCOT();
   const fmt = (v) => {
     if (v == null) return "—";
     const abs = Math.abs(v);
@@ -3430,13 +3432,13 @@ function COTDetailPage({ ready, commodityId }) {
 
     <SectionTitle right={<DownloadBtn onClick={dlCOT} />}>Net positions by category</SectionTitle>
     <InteractiveLegend items={catLegend} hidden={hCats} onToggle={tCats} />
-    {ready && <ChartBox id={`cot_cats_${commodityId}`} height={280} renderChart={rcAllCats} deps={`${commodityId}_${[...hCats].join()}`} />}
+    {ready && <ChartBox id={`cot_cats_${commodityId}`} height={280} renderChart={rcAllCats} deps={`${commodityId}_${[...hCats].join()}_${cotLoaded}`} />}
 
     <SectionTitle>Managed money net position</SectionTitle>
-    {ready && <ChartBox id={`cot_mm_${commodityId}`} height={240} renderChart={rcMMBar} deps={commodityId} />}
+    {ready && <ChartBox id={`cot_mm_${commodityId}`} height={240} renderChart={rcMMBar} deps={`${commodityId}_${cotLoaded}`} />}
 
     <SectionTitle>Total open interest</SectionTitle>
-    {ready && <ChartBox id={`cot_oi_${commodityId}`} height={200} renderChart={rcOI} deps={commodityId} />}
+    {ready && <ChartBox id={`cot_oi_${commodityId}`} height={200} renderChart={rcOI} deps={`${commodityId}_${cotLoaded}`} />}
 
     <div style={{ marginTop: 10, fontSize: 10, color: "var(--color-text-tertiary)" }}>Source: CFTC Disaggregated Commitments of Traders report. Futures & Options combined.</div>
   </div>);
@@ -3462,6 +3464,7 @@ const COT_COMMODITY_LIST = [
 function COTChartsPage({ ready }) {
   var ref = useLiveCOT();
   var cotData = ref.cotData;
+  var cotLoaded = ref.cotLoaded;
   var _sel = useState("cot-corn");
   var sel = _sel[0], setSel = _sel[1];
   var _tr = useState("5");
@@ -3740,12 +3743,12 @@ function COTChartsPage({ ready }) {
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:18}}>
         {["Net","Long","Short"].map(function(lbl,fi){return (<div key={lbl}>
           <div style={{fontSize:13,fontWeight:500,color:"var(--color-text-secondary)",marginBottom:8,textAlign:"center"}}>{lbl}</div>
-          {ready && <ChartBox id={"cot_"+cat.fields[fi]+"_"+sel+"_"+timeRange+"_"+chartMode+"_"+hk} height={300} renderChart={mkChart(cat.fields[fi])} deps={sel+"_"+timeRange+"_"+chartMode+"_"+hk} />}
+          {ready && <ChartBox id={"cot_"+cat.fields[fi]+"_"+sel+"_"+timeRange+"_"+chartMode+"_"+hk} height={300} renderChart={mkChart(cat.fields[fi])} deps={sel+"_"+timeRange+"_"+chartMode+"_"+hk+"_"+cotLoaded} />}
         </div>);})}</div>
     </div>);})
     }
     <h3 style={{fontSize:15,fontWeight:600,color:"var(--color-text-primary)",margin:"24px 0 12px"}}>Open Interest</h3>
-    {ready && <ChartBox id={"cot_oi_"+sel+"_"+timeRange+"_"+chartMode+"_"+hk} height={340} renderChart={mkChart("oi")} deps={sel+"_"+timeRange+"_"+chartMode+"_"+hk} />}
+    {ready && <ChartBox id={"cot_oi_"+sel+"_"+timeRange+"_"+chartMode+"_"+hk} height={340} renderChart={mkChart("oi")} deps={sel+"_"+timeRange+"_"+chartMode+"_"+hk+"_"+cotLoaded} />}
     <div style={{marginTop:14,fontSize:12,color:"var(--color-text-tertiary)"}}>Source: CFTC Disaggregated Commitments of Traders report. Futures & Options combined.</div>
   </div>);
 }
@@ -4298,17 +4301,20 @@ const DROUGHT_FALLBACK = {
 
 function useLiveDrought() {
   const [data, setData] = useState(null);
+  const [loaded, setLoaded] = useState(false);
   useEffect(() => {
     fetch("data/drought.json")
       .then(r => { if (!r.ok) throw new Error("not found"); return r.json(); })
-      .then(d => { if (d && d.data) setData(d.data); })
-      .catch(() => {});
+      .then(d => { if (d && d.data) setData(d.data); setLoaded(true); })
+      .catch(() => { setLoaded(true); });
   }, []);
-  return data || DROUGHT_FALLBACK;
+  return { droughtData: data || DROUGHT_FALLBACK, droughtLoaded: loaded };
 }
 
 function DroughtPage({ ready }) {
-  var droughtData = useLiveDrought();
+  var ref2 = useLiveDrought();
+  var droughtData = ref2.droughtData;
+  var droughtLoaded = ref2.droughtLoaded;
   var curYear = new Date().getFullYear();
   var lastYear = curYear - 1;
 
@@ -4505,22 +4511,24 @@ function DroughtPage({ ready }) {
     </div>
 
     <SectionTitle right={<DownloadBtn onClick={dlDrought} />}>All commodities — {curYear}</SectionTitle>
-    {ready && <ChartBox id={"drought_overview"} height={300} renderChart={overviewChart} deps={"drought_ov"} />}
+    {ready && <ChartBox id={"drought_overview"} height={300} renderChart={overviewChart} deps={"drought_ov_" + droughtLoaded} />}
 
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:18,marginTop:8}}>
     {DROUGHT_COMMODITIES.map(function(id) {
       var d = droughtData[id]; if (!d) return null;
       return (
         <div key={id}>
-          <SectionTitle>{d.label}</SectionTitle>
+          <div style={{fontSize:14,fontWeight:600,color:"var(--color-text-primary)",marginBottom:6}}>{d.label}</div>
           <div style={{display: "flex", gap: 12, marginBottom: 6, fontSize: 11}}>
             <span><span style={{display:"inline-block",width:16,borderTop:"2.5px solid "+d.color,verticalAlign:"middle",marginRight:4}}></span>{curYear}</span>
             <span><span style={{display:"inline-block",width:16,borderTop:"2px dashed "+d.color,verticalAlign:"middle",marginRight:4}}></span>{lastYear}</span>
             <span><span style={{display:"inline-block",width:16,borderTop:"2px dotted #333",verticalAlign:"middle",marginRight:4}}></span>5-yr avg</span>
           </div>
-          {ready && <ChartBox id={"drought_" + id} height={220} renderChart={mkCommodityChart(id)} deps={"drought_" + id} />}
+          {ready && <ChartBox id={"drought_" + id} height={220} renderChart={mkCommodityChart(id)} deps={"drought_" + id + "_" + droughtLoaded} />}
         </div>
       );
     })}
+    </div>
 
     <div style={{marginTop: 14, fontSize: 11, color: "var(--color-text-tertiary)"}}>Source: USDA / U.S. Drought Monitor via agindrought.unl.edu. Percentage of domestic production area experiencing drought at D1 (Moderate) intensity or worse.</div>
   </div>);

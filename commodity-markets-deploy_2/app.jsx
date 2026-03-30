@@ -3501,11 +3501,14 @@ function COTChartsPage({ ready }) {
     if (v == null) return "";
     var k = v / 1000;
     if (Math.abs(k) < 0.001) return "0";
+    var str;
     if (Math.abs(k) < 10) {
       var rounded = Math.round(k * 10) / 10;
-      return rounded === Math.floor(rounded) ? String(Math.floor(rounded)) : rounded.toFixed(1);
+      str = rounded === Math.floor(rounded) ? String(Math.abs(Math.floor(rounded))) : Math.abs(rounded).toFixed(1);
+    } else {
+      str = Math.abs(k).toLocaleString(undefined, {maximumFractionDigits: 0});
     }
-    return k.toLocaleString(undefined, {maximumFractionDigits: 0});
+    return k < 0 ? "(" + str + ")" : str;
   };
 
   // Seasonal chart
@@ -3533,7 +3536,7 @@ function COTChartsPage({ ready }) {
       responsive: true, maintainAspectRatio: false,
       interaction: {mode: "nearest", intersect: false, axis: "xy"},
       hover: {mode: "nearest", intersect: false},
-      plugins: {legend: {display: false}, tooltip: {mode: "nearest", intersect: false,
+      plugins: {legend: {display: false}, tooltip: {mode: "nearest", intersect: false, backgroundColor: "rgba(0,0,0,0.6)", titleFont: {size: 12}, bodyFont: {size: 12},
         callbacks: {
           title: function(items) {
             if (items.length === 0) return "";
@@ -3565,7 +3568,7 @@ function COTChartsPage({ ready }) {
             }, lineWidth: 0.75,
           },
         },
-        y: {min: Math.floor((dataMin - pad) / step) * step, max: Math.ceil((dataMax + pad) / step) * step, ticks: {font: {size: 11}, callback: function(v){return fmtAxis(v);}}, grid: {color: "rgba(0,0,0,0.08)", lineWidth: 0.75}},
+        y: {min: Math.floor((dataMin - pad) / step) * step, max: Math.ceil((dataMax + pad) / step) * step, ticks: {font: {size: 11}, color: function(ctx) { return ctx.tick.value < 0 ? '#A32D2D' : 'var(--color-text-secondary)'; }, callback: function(v){return fmtAxis(v);}}, grid: {color: "rgba(0,0,0,0.08)", lineWidth: 0.75}},
       },
     }});
   };}, [sel, timeRange, d, hiddenYears]);
@@ -3601,7 +3604,7 @@ function COTChartsPage({ ready }) {
     new Chart(canvas, {type: "scatter", data: {datasets: [{label: field, data: allPoints, borderColor: "#333", borderWidth: 1.5, pointRadius: 0, pointHitRadius: 6, tension: 0.3, fill: false, showLine: true}]}, options: {
       responsive: true, maintainAspectRatio: false,
       interaction: {mode: "nearest", intersect: false, axis: "xy"},
-      plugins: {legend: {display: false}, tooltip: {mode: "nearest", intersect: false,
+      plugins: {legend: {display: false}, tooltip: {mode: "nearest", intersect: false, backgroundColor: "rgba(0,0,0,0.6)", titleFont: {size: 12}, bodyFont: {size: 12},
         callbacks: {
           title: function(items) {
             if (items.length === 0) return "";
@@ -3627,7 +3630,7 @@ function COTChartsPage({ ready }) {
               }
               return "";
             },
-            autoSkip: false, maxRotation: needsRotation ? 90 : 0, font: {size: 10},
+            autoSkip: false, minRotation: needsRotation ? 90 : 0, maxRotation: needsRotation ? 90 : 0, font: {size: 11},
           },
           afterBuildTicks: function(axis) {
             var ticks = [];
@@ -3646,7 +3649,7 @@ function COTChartsPage({ ready }) {
             }, lineWidth: 0.75,
           },
         },
-        y: {min: Math.floor((dataMin - pad) / step) * step, max: Math.ceil((dataMax + pad) / step) * step, ticks: {font: {size: 11}, callback: function(v){return fmtAxis(v);}}, grid: {color: "rgba(0,0,0,0.08)", lineWidth: 0.75}},
+        y: {min: Math.floor((dataMin - pad) / step) * step, max: Math.ceil((dataMax + pad) / step) * step, ticks: {font: {size: 11}, color: function(ctx) { return ctx.tick.value < 0 ? '#A32D2D' : 'var(--color-text-secondary)'; }, callback: function(v){return fmtAxis(v);}}, grid: {color: "rgba(0,0,0,0.08)", lineWidth: 0.75}},
       },
     }});
   };}, [sel, timeRange, d, hiddenYears]);

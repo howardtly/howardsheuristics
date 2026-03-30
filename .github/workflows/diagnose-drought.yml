@@ -13,11 +13,3 @@ jobs:
         run: python commodity-markets-deploy_2/scripts/fetch_drought.py
         env:
           OUTPUT_DIR: commodity-markets-deploy_2/data
-```
-
-Run it and share the logs. If it works, the output should show something like:
-```
-Fetching Corn (corn)...
-  1368 rows returned
-  Years: 2000-2026 (27 years)
-  Latest: 2026-03-24, D1-D4=41%

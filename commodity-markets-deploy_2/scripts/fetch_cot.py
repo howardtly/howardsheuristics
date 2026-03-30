@@ -38,9 +38,10 @@ COMMODITY_MAP = {
     "LIVE CATTLE": "cot-live-cattle",
     "FEEDER CATTLE": "cot-feeder-cattle",
     "LEAN HOGS": "cot-lean-hogs",
-    # Crude oil — only match the primary contract
-    # NOTE: "CRUDE OIL, LIGHT SWEET-WTI" is a different, smaller contract — do NOT include
+    # Crude oil — renamed post-2022
+    # NOTE: "CRUDE OIL, LIGHT SWEET-WTI" is a different smaller contract — do NOT include
     "CRUDE OIL, LIGHT SWEET": "cot-crude-oil",
+    "WTI-PHYSICAL": "cot-crude-oil",
     # Heating oil — name changed multiple times
     "NY HARBOR ULSD": "cot-heating-oil",
     "NO 2 HEATING OIL  NY HARBOR": "cot-heating-oil",
@@ -48,10 +49,11 @@ COMMODITY_MAP = {
     "NO. 2 HEATING OIL, N.Y. HARBOR": "cot-heating-oil",
     "#2 HEATING OIL, NY HARBOR-ULSD": "cot-heating-oil",
     "#2 HEATING OIL- NY HARBOR-ULSD": "cot-heating-oil",
-    # Natural gas — name changed, post-2022 NYMEX contract may not be in disaggregated file
+    # Natural gas — renamed post-2022
     "NATURAL GAS": "cot-nat-gas",
     "HENRY HUB NATURAL GAS": "cot-nat-gas",
-    # NOTE: "NAT GAS NYME", "HENRY HUB" are different financial/mini contracts — do NOT include
+    "NAT GAS NYME": "cot-nat-gas",
+    # NOTE: "HENRY HUB", "NAT GAS ICE LD1" are different contracts — do NOT include
 }
 
 COMMODITY_META = {

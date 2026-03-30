@@ -1065,75 +1065,18 @@ const COT_DATA = {
   "cot-nat-gas":       { label: "Natural Gas",   exchange: "NYMEX",contract: "10,000 MMBtu", ...mkFullCOT(8267,-10142,     156384,-10016, -62574,13336,  271683,-330163, -125825,5926,  1584208,-37239) },
 };
 
-// ─── Crop progress data — weekly, U.S. total, by NASS reporting week ────
-// Weeks labeled by approximate calendar date (NASS publishes Mondays)
-// Planting = % planted, Condition = % good/excellent, Harvest = % harvested
-
-const CROP_PROGRESS_CORN = {
-  planting: {
-    weeks: ["Apr 6","Apr 13","Apr 20","Apr 27","May 4","May 11","May 18","May 25","Jun 1","Jun 8","Jun 15","Jun 22","Jun 29"],
-    "2025": [2,4,6,12,26,42,58,72,83,90,94,96,98],
-    "2024": [3,6,12,27,36,49,65,75,83,89,93,95,97],
-    "5yr":  [2,4,8,15,30,46,62,74,83,89,93,95,97],
-  },
-  condition: {
-    // Reported weekly Jun–Nov; % rated good + excellent
-    weeks: ["Jun 8","Jun 15","Jun 22","Jun 29","Jul 6","Jul 13","Jul 20","Jul 27","Aug 3","Aug 10","Aug 17","Aug 24","Aug 31","Sep 7","Sep 14","Sep 21","Sep 28","Oct 5","Oct 12","Oct 19","Oct 26","Nov 2"],
-    "2025": [74,73,72,71,70,68,67,65,64,63,62,61,60,59,59,58,null,null,null,null,null,null],
-    "2024": [72,70,67,65,62,62,61,60,59,58,56,55,53,53,52,52,51,51,50,49,49,48],
-    "5yr":  [70,69,68,67,65,64,63,62,61,60,59,58,57,56,56,55,55,54,54,53,53,52],
-  },
-  harvest: {
-    weeks: ["Sep 7","Sep 14","Sep 21","Sep 28","Oct 5","Oct 12","Oct 19","Oct 26","Nov 2","Nov 9","Nov 16","Nov 23","Nov 30","Dec 7"],
-    "2025": [2,5,9,14,21,30,42,54,65,74,82,88,92,95],
-    "2024": [2,5,10,18,27,37,47,59,69,76,84,89,93,96],
-    "5yr":  [3,7,12,19,27,36,46,57,66,74,81,87,91,94],
-  },
-};
-
-const CROP_PROGRESS_SOYBEANS = {
-  planting: {
-    weeks: ["Apr 27","May 4","May 11","May 18","May 25","Jun 1","Jun 8","Jun 15","Jun 22","Jun 29","Jul 6"],
-    "2025": [5,12,22,35,51,66,78,86,91,95,97],
-    "2024": [8,18,30,45,57,68,78,85,90,94,96],
-    "5yr":  [5,12,23,38,52,66,77,85,90,94,96],
-  },
-  condition: {
-    weeks: ["Jun 8","Jun 15","Jun 22","Jun 29","Jul 6","Jul 13","Jul 20","Jul 27","Aug 3","Aug 10","Aug 17","Aug 24","Aug 31","Sep 7","Sep 14","Sep 21","Sep 28","Oct 5","Oct 12","Oct 19","Oct 26"],
-    "2025": [72,72,71,70,69,68,67,66,65,64,63,62,61,60,59,58,null,null,null,null,null],
-    "2024": [70,68,67,66,65,63,62,61,59,57,56,54,53,52,51,50,50,49,48,47,47],
-    "5yr":  [69,68,67,66,65,64,63,62,61,60,58,57,56,55,54,54,53,53,52,52,51],
-  },
-  harvest: {
-    weeks: ["Sep 14","Sep 21","Sep 28","Oct 5","Oct 12","Oct 19","Oct 26","Nov 2","Nov 9","Nov 16","Nov 23","Nov 30"],
-    "2025": [2,5,12,22,35,51,65,76,84,90,94,97],
-    "2024": [3,6,13,26,42,61,76,85,91,95,97,98],
-    "5yr":  [2,6,14,26,39,53,66,77,84,90,94,96],
-  },
-};
-
-const CROP_PROGRESS_WHEAT = {
-  // Winter wheat — planting (fall), condition (spring), harvest (summer)
-  planting: {
-    weeks: ["Sep 14","Sep 21","Sep 28","Oct 5","Oct 12","Oct 19","Oct 26","Nov 2","Nov 9","Nov 16","Nov 23","Nov 30"],
-    "2025": [5,14,28,42,58,72,82,89,93,95,97,98],
-    "2024": [7,18,33,47,62,75,84,90,94,96,97,98],
-    "5yr":  [6,16,30,45,60,73,83,89,93,95,97,98],
-  },
-  condition: {
-    // Spring condition ratings for winter wheat (reported ~Apr–Jun, then Jul harvest)
-    weeks: ["Apr 6","Apr 13","Apr 20","Apr 27","May 4","May 11","May 18","May 25","Jun 1","Jun 8","Jun 15","Jun 22","Jun 29","Jul 6"],
-    "2025": [48,48,47,46,46,45,44,44,43,42,42,41,40,40],
-    "2024": [56,55,50,49,49,48,48,47,47,47,46,46,46,46],
-    "5yr":  [50,49,48,48,47,47,46,46,45,45,44,44,44,43],
-  },
-  harvest: {
-    weeks: ["Jun 1","Jun 8","Jun 15","Jun 22","Jun 29","Jul 6","Jul 13","Jul 20","Jul 27","Aug 3","Aug 10","Aug 17","Aug 24"],
-    "2025": [1,3,7,15,28,42,56,68,78,85,90,94,96],
-    "2024": [2,5,10,20,35,51,64,74,82,88,92,95,97],
-    "5yr":  [2,5,10,19,33,48,62,73,81,87,91,94,96],
-  },
-};
+// ─── Crop progress — live data from NASS API ────
+function useLiveCropProgress() {
+  const [data, setData] = useState(null);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    fetch("data/crop_progress.json")
+      .then(r => { if (!r.ok) throw new Error("not found"); return r.json(); })
+      .then(d => { setData(d); setLoaded(true); })
+      .catch(() => { setLoaded(true); });
+  }, []);
+  return { cpData: data, cpLoaded: loaded };
+}
 
 // ─── Ethanol data — EIA Weekly Petroleum Status Report ──────────────
 // Production = thousand barrels per day (kbd)
@@ -2452,166 +2395,274 @@ function ColdStoragePage({ ready }) {
 }
 
 function CropProgressPage({ ready }) {
-  const [crop, setCrop] = useState("corn");
-  const [hPlant, tPlant] = useToggle();
-  const [hCond, tCond] = useToggle();
-  const [hHarv, tHarv] = useToggle();
+  var ref = useLiveCropProgress();
+  var cpData = ref.cpData;
+  var cpLoaded = ref.cpLoaded;
+  var _tab = useState("summary");
+  var tab = _tab[0], setTab = _tab[1];
+  var _state = useState("US");
+  var selState = _state[0], setSelState = _state[1];
 
-  const cropMap = { corn: CROP_PROGRESS_CORN, soybeans: CROP_PROGRESS_SOYBEANS, wheat: CROP_PROGRESS_WHEAT };
-  const data = cropMap[crop];
+  var curYear = cpData ? cpData.current_year : new Date().getFullYear();
+  var lastYear = curYear - 1;
+  var states = cpData ? ["US"].concat(cpData.states || []) : ["US"];
+  var crops = cpData ? cpData.crops || {} : {};
+  var pasture = cpData ? cpData.pasture || {} : {};
+  var soil = cpData ? cpData.soil || {} : {};
 
-  const seasonLegend = [
-    { label: "2025", color: "#1D9E75", key: "2025" },
-    { label: "2024", color: "#378ADD", key: "2024", dash: "dashed" },
-    { label: "5-yr avg", color: "#333", key: "5yr", dash: "dotted" },
+  var TABS = [
+    {id:"summary",label:"Summary"},
+    {id:"corn",label:"Corn"},
+    {id:"soybeans",label:"Soybeans"},
+    {id:"winter_wheat",label:"Winter Wheat"},
+    {id:"spring_wheat",label:"Spring Wheat"},
+    {id:"pasture",label:"Pasture"},
+    {id:"soil",label:"Soil Moisture"},
   ];
-  const seasonDS = {
-    "2025": { borderColor: "#1D9E75", borderWidth: 2.5, pointRadius: 0, tension: 0.3 },
-    "2024": { borderColor: "#378ADD", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [5,3] },
-    "5yr":  { borderColor: "#333", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [2,3] },
+
+  var STAGE_LABELS = {
+    planted:"Planted",emerged:"Emerged",silking:"Silking",dough:"Dough",dented:"Dented",
+    mature:"Mature",harvested:"Harvested",condition:"Condition (G+E%)",
+    blooming:"Blooming",setting_pods:"Setting Pods",dropping_leaves:"Dropping Leaves",
+    headed:"Headed",
   };
 
-  const mkProgressChart = useCallback((seriesData, hidden, yLabel, autoRange = false) => (canvas) => {
-    const visibleKeys = ["2025","2024","5yr"].filter(k => !hidden.has(k));
-    const ds = visibleKeys.map(k => ({
-      label: k === "5yr" ? "5-yr avg" : k,
-      data: seriesData[k],
-      ...seasonDS[k],
-      spanGaps: true,
-    }));
+  // Week # to approximate day-of-year (NASS week 1 = ~Jan 1)
+  var weekToDoy = function(w) { return Math.max(0, Math.min(365, (w - 1) * 7 + 3)); };
 
-    let yMin = 0, yMax = 100;
-    if (autoRange && visibleKeys.length > 0) {
-      const allVals = visibleKeys.flatMap(k => seriesData[k].filter(v => v != null));
-      if (allVals.length > 0) {
-        const dataMin = Math.min(...allVals);
-        const dataMax = Math.max(...allVals);
-        const range = dataMax - dataMin;
-        const pad = Math.max(range * 0.25, 5);
-        yMin = Math.max(0, Math.floor((dataMin - pad) / 5) * 5);
-        yMax = Math.min(100, Math.ceil((dataMax + pad) / 5) * 5);
-      }
-    }
+  var monthBounds = [0,31,59,90,120,151,181,212,243,273,304,334];
+  var monthMids = [15,45,74,105,135,166,196,227,258,288,319,349];
+  var monthLabels = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
-    new Chart(canvas, {
-      type: "line",
-      data: { labels: seriesData.weeks, datasets: ds },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        interaction: { mode: "index", intersect: false }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.parsed.y != null ? c.parsed.y + "%" : "n/a"}` } } },
-        scales: {
-          x: { ticks: { autoSkip: true, maxTicksLimit: 14, font: { size: 11 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
-          y: { min: yMin, max: yMax, title: { display: true, text: yLabel, font: { size: 11 } }, ticks: { font: { size: 11 }, callback: v => v + "%" }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+  var xAxisConfig = {
+    type:"linear",min:0,max:365,
+    ticks:{callback:function(v){var mi=monthMids.indexOf(v);return mi>=0?monthLabels[mi]:"";},autoSkip:false,maxRotation:0,font:{size:10}},
+    afterBuildTicks:function(axis){var t=[];for(var i=0;i<12;i++){t.push({value:monthBounds[i]});t.push({value:monthMids[i]});}axis.ticks=t;},
+    grid:{color:function(ctx){var v=ctx.tick.value;if(v>0&&monthBounds.indexOf(v)>=0)return"rgba(0,0,0,0.12)";return"transparent";},lineWidth:0.75},
+  };
+
+  // Build chart for a stage dataset
+  var mkStageChart = function(stageData, yLabel) { return function(canvas) {
+    if (!stageData) return;
+    var sd = stageData[selState] || stageData["US"] || {};
+    var datasets = [];
+    var curPts = (sd[String(curYear)] || []).map(function(p){return {x:weekToDoy(p.w),y:p.v};});
+    var lastPts = (sd[String(lastYear)] || []).map(function(p){return {x:weekToDoy(p.w),y:p.v};});
+    var avgPts = (sd["5yr_avg"] || []).map(function(p){return {x:weekToDoy(p.w),y:p.v};});
+    if (curPts.length>0) datasets.push({label:String(curYear),data:curPts,borderColor:"#333",borderWidth:2.5,pointRadius:0,pointHitRadius:6,tension:0.3,fill:false,showLine:true});
+    if (lastPts.length>0) datasets.push({label:String(lastYear),data:lastPts,borderColor:"#378ADD",borderWidth:1.5,borderDash:[5,3],pointRadius:0,tension:0.3,fill:false,showLine:true});
+    if (avgPts.length>0) datasets.push({label:"5-yr avg",data:avgPts,borderColor:"#999",borderWidth:1.5,borderDash:[2,4],pointRadius:0,tension:0.3,fill:false,showLine:true});
+    if (datasets.length===0) return;
+    var allVals = datasets.flatMap(function(ds){return ds.data.map(function(p){return p.y;});});
+    var yMax = Math.min(100,Math.ceil((Math.max.apply(null,allVals)+10)/10)*10);
+    var yMin = Math.max(0,Math.floor((Math.min.apply(null,allVals)-5)/10)*10);
+    new Chart(canvas,{type:"scatter",data:{datasets:datasets},options:{
+      responsive:true,maintainAspectRatio:false,
+      interaction:{mode:"nearest",intersect:false,axis:"xy"},
+      plugins:{legend:{display:false},tooltip:{mode:"nearest",intersect:false,backgroundColor:"rgba(0,0,0,0.6)",titleFont:{size:11},bodyFont:{size:11},
+        callbacks:{
+          title:function(items){if(!items.length)return"";var doy=items[0].parsed.x;var mi=11;for(var m=0;m<11;m++){if(doy<monthBounds[m+1]){mi=m;break;}}return monthLabels[mi]+" "+(Math.floor(doy-monthBounds[mi])+1);},
+          label:function(c2){return c2.dataset.label+": "+c2.parsed.y+"%";}
         },
-      },
+      }},
+      scales:{x:xAxisConfig,y:{min:yMin,max:yMax,ticks:{font:{size:10},callback:function(v){return v+"%";}},grid:{color:"rgba(0,0,0,0.08)",lineWidth:0.75}}},
+    }});
+  };};
+
+  // Inline legend
+  var ChartLegend = function() {
+    return React.createElement("div",{style:{display:"flex",gap:12,marginBottom:4,fontSize:10.5}},
+      React.createElement("span",null,React.createElement("span",{style:{display:"inline-block",width:16,borderTop:"2.5px solid #333",verticalAlign:"middle",marginRight:4}}),"" + curYear),
+      React.createElement("span",null,React.createElement("span",{style:{display:"inline-block",width:16,borderTop:"2px dashed #378ADD",verticalAlign:"middle",marginRight:4}}),"" + lastYear),
+      React.createElement("span",null,React.createElement("span",{style:{display:"inline-block",width:16,borderTop:"2px dashed #999",verticalAlign:"middle",marginRight:4}}),"5-yr avg")
+    );
+  };
+
+  // CSV download — all data for selected state
+  var dlCSV = function() {
+    var headers = ["Week#","Approx Date"];
+    var cropIds = ["corn","soybeans","winter_wheat","spring_wheat"];
+    cropIds.forEach(function(cid) {
+      var crop = crops[cid]; if (!crop) return;
+      Object.keys(crop.stages || {}).forEach(function(sid) {
+        headers.push((crop.label||cid) + " " + (STAGE_LABELS[sid]||sid));
+      });
     });
-  }, []);
-
-  const dlSeries = (seriesData, filename, label) => () => {
-    const headers = ["Week", "2025", "2024", "5-yr avg"];
-    const rows = seriesData.weeks.map((w, i) => [w, seriesData["2025"][i] ?? "", seriesData["2024"][i] ?? "", seriesData["5yr"][i] ?? ""]);
-    downloadCSV(filename, headers, rows);
+    if (pasture.poor_very_poor) headers.push("Pasture Poor+VPoor%");
+    if (soil.topsoil_adequate_surplus) headers.push("Topsoil Adeq+Surp%");
+    if (soil.subsoil_adequate_surplus) headers.push("Subsoil Adeq+Surp%");
+    var rows = [];
+    for (var wk = 1; wk <= 52; wk++) {
+      var doy = weekToDoy(wk);
+      var mi = 11; for (var m=0;m<11;m++){if(doy<monthBounds[m+1]){mi=m;break;}}
+      var dateApprox = monthLabels[mi] + " " + (Math.floor(doy - monthBounds[mi])+1);
+      var row = [wk, dateApprox];
+      cropIds.forEach(function(cid) {
+        var crop = crops[cid]; if (!crop) return;
+        Object.keys(crop.stages || {}).forEach(function(sid) {
+          var sd = (crop.stages[sid] || {})[selState] || {};
+          var pts = sd[String(curYear)] || [];
+          var match = pts.find(function(p){return p.w === wk;});
+          row.push(match ? match.v : "");
+        });
+      });
+      var addSpecial = function(data) {
+        var sd = (data || {})[selState] || {};
+        var pts = sd[String(curYear)] || [];
+        var match = pts.find(function(p){return p.w === wk;});
+        row.push(match ? match.v : "");
+      };
+      if (pasture.poor_very_poor) addSpecial(pasture.poor_very_poor);
+      if (soil.topsoil_adequate_surplus) addSpecial(soil.topsoil_adequate_surplus);
+      if (soil.subsoil_adequate_surplus) addSpecial(soil.subsoil_adequate_surplus);
+      rows.push(row);
+    }
+    downloadCSV("crop_progress_" + selState + "_" + curYear + ".csv", headers, rows);
   };
 
-  // ─── Comparison helpers ───
-  const lastNonNullIdx = (arr) => { for (let i = arr.length - 1; i >= 0; i--) { if (arr[i] != null) return i; } return -1; };
-
-  const getComparisons = (series) => {
-    const idx = lastNonNullIdx(series["2025"]);
-    if (idx < 0) return { current: null, prevWeek: null, yearAgo: null, fiveYr: null, asOf: null };
-    const current = series["2025"][idx];
-    const prevWeek = idx > 0 ? series["2025"][idx - 1] : null;
-    const yearAgo = series["2024"][idx] ?? null;
-    const fiveYr = series["5yr"][idx] ?? null;
-    const asOf = series.weeks[idx];
-    return { current, prevWeek, yearAgo, fiveYr, asOf };
+  // Get latest value for summary table
+  var getLatest = function(stageData) {
+    if (!stageData) return {cur:null,prev:null,avg:null};
+    var sd = stageData[selState] || stageData["US"] || {};
+    var curPts = sd[String(curYear)] || [];
+    var lastPts = sd[String(lastYear)] || [];
+    var avgPts = sd["5yr_avg"] || [];
+    var curVal = curPts.length > 0 ? curPts[curPts.length - 1].v : null;
+    var curWk = curPts.length > 0 ? curPts[curPts.length - 1].w : null;
+    // Find matching week in prev year and avg
+    var prevVal = null, avgVal = null;
+    if (curWk) {
+      var pm = lastPts.find(function(p){return p.w === curWk;});
+      if (pm) prevVal = pm.v;
+      var am = avgPts.find(function(p){return Math.abs(p.w - curWk) <= 1;});
+      if (am) avgVal = am.v;
+    }
+    return {cur:curVal,prev:prevVal,avg:avgVal,wk:curWk};
   };
 
-  const plantComp = getComparisons(data.planting);
-  const condComp = getComparisons(data.condition);
-  const harvComp = getComparisons(data.harvest);
+  var chevronSvg = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%23666' stroke-width='1.5'/%3E%3C/svg%3E\")";
+  var selectStyle = {padding:"6px 24px 6px 10px",fontSize:13,fontWeight:500,border:"1px solid var(--color-border-secondary)",borderRadius:6,background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontFamily:"inherit",cursor:"pointer",appearance:"none",backgroundImage:chevronSvg,backgroundRepeat:"no-repeat",backgroundPosition:"right 6px center"};
+  var tabStyle = function(active){return {padding:"6px 14px",fontSize:12,fontWeight:active?600:400,border:"1px solid var(--color-border-secondary)",borderRadius:5,cursor:"pointer",background:active?"#333":"transparent",color:active?"#fff":"var(--color-text-secondary)",transition:"all 0.15s"};};
 
-  const cropLabels = { corn: "Corn", soybeans: "Soybeans", wheat: "Wheat (winter)" };
-
-  const DiffLine = ({ label, diff, absVal }) => {
-    if (diff === null || diff === undefined || isNaN(diff)) return null;
-    const col = diff > 0 ? "#639922" : diff < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
-    const sign = diff > 0 ? "+" : "";
-    return (
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, padding: "2px 0" }}>
-        <span style={{ color: "var(--color-text-tertiary)" }}>{label}{absVal != null ? ` (${absVal}%)` : ""}</span>
-        <span style={{ color: col, fontWeight: 500, fontFamily: "var(--font-mono)", fontSize: 11 }}>{sign}{diff} pp</span>
-      </div>
+  // Render a grid of stage charts (3 per row)
+  var StageGrid = function(props) {
+    var stageIds = props.stageIds;
+    var stageData = props.stages || {};
+    return React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16}},
+      stageIds.map(function(sid) {
+        return React.createElement("div",{key:sid},
+          React.createElement("div",{style:{fontSize:13,fontWeight:500,color:"var(--color-text-secondary)",marginBottom:4,textAlign:"center"}},STAGE_LABELS[sid]||sid),
+          React.createElement(ChartLegend),
+          ready && React.createElement(ChartBox,{id:"cp_"+tab+"_"+sid+"_"+selState,height:200,renderChart:mkStageChart(stageData[sid],STAGE_LABELS[sid]||sid),deps:tab+"_"+sid+"_"+selState+"_"+cpLoaded})
+        );
+      })
     );
   };
 
-  const ProgressCard = ({ label, comp }) => {
-    if (!comp || comp.current === null) return (
-      <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px", minWidth: 0 }}>
-        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.4px" }}>{label}</div>
-        <div style={{ fontSize: 20, fontWeight: 500, color: "var(--color-text-primary)" }}>—</div>
-      </div>
+  // Summary table
+  var renderSummary = function() {
+    var cropIds = ["corn","soybeans","winter_wheat","spring_wheat"];
+    var thS = {padding:"5px 8px",textAlign:"right",fontWeight:500,fontSize:11,color:"var(--color-text-secondary)",borderBottom:"1.5px solid var(--color-border-primary)",whiteSpace:"nowrap"};
+    var thL = Object.assign({},thS,{textAlign:"left"});
+    var tdS = {padding:"4px 8px",textAlign:"right",fontSize:12,borderBottom:"0.5px solid var(--color-border-tertiary)"};
+    var tdL = Object.assign({},tdS,{textAlign:"left",fontWeight:500});
+    var diffSpan = function(cur,comp) {
+      if (cur==null||comp==null) return "";
+      var d = cur - comp;
+      var col = d>0?"#639922":d<0?"#A32D2D":"var(--color-text-tertiary)";
+      return React.createElement("span",{style:{color:col,fontSize:10,marginLeft:4}},"("+(d>0?"+":"")+d+")");
+    };
+    return React.createElement("div",{style:{overflowX:"auto"}},
+      React.createElement("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:12}},
+        React.createElement("thead",null,
+          React.createElement("tr",null,
+            React.createElement("th",{style:thL},"Commodity / Stage"),
+            React.createElement("th",{style:thS},"Week"),
+            React.createElement("th",{style:thS},String(curYear)),
+            React.createElement("th",{style:thS},String(lastYear)),
+            React.createElement("th",{style:thS},"5-yr Avg"),
+          )
+        ),
+        React.createElement("tbody",null,
+          cropIds.flatMap(function(cid) {
+            var crop = crops[cid]; if (!crop) return [];
+            var stageIds = Object.keys(crop.stages || {});
+            return [React.createElement("tr",{key:cid+"_hdr"},React.createElement("td",{colSpan:5,style:{padding:"10px 8px 4px",fontWeight:600,fontSize:13,color:"var(--color-text-primary)",borderBottom:"1px solid var(--color-border-secondary)"}},crop.label))].concat(
+              stageIds.map(function(sid) {
+                var info = getLatest((crop.stages||{})[sid]);
+                return React.createElement("tr",{key:cid+"_"+sid},
+                  React.createElement("td",{style:tdL},"  "+(STAGE_LABELS[sid]||sid)),
+                  React.createElement("td",{style:tdS},info.wk ? "#"+info.wk : "—"),
+                  React.createElement("td",{style:tdS},info.cur!=null?info.cur+"%":"—"),
+                  React.createElement("td",{style:tdS},info.prev!=null?info.prev+"%":"—",diffSpan(info.cur,info.prev)),
+                  React.createElement("td",{style:tdS},info.avg!=null?info.avg+"%":"—",diffSpan(info.cur,info.avg))
+                );
+              })
+            );
+          })
+        )
+      )
     );
-    const diffPW = comp.prevWeek != null ? comp.current - comp.prevWeek : null;
-    const diffYA = comp.yearAgo != null ? comp.current - comp.yearAgo : null;
-    const diff5Y = comp.fiveYr != null ? Math.round((comp.current - comp.fiveYr) * 10) / 10 : null;
-    return (
-      <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px", minWidth: 0 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
-          <span style={{ fontSize: 11, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.4px" }}>{label}</span>
-          {comp.asOf && <span style={{ fontSize: 10, color: "var(--color-text-tertiary)" }}>as of {comp.asOf}, 2025</span>}
-        </div>
-        <div style={{ fontSize: 22, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 6 }}>{comp.current}%</div>
-        <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 6, display: "flex", flexDirection: "column", gap: 1 }}>
-          <DiffLine label="vs. last week" diff={diffPW} absVal={comp.prevWeek} />
-          <DiffLine label="vs. last year" diff={diffYA} absVal={comp.yearAgo} />
-          <DiffLine label="vs. 5-yr avg" diff={diff5Y} absVal={comp.fiveYr} />
-        </div>
-      </div>
+  };
+
+  // Crop tab content
+  var renderCropTab = function(cropId) {
+    var crop = crops[cropId];
+    if (!crop) return React.createElement("div",{style:{padding:20,color:"var(--color-text-tertiary)"}},"No data available yet.");
+    var stageIds = Object.keys(crop.stages || {});
+    return React.createElement(StageGrid,{stageIds:stageIds,stages:crop.stages});
+  };
+
+  // Pasture tab
+  var renderPasture = function() {
+    return React.createElement("div",null,
+      React.createElement("div",{style:{fontSize:13,color:"var(--color-text-tertiary)",marginBottom:12}},"Pastureland condition — percentage rated Poor or Very Poor"),
+      React.createElement(ChartLegend),
+      ready && React.createElement(ChartBox,{id:"cp_pasture_"+selState,height:280,renderChart:mkStageChart(pasture.poor_very_poor,"Poor + Very Poor %"),deps:"pasture_"+selState+"_"+cpLoaded})
+    );
+  };
+
+  // Soil moisture tab
+  var renderSoil = function() {
+    return React.createElement("div",null,
+      React.createElement("div",{style:{fontSize:13,color:"var(--color-text-tertiary)",marginBottom:12}},"Soil moisture — percentage rated Adequate or Surplus"),
+      React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:18}},
+        React.createElement("div",null,
+          React.createElement("div",{style:{fontSize:14,fontWeight:600,color:"var(--color-text-primary)",marginBottom:6}},"Topsoil"),
+          React.createElement(ChartLegend),
+          ready && React.createElement(ChartBox,{id:"cp_topsoil_"+selState,height:250,renderChart:mkStageChart(soil.topsoil_adequate_surplus,"Topsoil Adequate+Surplus %"),deps:"topsoil_"+selState+"_"+cpLoaded})
+        ),
+        React.createElement("div",null,
+          React.createElement("div",{style:{fontSize:14,fontWeight:600,color:"var(--color-text-primary)",marginBottom:6}},"Subsoil"),
+          React.createElement(ChartLegend),
+          ready && React.createElement(ChartBox,{id:"cp_subsoil_"+selState,height:250,renderChart:mkStageChart(soil.subsoil_adequate_surplus,"Subsoil Adequate+Surplus %"),deps:"subsoil_"+selState+"_"+cpLoaded})
+        )
+      )
     );
   };
 
   return (<div>
-    <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 16 }}>
-      {["corn","soybeans","wheat"].map(c => (
-        <button key={c} onClick={() => { setCrop(c); tPlant("__reset"); tCond("__reset"); tHarv("__reset"); }} style={{
-          padding: "6px 16px", fontSize: 13, cursor: "pointer",
-          background: crop === c ? "#333" : "transparent", border: "none", borderRadius: 6,
-          color: crop === c ? "#fff" : "var(--color-text-tertiary)",
-          fontWeight: 500, transition: "all 0.15s",
-        }}>
-          {c === "wheat" ? "Wheat" : c.charAt(0).toUpperCase() + c.slice(1)}
-        </button>
-      ))}
+    <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:14,flexWrap:"wrap"}}>
+      <div style={{display:"flex",gap:3,flexWrap:"wrap"}}>
+        {TABS.map(function(t){return <button key={t.id} onClick={function(){setTab(t.id);}} style={tabStyle(tab===t.id)}>{t.label}</button>;})}
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:6}}>
+        <span style={{fontSize:11,fontWeight:600,color:"var(--color-text-secondary)",textTransform:"uppercase"}}>State</span>
+        <select value={selState} onChange={function(e){setSelState(e.target.value);}} style={selectStyle}>
+          {states.map(function(s){return <option key={s} value={s}>{s === "US" ? "U.S. Total" : s}</option>;})}
+        </select>
+      </div>
+      <div style={{marginLeft:"auto"}}><DownloadBtn onClick={dlCSV} /></div>
     </div>
-
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10, marginBottom: 8 }}>
-      <ProgressCard label="Planted" comp={plantComp} />
-      <ProgressCard label="Good / excellent" comp={condComp} />
-      <ProgressCard label="Harvested" comp={harvComp} />
-    </div>
-
-    <SectionTitle right={<DownloadBtn onClick={dlSeries(data.planting, `${crop}_planting_progress.csv`, "% Planted")} />}>
-      {cropLabels[crop]} — planting progress (% planted)
-    </SectionTitle>
-    <InteractiveLegend items={seasonLegend} hidden={hPlant} onToggle={tPlant} />
-    {ready && <ChartBox id={`cp_plant_${crop}`} renderChart={mkProgressChart(data.planting, hPlant, "% planted", false)} deps={`${crop}_${[...hPlant].join()}`} />}
-
-    <SectionTitle right={<DownloadBtn onClick={dlSeries(data.condition, `${crop}_condition.csv`, "% Good/Exc")} />}>
-      {cropLabels[crop]} — crop condition (% good/excellent)
-    </SectionTitle>
-    <InteractiveLegend items={seasonLegend} hidden={hCond} onToggle={tCond} />
-    {ready && <ChartBox id={`cp_cond_${crop}`} renderChart={mkProgressChart(data.condition, hCond, "% good/excellent", true)} deps={`${crop}_${[...hCond].join()}`} />}
-
-    <SectionTitle right={<DownloadBtn onClick={dlSeries(data.harvest, `${crop}_harvest_progress.csv`, "% Harvested")} />}>
-      {cropLabels[crop]} — harvest progress (% harvested)
-    </SectionTitle>
-    <InteractiveLegend items={seasonLegend} hidden={hHarv} onToggle={tHarv} />
-    {ready && <ChartBox id={`cp_harv_${crop}`} renderChart={mkProgressChart(data.harvest, hHarv, "% harvested", false)} deps={`${crop}_${[...hHarv].join()}`} />}
-
-    <div style={{ marginTop: 12, fontSize: 10, color: "var(--color-text-tertiary)" }}>
-      U.S. total, national level. Data follows NASS weekly crop progress reporting schedule. 2025 season data shown through latest available report.
-    </div>
+    <div style={{fontSize:12,color:"var(--color-text-tertiary)",marginBottom:12}}>USDA NASS Crop Progress & Condition. {selState === "US" ? "U.S. Total" : selState} — {curYear} vs {lastYear} vs 5-yr avg.</div>
+    {tab === "summary" && renderSummary()}
+    {tab === "corn" && renderCropTab("corn")}
+    {tab === "soybeans" && renderCropTab("soybeans")}
+    {tab === "winter_wheat" && renderCropTab("winter_wheat")}
+    {tab === "spring_wheat" && renderCropTab("spring_wheat")}
+    {tab === "pasture" && renderPasture()}
+    {tab === "soil" && renderSoil()}
+    <div style={{marginTop:14,fontSize:11,color:"var(--color-text-tertiary)"}}>Source: USDA National Agricultural Statistics Service (NASS). Weekly crop progress reports.</div>
   </div>);
 }
 

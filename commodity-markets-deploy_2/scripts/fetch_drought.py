@@ -1,214 +1,160 @@
 #!/usr/bin/env python3
 """
-Fetch USDA 'Commodities in Drought' data from agindrought.unl.edu
-Downloads weekly drought percentages for 6 commodities and outputs drought.json.
+Fetch USDA 'Commodities in Drought' data from agindrought.unl.edu JSON API.
+Downloads weekly D1-D4 drought percentages for 6 commodities, outputs drought.json.
 
-Run locally first to test: python fetch_drought.py
-Then add to GitHub Actions for weekly automation.
+API endpoint: Home.aspx/ReturnCropData2020
+Parameters: ctype (commodity), ltype (1=US), loc (location code)
 """
-import urllib.request, urllib.parse, re, json, os, sys
-from datetime import datetime
+import urllib.request, urllib.parse, json, os, sys, time
+from datetime import datetime, timezone
 from collections import defaultdict
 
-# Commodities to fetch and their page/value mappings
-# Page 1 = row crops, Page 2 = livestock/forage
-# We need to discover the dropdown values by scraping the page
 COMMODITIES = {
-    "corn":         {"page": 1, "label": "Corn",         "search": "corn"},
-    "soybeans":     {"page": 1, "label": "Soybeans",     "search": "soybean"},
-    "winter_wheat": {"page": 1, "label": "Winter Wheat", "search": "winter wheat"},
-    "spring_wheat": {"page": 1, "label": "Spring Wheat", "search": "spring wheat"},
-    "cattle":       {"page": 2, "label": "Cattle",       "search": "cattle"},
-    "hay":          {"page": 2, "label": "Hay",          "search": "hay"},
+    "corn":         {"ctype": "corn",         "label": "Corn",         "color": "#D4A017"},
+    "soybeans":     {"ctype": "soybeans",     "label": "Soybeans",     "color": "#1D9E75"},
+    "winter_wheat": {"ctype": "winter wheat", "label": "Winter Wheat", "color": "#A32D2D"},
+    "spring_wheat": {"ctype": "spring wheat", "label": "Spring Wheat", "color": "#D85A30"},
+    "cattle":       {"ctype": "cattle",       "label": "Cattle",       "color": "#378ADD"},
+    "hay":          {"ctype": "hay",          "label": "Hay",          "color": "#888780"},
 }
 
-OUTPUT_DIR = os.environ.get("OUTPUT_DIR", os.path.join(os.path.dirname(__file__), "..", "data"))
+BASE_URL = "https://agindrought.unl.edu/Home.aspx/ReturnCropData2020"
+OUTPUT_DIR = os.environ.get("OUTPUT_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data"))
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 
 
-def get_page(url):
-    """GET a page and return HTML."""
-    req = urllib.request.Request(url, headers={"User-Agent": UA})
-    resp = urllib.request.urlopen(req, timeout=30)
-    return resp.read().decode("utf-8", errors="replace")
-
-
-def extract_form_fields(html):
-    """Extract ASP.NET hidden form fields."""
-    fields = {}
-    for name in ["__VIEWSTATE", "__VIEWSTATEGENERATOR", "__EVENTVALIDATION", "__VIEWSTATEENCRYPTED"]:
-        match = re.search(r'name="' + name + r'"[^>]*value="([^"]*)"', html)
-        if match:
-            fields[name] = match.group(1)
-    return fields
-
-
-def find_commodity_dropdown(html):
-    """Find the commodity dropdown and its options."""
-    # Look for select elements
-    selects = re.findall(r'(<select[^>]*id="([^"]*)"[^>]*>.*?</select>)', html, re.DOTALL | re.IGNORECASE)
-    
-    for select_html, select_id in selects:
-        options = re.findall(r'<option[^>]*value="([^"]*)"[^>]*>(.*?)</option>', select_html, re.IGNORECASE)
-        if len(options) > 2:  # Likely the commodity dropdown
-            print(f"  Found dropdown: {select_id} with {len(options)} options")
-            for val, label in options[:5]:
-                print(f"    {val}: {label}")
-            if len(options) > 5:
-                print(f"    ... and {len(options)-5} more")
-            return select_id, options
-    
-    return None, []
-
-
-def find_pagesize_dropdown(html):
-    """Find the 'show all rows' dropdown."""
-    selects = re.findall(r'(<select[^>]*id="([^"]*)"[^>]*>.*?</select>)', html, re.DOTALL | re.IGNORECASE)
-    for select_html, select_id in selects:
-        if "page" in select_id.lower() or "size" in select_id.lower() or "rows" in select_id.lower():
-            options = re.findall(r'<option[^>]*value="([^"]*)"[^>]*>(.*?)</option>', select_html)
-            print(f"  Page size dropdown: {select_id}")
-            for val, label in options:
-                print(f"    {val}: {label}")
-            return select_id, options
-    return None, []
-
-
-def post_form(url, fields):
-    """POST form data and return response HTML."""
-    data = urllib.parse.urlencode(fields).encode("utf-8")
-    req = urllib.request.Request(url, data=data, headers={
+def fetch_commodity(ctype):
+    """Fetch all drought data for a commodity. Returns list of {Date, None, D0, D1, D2, D3, D4}."""
+    params = urllib.parse.urlencode({
+        "ctype": f'"{ctype}"',
+        "ltype": '"1"',
+        "loc": '"0"',
+    })
+    url = f"{BASE_URL}?{params}"
+    req = urllib.request.Request(url, headers={
         "User-Agent": UA,
-        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "application/json",
+        "Content-Type": "application/json; charset=utf-8",
     })
     resp = urllib.request.urlopen(req, timeout=30)
-    return resp.read().decode("utf-8", errors="replace")
+    data = json.loads(resp.read().decode("utf-8"))
+    return data.get("d", [])
 
 
-def parse_table(html):
-    """Parse the data table from the page HTML."""
-    # Find the main data table
-    # Look for table with date-like content
-    tables = re.findall(r'<table[^>]*>(.*?)</table>', html, re.DOTALL | re.IGNORECASE)
-    
-    for table_html in tables:
-        rows = re.findall(r'<tr[^>]*>(.*?)</tr>', table_html, re.DOTALL | re.IGNORECASE)
-        if len(rows) < 5:
+def process_commodity(raw_rows):
+    """Process raw API rows into structured yearly data."""
+    by_year = defaultdict(list)
+    for row in raw_rows:
+        date_str = row.get("Date", "")
+        d1_d4 = row.get("D1")
+        if not date_str or d1_d4 is None:
             continue
-        
-        # Check if this table has date-like content
-        first_data = re.findall(r'<td[^>]*>(.*?)</td>', rows[1] if len(rows) > 1 else "", re.DOTALL | re.IGNORECASE)
-        if not first_data or not re.match(r'\d{4}-\d{2}-\d{2}', first_data[0].strip() if first_data else ""):
+        try:
+            dt = datetime.strptime(date_str, "%Y-%m-%d")
+            by_year[dt.year].append({
+                "date": date_str,
+                "d1_d4": int(d1_d4),
+                "d2_d4": int(row.get("D2", 0)),
+                "d3_d4": int(row.get("D3", 0)),
+                "d4": int(row.get("D4", 0)),
+                "none": int(row.get("None", 0)),
+                "d0_d4": int(row.get("D0", 0)),
+            })
+        except (ValueError, TypeError):
             continue
-        
-        # Parse all rows
-        data = []
-        for row in rows:
-            cells = re.findall(r'<td[^>]*>(.*?)</td>', row, re.DOTALL | re.IGNORECASE)
-            cells = [c.strip() for c in cells]
-            if len(cells) >= 7 and re.match(r'\d{4}-\d{2}-\d{2}', cells[0]):
-                try:
-                    data.append({
-                        "date": cells[0],
-                        "none": int(cells[1]),
-                        "d0_d4": int(cells[2]),
-                        "d1_d4": int(cells[3]),
-                        "d2_d4": int(cells[4]),
-                        "d3_d4": int(cells[5]),
-                        "d4": int(cells[6]),
-                    })
-                except (ValueError, IndexError):
-                    continue
-        
-        if data:
-            return data
-    
-    return []
+
+    for yr in by_year:
+        by_year[yr].sort(key=lambda r: r["date"])
+
+    return dict(by_year)
 
 
-def try_pandas_parse(html):
-    """Fallback: use pandas to parse HTML tables."""
-    try:
-        import pandas as pd
-        dfs = pd.read_html(html)
-        for df in dfs:
-            if len(df) > 10 and "Week" in df.columns or len(df.columns) >= 7:
-                print(f"  Pandas found table: {df.shape}")
-                data = []
-                for _, row in df.iterrows():
-                    date_str = str(row.iloc[0])
-                    if re.match(r'\d{4}-\d{2}-\d{2}', date_str):
-                        try:
-                            data.append({
-                                "date": date_str,
-                                "none": int(row.iloc[1]),
-                                "d0_d4": int(row.iloc[2]),
-                                "d1_d4": int(row.iloc[3]),
-                                "d2_d4": int(row.iloc[4]),
-                                "d3_d4": int(row.iloc[5]),
-                                "d4": int(row.iloc[6]),
-                            })
-                        except:
-                            continue
-                if data:
-                    return data
-    except ImportError:
-        pass
-    return []
+def build_seasonal(by_year, cur_year):
+    """Build seasonal arrays with {x: doy, y: d1_d4} points and 5yr avg."""
+    seasonal = {}
+    for yr, rows in sorted(by_year.items()):
+        points = []
+        for r in rows:
+            dt = datetime.strptime(r["date"], "%Y-%m-%d")
+            doy = dt.timetuple().tm_yday - 1
+            points.append({"x": doy, "y": r["d1_d4"], "date": r["date"]})
+        seasonal[str(yr)] = points
+
+    # 5-year average
+    avg_years = [y for y in range(cur_year - 5, cur_year) if y in by_year]
+    if avg_years:
+        by_week = defaultdict(list)
+        for yr in avg_years:
+            for r in by_year[yr]:
+                dt = datetime.strptime(r["date"], "%Y-%m-%d")
+                week = dt.timetuple().tm_yday // 7
+                by_week[week].append(r["d1_d4"])
+        avg_points = []
+        for week in sorted(by_week.keys()):
+            vals = by_week[week]
+            avg_val = round(sum(vals) / len(vals))
+            doy = week * 7 + 3
+            avg_points.append({"x": doy, "y": avg_val})
+        seasonal["5yr_avg"] = avg_points
+
+    return seasonal
 
 
 def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     output_file = os.path.join(OUTPUT_DIR, "drought.json")
-    
+
     print("=" * 60)
     print("USDA Commodities in Drought Fetch")
-    print(f"Time: {datetime.utcnow().isoformat()}Z")
+    print(f"Time: {datetime.now(timezone.utc).isoformat()}")
     print("=" * 60)
-    
-    # Step 1: Discover form structure from page 1
-    print("\nStep 1: Discovering form structure...")
-    for page_num in [1, 2]:
-        url = f"https://agindrought.unl.edu/Table.aspx?{page_num}"
-        print(f"\n  Page {page_num}: {url}")
+
+    cur_year = datetime.now(timezone.utc).year
+    result = {"fetched_at": datetime.now(timezone.utc).isoformat(), "data": {}}
+
+    for com_id, meta in COMMODITIES.items():
+        print(f"\n  Fetching {meta['label']} ({meta['ctype']})...")
         try:
-            html = get_page(url)
-            print(f"  HTML size: {len(html)} chars")
-            
-            # Find form fields
-            form_fields = extract_form_fields(html)
-            print(f"  Form fields: {list(form_fields.keys())}")
-            
-            # Find dropdowns
-            dropdown_id, options = find_commodity_dropdown(html)
-            pagesize_id, ps_options = find_pagesize_dropdown(html)
-            
-            # Show all select elements for debugging
-            all_selects = re.findall(r'<select[^>]*id="([^"]*)"', html, re.IGNORECASE)
-            print(f"  All select elements: {all_selects}")
-            
-            # Show form element
-            form_match = re.search(r'<form[^>]*action="([^"]*)"[^>]*id="([^"]*)"', html, re.IGNORECASE)
-            if form_match:
-                print(f"  Form action: {form_match.group(1)}, id: {form_match.group(2)}")
-            
-            # Try to find the table even on initial load
-            data = parse_table(html)
-            if not data:
-                data = try_pandas_parse(html)
-            print(f"  Initial table rows: {len(data)}")
-            if data:
-                print(f"    First: {data[0]}")
-                print(f"    Last:  {data[-1]}")
-            
+            raw = fetch_commodity(meta["ctype"])
+            print(f"    {len(raw)} rows returned")
+
+            if not raw:
+                print(f"    WARNING: no data")
+                continue
+
+            by_year = process_commodity(raw)
+            years = sorted(by_year.keys())
+            print(f"    Years: {years[0]}-{years[-1]} ({len(years)} years)")
+
+            latest_yr = max(years)
+            latest_row = by_year[latest_yr][-1]
+            print(f"    Latest: {latest_row['date']}, D1-D4={latest_row['d1_d4']}%")
+
+            seasonal = build_seasonal(by_year, cur_year)
+
+            result["data"][com_id] = {
+                "label": meta["label"],
+                "color": meta["color"],
+                "latest_date": latest_row["date"],
+                "latest_d1_d4": latest_row["d1_d4"],
+                "seasonal": seasonal,
+                "available_years": [str(y) for y in years],
+            }
+
         except Exception as e:
-            print(f"  Error: {e}")
-    
-    print("\n" + "=" * 60)
-    print("DIAGNOSTIC COMPLETE")
-    print("Share this output so we can build the automated fetcher.")
-    print("=" * 60)
+            print(f"    ERROR: {e}")
+
+        time.sleep(0.5)
+
+    print(f"\nWriting {output_file}")
+    with open(output_file, "w") as f:
+        json.dump(result, f)
+    print(f"  {os.path.getsize(output_file):,} bytes")
+    print(f"  {len(result['data'])} commodities")
+
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

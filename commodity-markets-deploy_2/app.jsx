@@ -4286,178 +4286,179 @@ function FXChartWidget({ defaultId, ready, fmt, niceAxis }) {
 // MARKET DRIVERS — DROUGHT (USDA Commodities in Drought)
 // ════════════════════════════════════════════════════════════════════════
 
-const DROUGHT_WEEKS = ["Jan 7","Jan 14","Jan 21","Jan 28","Feb 4","Feb 11","Feb 18","Feb 25","Mar 4","Mar 11","Mar 18","Mar 25","Apr 1","Apr 8","Apr 15","Apr 22","Apr 29","May 6","May 13","May 20","May 27","Jun 3","Jun 10","Jun 17","Jun 24","Jul 1","Jul 8","Jul 15","Jul 22","Jul 29","Aug 5","Aug 12","Aug 19","Aug 26","Sep 2","Sep 9","Sep 16","Sep 23","Sep 30","Oct 7","Oct 14","Oct 21","Oct 28","Nov 4","Nov 11","Nov 18","Nov 25","Dec 2","Dec 9","Dec 16","Dec 23","Dec 30"];
-
-function mkDroughtSeries(base, amplitude, phase) {
-  return DROUGHT_WEEKS.map((_,i) => Math.max(0, Math.min(100, Math.round(base + Math.sin((i / 52) * 2 * Math.PI + phase) * amplitude + (Math.cos(i * 0.3) - 0.5) * amplitude * 0.3))));
-}
-
-const DROUGHT_DATA = {
-  corn:           { label: "Corn",            "2025": mkDroughtSeries(28, 18, 0.5),   "2024": mkDroughtSeries(32, 20, 0.5),   "5yr": mkDroughtSeries(30, 16, 0.5),   color: "#D4A017" },
-  soybeans:       { label: "Soybeans",        "2025": mkDroughtSeries(22, 15, 0.6),   "2024": mkDroughtSeries(26, 17, 0.6),   "5yr": mkDroughtSeries(24, 14, 0.6),   color: "#1D9E75" },
-  winterWheat:    { label: "Winter wheat",    "2025": mkDroughtSeries(38, 22, 0.3),   "2024": mkDroughtSeries(42, 24, 0.3),   "5yr": mkDroughtSeries(40, 20, 0.3),   color: "#A32D2D" },
-  springWheat:    { label: "Spring wheat",    "2025": mkDroughtSeries(18, 14, 0.7),   "2024": mkDroughtSeries(22, 16, 0.7),   "5yr": mkDroughtSeries(20, 13, 0.7),   color: "#D85A30" },
-  cattle:         { label: "Cattle",          "2025": mkDroughtSeries(35, 20, 0.3),   "2024": mkDroughtSeries(40, 22, 0.3),   "5yr": mkDroughtSeries(36, 19, 0.3),   color: "#378ADD" },
-  hay:            { label: "Hay",             "2025": mkDroughtSeries(30, 18, 0.4),   "2024": mkDroughtSeries(34, 20, 0.4),   "5yr": mkDroughtSeries(31, 17, 0.4),   color: "#888780" },
+const DROUGHT_COMMODITIES = ["corn","soybeans","winter_wheat","spring_wheat","cattle","hay"];
+const DROUGHT_FALLBACK = {
+  corn:         {label:"Corn",         color:"#D4A017", latest_d1_d4: 0, seasonal:{}},
+  soybeans:     {label:"Soybeans",     color:"#1D9E75", latest_d1_d4: 0, seasonal:{}},
+  winter_wheat: {label:"Winter Wheat", color:"#A32D2D", latest_d1_d4: 0, seasonal:{}},
+  spring_wheat: {label:"Spring Wheat", color:"#D85A30", latest_d1_d4: 0, seasonal:{}},
+  cattle:       {label:"Cattle",       color:"#378ADD", latest_d1_d4: 0, seasonal:{}},
+  hay:          {label:"Hay",          color:"#888780", latest_d1_d4: 0, seasonal:{}},
 };
 
-const DROUGHT_IDS = Object.keys(DROUGHT_DATA);
+function useLiveDrought() {
+  const [data, setData] = useState(null);
+  useEffect(() => {
+    fetch("data/drought.json")
+      .then(r => { if (!r.ok) throw new Error("not found"); return r.json(); })
+      .then(d => { if (d && d.data) setData(d.data); })
+      .catch(() => {});
+  }, []);
+  return data || DROUGHT_FALLBACK;
+}
 
 function DroughtPage({ ready }) {
-  const [hSeries, tSeries] = useToggle();
+  var droughtData = useLiveDrought();
+  var curYear = new Date().getFullYear();
+  var lastYear = curYear - 1;
 
-  const seasonLegend = DROUGHT_IDS.map(id => ({ label: DROUGHT_DATA[id].label, color: DROUGHT_DATA[id].color, key: id }));
+  // Month layout (same as COT)
+  var monthBounds = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+  var monthMids = [15, 45, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349];
+  var monthLabels = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
-  function niceAxis(allVals) {
-    if (allVals.length === 0) return { yMin: 0, yMax: 100 };
-    const dataMax = Math.max(...allVals);
-    return { yMin: 0, yMax: Math.min(100, Math.ceil((dataMax + 10) / 10) * 10) };
-  }
-
-  // ─── Month-label x-axis logic ───
-  const { displayLabels: droughtDisplayLabels, gridColors: droughtGridColors } = buildMonthAxis(DROUGHT_WEEKS);
-
-  const xAxisConfig = { ticks: { autoSkip: false, maxRotation: 0, font: { size: 11 } }, grid: { color: (ctx) => droughtGridColors[ctx.index] || "transparent", lineWidth: 0.75 } };
-
-  // Current values (latest non-null)
-  const latestIdx = DROUGHT_DATA.corn["2025"].length - 1;
-  const getLatest = (id) => {
-    const arr = DROUGHT_DATA[id]["2025"];
-    for (let i = arr.length - 1; i >= 0; i--) { if (arr[i] != null) return { val: arr[i], idx: i }; }
-    return { val: null, idx: 0 };
+  var xAxisConfig = {
+    type: "linear", min: 0, max: 365,
+    ticks: {
+      callback: function(val) { var mi = monthMids.indexOf(val); return mi >= 0 ? monthLabels[mi] : ""; },
+      autoSkip: false, maxRotation: 0, font: {size: 11},
+    },
+    afterBuildTicks: function(axis) {
+      var ticks = [];
+      for (var i = 0; i < 12; i++) { ticks.push({value: monthBounds[i]}); ticks.push({value: monthMids[i]}); }
+      axis.ticks = ticks;
+    },
+    grid: {
+      color: function(ctx) {
+        var val = ctx.tick.value;
+        if (val > 0 && monthBounds.indexOf(val) >= 0) return "rgba(0,0,0,0.12)";
+        return "transparent";
+      }, lineWidth: 0.75,
+    },
   };
 
-  const rcOverview = useCallback(canvas => {
-    const visible = DROUGHT_IDS.filter(id => !hSeries.has(id));
-    const datasets = visible.map(id => ({
-      label: DROUGHT_DATA[id].label, data: DROUGHT_DATA[id]["2025"],
-      borderColor: DROUGHT_DATA[id].color, borderWidth: 2, pointRadius: 0, tension: 0.3, spanGaps: true,
-    }));
-    const allVals = visible.flatMap(id => DROUGHT_DATA[id]["2025"].filter(v => v != null));
-    const { yMin, yMax } = niceAxis(allVals);
-    new Chart(canvas, {
-      type: "line", data: { labels: droughtDisplayLabels, datasets },
-      options: { responsive: true, maintainAspectRatio: false,
-        interaction: { mode: "index", intersect: false },
-        plugins: { legend: { display: false }, tooltip: {
-          callbacks: {
-            title: (items) => items.length > 0 ? DROUGHT_WEEKS[items[0].dataIndex] : "",
-            label: c => `${c.dataset.label}: ${c.parsed.y}%`,
-          },
-        }},
-        scales: {
-          x: xAxisConfig,
-          y: { min: yMin, max: yMax, title: { display: true, text: "% in drought", font: { size: 11 } }, ticks: { font: { size: 11 }, callback: v => v + "%" }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
-        },
-      },
+  // Overview chart: all commodities, current year
+  var overviewChart = useCallback(function(canvas) {
+    var datasets = [];
+    DROUGHT_COMMODITIES.forEach(function(id) {
+      var d = droughtData[id]; if (!d || !d.seasonal) return;
+      var points = d.seasonal[String(curYear)] || [];
+      if (points.length === 0) return;
+      datasets.push({
+        label: d.label, data: points, borderColor: d.color, borderWidth: 2,
+        pointRadius: 0, pointHitRadius: 6, tension: 0.3, fill: false, showLine: true,
+      });
     });
-  }, [hSeries]);
-
-  const mkCommodityChart = (id) => (canvas) => {
-    const d = DROUGHT_DATA[id];
-    const d25 = d["2025"];
-    const d24 = d["2024"];
-    const d5yr = d["5yr"];
-    const allVals = [...d25, ...d24, ...(d5yr || [])].filter(v => v != null);
-    const { yMin, yMax } = niceAxis(allVals);
-    const datasets = [
-      { label: "2025", data: d25, borderColor: d.color, borderWidth: 2.5, pointRadius: 0, tension: 0.3, spanGaps: true },
-      { label: "2024", data: d24, borderColor: d.color, borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [5,3], spanGaps: true },
-    ];
-    if (d5yr) datasets.push({ label: "5-yr avg", data: d5yr, borderColor: "#333", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [2,3], spanGaps: true });
-    new Chart(canvas, {
-      type: "line", data: { labels: droughtDisplayLabels, datasets },
-      options: { responsive: true, maintainAspectRatio: false,
-        interaction: { mode: "index", intersect: false },
-        plugins: { legend: { display: false }, tooltip: {
-          callbacks: {
-            title: (items) => items.length > 0 ? DROUGHT_WEEKS[items[0].dataIndex] : "",
-            label: c => `${c.dataset.label}: ${c.parsed.y}%`,
+    var allVals = datasets.flatMap(function(ds) { return ds.data.map(function(p){return p.y;}); });
+    if (allVals.length === 0) return;
+    var yMax = Math.min(100, Math.ceil((Math.max.apply(null, allVals) + 10) / 10) * 10);
+    new Chart(canvas, {type: "scatter", data: {datasets: datasets}, options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: {mode: "nearest", intersect: false, axis: "xy"},
+      plugins: {legend: {display: false}, tooltip: {mode: "nearest", intersect: false, backgroundColor: "rgba(0,0,0,0.6)",
+        callbacks: {
+          title: function(items) {
+            if (items.length === 0) return "";
+            var doy = items[0].parsed.x;
+            var mi = 11; for (var m=0;m<11;m++){if(doy<monthBounds[m+1]){mi=m;break;}}
+            return monthLabels[mi] + " " + (Math.floor(doy - monthBounds[mi]) + 1);
           },
-        }},
-        scales: {
-          x: xAxisConfig,
-          y: { min: yMin, max: yMax, title: { display: true, text: "% in drought", font: { size: 11 } }, ticks: { font: { size: 11 }, callback: v => v + "%" }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+          label: function(c2){return c2.dataset.label + ": " + c2.parsed.y + "%";}
         },
-      },
+      }},
+      scales: { x: xAxisConfig, y: {min: 0, max: yMax, title: {display: true, text: "% in drought (D1+)", font:{size:11}}, ticks: {font:{size:11}, callback: function(v){return v+"%";}}, grid: {color:"rgba(0,0,0,0.08)", lineWidth: 0.75}} },
+    }});
+  }, [droughtData]);
+
+  // Individual commodity chart: curYear, lastYear, 5yr avg
+  var mkCommodityChart = function(id) { return function(canvas) {
+    var d = droughtData[id]; if (!d || !d.seasonal) return;
+    var datasets = [];
+    var curPts = d.seasonal[String(curYear)] || [];
+    var lastPts = d.seasonal[String(lastYear)] || [];
+    var avgPts = d.seasonal["5yr_avg"] || [];
+    if (curPts.length > 0) datasets.push({label: String(curYear), data: curPts, borderColor: d.color, borderWidth: 2.5, pointRadius: 0, pointHitRadius: 6, tension: 0.3, fill: false, showLine: true});
+    if (lastPts.length > 0) datasets.push({label: String(lastYear), data: lastPts, borderColor: d.color, borderWidth: 1.5, borderDash: [5,3], pointRadius: 0, tension: 0.3, fill: false, showLine: true});
+    if (avgPts.length > 0) datasets.push({label: "5-yr avg", data: avgPts, borderColor: "#999", borderWidth: 1.5, borderDash: [3,3], pointRadius: 0, tension: 0.3, fill: false, showLine: true});
+    var allVals = datasets.flatMap(function(ds){return ds.data.map(function(p){return p.y;});});
+    if (allVals.length === 0) return;
+    var yMax = Math.min(100, Math.ceil((Math.max.apply(null, allVals) + 10) / 10) * 10);
+    new Chart(canvas, {type: "scatter", data: {datasets: datasets}, options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: {mode: "nearest", intersect: false, axis: "xy"},
+      plugins: {legend: {display: false}, tooltip: {mode: "nearest", intersect: false, backgroundColor: "rgba(0,0,0,0.6)",
+        callbacks: {
+          title: function(items) {
+            if (items.length === 0) return "";
+            var doy = items[0].parsed.x;
+            var mi = 11; for (var m=0;m<11;m++){if(doy<monthBounds[m+1]){mi=m;break;}}
+            return monthLabels[mi] + " " + (Math.floor(doy - monthBounds[mi]) + 1);
+          },
+          label: function(c2){return c2.dataset.label + ": " + c2.parsed.y + "%";}
+        },
+      }},
+      scales: { x: xAxisConfig, y: {min: 0, max: yMax, title: {display: true, text: "% in drought (D1+)", font:{size:11}}, ticks: {font:{size:11}, callback: function(v){return v+"%";}}, grid: {color:"rgba(0,0,0,0.08)", lineWidth: 0.75}} },
+    }});
+  };};
+
+  // CSV download
+  var dlDrought = function() {
+    var headers = ["Date"].concat(DROUGHT_COMMODITIES.map(function(id){return droughtData[id].label;}));
+    var rows = [];
+    // Use corn dates as the reference
+    var curPts = (droughtData.corn && droughtData.corn.seasonal) ? droughtData.corn.seasonal[String(curYear)] || [] : [];
+    curPts.forEach(function(p) {
+      var row = [p.date || ""];
+      DROUGHT_COMMODITIES.forEach(function(id) {
+        var d = droughtData[id]; if (!d || !d.seasonal) { row.push(""); return; }
+        var pts = d.seasonal[String(curYear)] || [];
+        var match = pts.find(function(pt){return pt.x === p.x;});
+        row.push(match ? match.y : "");
+      });
+      rows.push(row);
     });
-  };
-
-  const commodityLegend = [
-    { label: "2025", color: "#333" },
-    { label: "2024", color: "#333", dash: "dashed" },
-  ];
-
-  const dlDrought = () => {
-    const headers = ["Week", ...DROUGHT_IDS.map(id => DROUGHT_DATA[id].label)];
-    const rows = DROUGHT_WEEKS.map((w, i) => [w, ...DROUGHT_IDS.map(id => DROUGHT_DATA[id]["2025"][i])]);
-    downloadCSV("commodities_in_drought.csv", headers, rows);
-  };
-
-  const DroughtDiff = ({ label, absVal, cur }) => {
-    if (absVal == null || cur == null) return null;
-    const diff = cur - absVal;
-    const pct = diff.toFixed(0);
-    const col = diff > 0 ? "#A32D2D" : diff < 0 ? "#639922" : "var(--color-text-tertiary)";
-    return (
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, padding: "2px 0" }}>
-        <span style={{ color: "var(--color-text-tertiary)" }}>{label} ({absVal}%)</span>
-        <span style={{ color: col, fontWeight: 500, fontFamily: "var(--font-mono)" }}>{diff > 0 ? "+" : ""}{diff} pp</span>
-      </div>
-    );
+    downloadCSV("commodities_in_drought_" + curYear + ".csv", headers, rows);
   };
 
   return (<div>
-    <div style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginBottom: 14 }}>USDA Commodities in Drought — percentage of domestic production area in drought conditions (D1 or worse)</div>
+    <div style={{fontSize: 12, color: "var(--color-text-tertiary)", marginBottom: 14}}>USDA Commodities in Drought — percentage of domestic production area in drought conditions (D1 or worse). Source: agindrought.unl.edu</div>
 
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 8 }}>
-      {DROUGHT_IDS.map(id => {
-        const d = DROUGHT_DATA[id];
-        const { val, idx } = getLatest(id);
-        const prevWk = idx > 0 ? d["2025"][idx - 1] : null;
-        const ya = d["2024"] ? d["2024"][idx] : null;
-        const avg5 = d["5yr"] ? d["5yr"][idx] : null;
+    <div style={{display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 16}}>
+      {DROUGHT_COMMODITIES.map(function(id) {
+        var d = droughtData[id]; if (!d) return null;
+        var cur = d.latest_d1_d4;
         return (
-          <div key={id} style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px", minWidth: 0, borderLeft: `3px solid ${d.color}` }}>
-            <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.4px" }}>{d.label}</div>
-            <div style={{ fontSize: 22, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 6 }}>{val != null ? `${val}%` : "—"}</div>
-            <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 6, display: "flex", flexDirection: "column", gap: 1 }}>
-              <DroughtDiff label="vs. last week" absVal={prevWk} cur={val} />
-              <DroughtDiff label="vs. last year" absVal={ya} cur={val} />
-              <DroughtDiff label="vs. 5-yr avg" absVal={avg5} cur={val} />
-            </div>
+          <div key={id} style={{background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px", minWidth: 0, borderLeft: "3px solid " + d.color}}>
+            <div style={{fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.4px"}}>{d.label}</div>
+            <div style={{fontSize: 22, fontWeight: 500, color: "var(--color-text-primary)"}}>{cur != null ? cur + "%" : "—"}</div>
+            {d.latest_date && <div style={{fontSize: 10, color: "var(--color-text-tertiary)", marginTop: 2}}>as of {d.latest_date}</div>}
           </div>
         );
       })}
     </div>
 
-    <SectionTitle right={<DownloadBtn onClick={dlDrought} />}>All commodities in drought — 2025</SectionTitle>
-    <InteractiveLegend items={seasonLegend} hidden={hSeries} onToggle={tSeries} />
-    {ready && <ChartBox id={`drought_overview_${[...hSeries].join()}`} height={300} renderChart={rcOverview} deps={[...hSeries].join()} />}
+    <SectionTitle right={<DownloadBtn onClick={dlDrought} />}>All commodities — {curYear}</SectionTitle>
+    {ready && <ChartBox id={"drought_overview"} height={300} renderChart={overviewChart} deps={"drought_ov"} />}
 
-    {DROUGHT_IDS.map(id => {
-      const d = DROUGHT_DATA[id];
-      const dlSingle = () => {
-        const headers = ["Week","2025","2024","5-yr avg"];
-        const rows = DROUGHT_WEEKS.map((w,i) => [w, d["2025"][i], d["2024"][i], d["5yr"] ? d["5yr"][i] : ""]);
-        downloadCSV(`drought_${id}.csv`, headers, rows);
-      };
+    {DROUGHT_COMMODITIES.map(function(id) {
+      var d = droughtData[id]; if (!d) return null;
       return (
         <div key={id}>
-          <SectionTitle right={<DownloadBtn onClick={dlSingle} />}>{d.label}</SectionTitle>
-          <InteractiveLegend items={[
-            { label: "2025", color: d.color },
-            { label: "2024", color: d.color, dash: "dashed" },
-            { label: "5-yr avg", color: "#333", dash: "dotted" },
-          ]} hidden={new Set()} onToggle={() => {}} />
-          {ready && <ChartBox id={`drought_${id}`} height={200} renderChart={mkCommodityChart(id)} deps={id} />}
+          <SectionTitle>{d.label}</SectionTitle>
+          <div style={{display: "flex", gap: 12, marginBottom: 6, fontSize: 11}}>
+            <span><span style={{display:"inline-block",width:16,borderTop:"2.5px solid "+d.color,verticalAlign:"middle",marginRight:4}}></span>{curYear}</span>
+            <span><span style={{display:"inline-block",width:16,borderTop:"2px dashed "+d.color,verticalAlign:"middle",marginRight:4}}></span>{lastYear}</span>
+            <span><span style={{display:"inline-block",width:16,borderTop:"2px dashed #999",verticalAlign:"middle",marginRight:4}}></span>5-yr avg</span>
+          </div>
+          {ready && <ChartBox id={"drought_" + id} height={220} renderChart={mkCommodityChart(id)} deps={"drought_" + id} />}
         </div>
       );
     })}
 
-    <div style={{ marginTop: 14, fontSize: 10, color: "var(--color-text-tertiary)" }}>Source: USDA / U.S. Drought Monitor. Percentage of domestic production area experiencing drought conditions at D1 (Moderate) intensity or worse. Updated weekly.</div>
+    <div style={{marginTop: 14, fontSize: 11, color: "var(--color-text-tertiary)"}}>Source: USDA / U.S. Drought Monitor via agindrought.unl.edu. Percentage of domestic production area experiencing drought at D1 (Moderate) intensity or worse.</div>
   </div>);
 }
+
 
 // ════════════════════════════════════════════════════════════════════════
 // GRAINS — EXPORT INSPECTIONS (USDA/GIPSA Weekly)

@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
-"""
-Diagnostic: discover NASS crop progress data structure.
-Run this first to find exact parameter values for the fetcher.
-"""
-import urllib.request, urllib.parse, json, sys
+"""Targeted diagnostic for pasture condition and soil moisture NASS queries."""
+import urllib.request, urllib.parse, json
 
 API_KEY = "03CFFAAE-9FAC-3F49-91D0-700A4F6DC970"
 BASE = "https://quickstats.nass.usda.gov/api/api_GET/"
@@ -17,207 +14,99 @@ def query(params):
     data = json.loads(resp.read().decode("utf-8"))
     return data.get("data", [])
 
-def show_sample(rows, label, n=3):
+def show(rows, label):
     print(f"\n  {label}: {len(rows)} rows")
     if rows:
-        # Show unique values for key fields
-        for field in ["short_desc", "unit_desc", "freq_desc", "reference_period_desc", "state_name", "year", "Value"]:
-            vals = sorted(set(str(r.get(field, "")) for r in rows))
-            if len(vals) <= 20:
-                print(f"    {field}: {vals}")
-            else:
-                print(f"    {field}: {vals[:10]} ... ({len(vals)} unique)")
-        # Show first few rows
-        for r in rows[:n]:
-            print(f"    Sample: year={r.get('year')}, week={r.get('reference_period_desc')}, desc={r.get('short_desc')}, val={r.get('Value')}, state={r.get('state_name')}")
+        for f in ["commodity_desc","short_desc","unit_desc","statisticcat_desc","class_desc","domain_desc"]:
+            vals = sorted(set(str(r.get(f,"")) for r in rows))
+            if len(vals) <= 15: print(f"    {f}: {vals}")
+            else: print(f"    {f}: {vals[:8]}... ({len(vals)} unique)")
+        for r in rows[:3]:
+            print(f"    Sample: week={r.get('reference_period_desc')}, desc={r.get('short_desc')}, val={r.get('Value')}")
 
 print("=" * 70)
-print("NASS Crop Progress API Diagnostic")
+print("PASTURE & SOIL MOISTURE DIAGNOSTIC")
 print("=" * 70)
 
-# 1. Corn progress - planting, condition, harvest
-print("\n--- CORN PROGRESS (2025, US) ---")
-for desc_part in ["PLANTED", "SILKING", "DOUGH", "DENTED", "MATURE", "HARVESTED", "EMERGED"]:
-    try:
-        rows = query({
-            "source_desc": "SURVEY",
-            "sector_desc": "CROPS",
-            "commodity_desc": "CORN",
-            "statisticcat_desc": "PROGRESS",
-            "unit_desc": "PCT PLANTED" if desc_part == "PLANTED" else "PCT " + desc_part,
-            "freq_desc": "WEEKLY",
-            "year": "2025",
-            "state_alpha": "US",
-        })
-        if not rows:
-            # Try without specific unit
-            rows = query({
-                "source_desc": "SURVEY",
-                "commodity_desc": "CORN",
-                "statisticcat_desc": "PROGRESS",
-                "short_desc__LIKE": desc_part,
-                "freq_desc": "WEEKLY",
-                "year": "2025",
-                "state_alpha": "US",
-            })
-        show_sample(rows, f"CORN {desc_part}")
-    except Exception as e:
-        print(f"  CORN {desc_part}: ERROR {e}")
+# Try various approaches for pasture
+print("\n--- PASTURE APPROACHES ---")
 
-# 2. Corn condition
-print("\n--- CORN CONDITION (2025, US) ---")
+for commodity in ["PASTURE", "PASTURE & RANGE", "HAY & PASTURE"]:
+    try:
+        rows = query({"source_desc":"SURVEY","commodity_desc":commodity,"freq_desc":"WEEKLY","year":"2025","state_alpha":"US"})
+        show(rows, f"commodity={commodity}")
+    except Exception as e:
+        print(f"  commodity={commodity}: {e}")
+
+# Try broader search
 try:
-    rows = query({
-        "source_desc": "SURVEY",
-        "commodity_desc": "CORN",
-        "statisticcat_desc": "CONDITION",
-        "freq_desc": "WEEKLY",
-        "year": "2025",
-        "state_alpha": "US",
-    })
-    show_sample(rows, "CORN CONDITION")
+    rows = query({"source_desc":"SURVEY","short_desc__LIKE":"PASTURE","freq_desc":"WEEKLY","year":"2025","state_alpha":"US"})
+    show(rows, "short_desc LIKE PASTURE")
+except Exception as e:
+    print(f"  short_desc LIKE PASTURE: {e}")
+
+# Try with group_desc
+try:
+    rows = query({"source_desc":"SURVEY","group_desc":"CROP TOTALS","short_desc__LIKE":"PASTURE","year":"2025","state_alpha":"US"})
+    show(rows, "group=CROP TOTALS, LIKE PASTURE")
+except Exception as e:
+    print(f"  group CROP TOTALS: {e}")
+
+# Try FIELD CROPS
+try:
+    rows = query({"source_desc":"SURVEY","group_desc":"FIELD CROPS","short_desc__LIKE":"PASTURE","year":"2025","state_alpha":"US"})
+    show(rows, "group=FIELD CROPS, LIKE PASTURE")
+except Exception as e:
+    print(f"  group FIELD CROPS: {e}")
+
+# Soil moisture approaches
+print("\n--- SOIL MOISTURE APPROACHES ---")
+
+for commodity in ["SOIL", "TOPSOIL", "SUBSOIL"]:
+    try:
+        rows = query({"source_desc":"SURVEY","commodity_desc":commodity,"freq_desc":"WEEKLY","year":"2025","state_alpha":"US"})
+        show(rows, f"commodity={commodity}")
+    except Exception as e:
+        print(f"  commodity={commodity}: {e}")
+
+# Broader search
+for term in ["TOPSOIL", "SUBSOIL", "MOISTURE"]:
+    try:
+        rows = query({"source_desc":"SURVEY","short_desc__LIKE":term,"freq_desc":"WEEKLY","year":"2025","state_alpha":"US"})
+        show(rows, f"short_desc LIKE {term}")
+    except Exception as e:
+        print(f"  short_desc LIKE {term}: {e}")
+
+# Try getting all weekly survey items to find pasture/moisture
+print("\n--- ALL WEEKLY SURVEY COMMODITIES (2025, US) ---")
+try:
+    # Get unique commodity_desc values from weekly survey
+    rows = query({"source_desc":"SURVEY","freq_desc":"WEEKLY","year":"2025","state_alpha":"US","statisticcat_desc":"CONDITION"})
+    commodities = sorted(set(r.get("commodity_desc","") for r in rows))
+    print(f"  Commodities with CONDITION data: {commodities}")
 except Exception as e:
     print(f"  ERROR: {e}")
 
-# 3. Soybeans progress
-print("\n--- SOYBEANS PROGRESS (2025, US) ---")
-for desc_part in ["PLANTED", "EMERGED", "BLOOMING", "SETTING PODS", "DROPPING LEAVES", "HARVESTED"]:
-    try:
-        rows = query({
-            "source_desc": "SURVEY",
-            "commodity_desc": "SOYBEANS",
-            "statisticcat_desc": "PROGRESS",
-            "short_desc__LIKE": desc_part,
-            "freq_desc": "WEEKLY",
-            "year": "2025",
-            "state_alpha": "US",
-        })
-        show_sample(rows, f"SOYBEANS {desc_part}")
-    except Exception as e:
-        print(f"  SOYBEANS {desc_part}: ERROR {e}")
-
-# 4. Winter wheat progress
-print("\n--- WINTER WHEAT PROGRESS (2025, US) ---")
-for desc_part in ["PLANTED", "EMERGED", "HEADED", "HARVESTED"]:
-    try:
-        rows = query({
-            "source_desc": "SURVEY",
-            "commodity_desc": "WHEAT",
-            "class_desc": "WINTER",
-            "statisticcat_desc": "PROGRESS",
-            "short_desc__LIKE": desc_part,
-            "freq_desc": "WEEKLY",
-            "year": "2025",
-            "state_alpha": "US",
-        })
-        show_sample(rows, f"WINTER WHEAT {desc_part}")
-    except Exception as e:
-        print(f"  WINTER WHEAT {desc_part}: ERROR {e}")
-
-# 5. Spring wheat progress
-print("\n--- SPRING WHEAT PROGRESS (2025, US) ---")
-for desc_part in ["PLANTED", "EMERGED", "HEADED", "HARVESTED"]:
-    try:
-        rows = query({
-            "source_desc": "SURVEY",
-            "commodity_desc": "WHEAT",
-            "class_desc": "SPRING, (EXCL DURUM)",
-            "statisticcat_desc": "PROGRESS",
-            "short_desc__LIKE": desc_part,
-            "freq_desc": "WEEKLY",
-            "year": "2025",
-            "state_alpha": "US",
-        })
-        if not rows:
-            rows = query({
-                "source_desc": "SURVEY",
-                "commodity_desc": "WHEAT",
-                "class_desc__LIKE": "SPRING",
-                "statisticcat_desc": "PROGRESS",
-                "short_desc__LIKE": desc_part,
-                "freq_desc": "WEEKLY",
-                "year": "2025",
-                "state_alpha": "US",
-            })
-        show_sample(rows, f"SPRING WHEAT {desc_part}")
-    except Exception as e:
-        print(f"  SPRING WHEAT {desc_part}: ERROR {e}")
-
-# 6. Pasture condition
-print("\n--- PASTURE CONDITION (2025, US) ---")
 try:
-    rows = query({
-        "source_desc": "SURVEY",
-        "commodity_desc": "PASTURE",
-        "statisticcat_desc": "CONDITION",
-        "freq_desc": "WEEKLY",
-        "year": "2025",
-        "state_alpha": "US",
-    })
-    show_sample(rows, "PASTURE CONDITION")
+    rows = query({"source_desc":"SURVEY","freq_desc":"WEEKLY","year":"2025","state_alpha":"US","statisticcat_desc":"MOISTURE"})
+    commodities = sorted(set(r.get("commodity_desc","") for r in rows))
+    print(f"  Commodities with MOISTURE data: {commodities}")
 except Exception as e:
-    print(f"  ERROR: {e}")
+    print(f"  MOISTURE search: {e}")
 
-# 7. Soil moisture
-print("\n--- SOIL MOISTURE (2025, US) ---")
-for soil_type in ["TOPSOIL", "SUBSOIL"]:
-    try:
-        rows = query({
-            "source_desc": "SURVEY",
-            "commodity_desc": soil_type,
-            "statisticcat_desc": "MOISTURE",
-            "freq_desc": "WEEKLY",
-            "year": "2025",
-            "state_alpha": "US",
-        })
-        if not rows:
-            rows = query({
-                "source_desc": "SURVEY",
-                "short_desc__LIKE": soil_type + " MOISTURE",
-                "freq_desc": "WEEKLY",
-                "year": "2025",
-                "state_alpha": "US",
-            })
-        show_sample(rows, f"{soil_type} MOISTURE")
-    except Exception as e:
-        print(f"  {soil_type}: ERROR {e}")
-
-# 8. List available states for corn progress
-print("\n--- AVAILABLE STATES (Corn Planted 2025) ---")
+# Try without statisticcat
 try:
-    rows = query({
-        "source_desc": "SURVEY",
-        "commodity_desc": "CORN",
-        "statisticcat_desc": "PROGRESS",
-        "unit_desc": "PCT PLANTED",
-        "freq_desc": "WEEKLY",
-        "year": "2025",
-    })
-    states = sorted(set(r.get("state_alpha", "") + " - " + r.get("state_name", "") for r in rows))
-    print(f"  States: {len(states)}")
-    for s in states:
-        print(f"    {s}")
+    rows = query({"source_desc":"SURVEY","freq_desc":"WEEKLY","year":"2025","state_alpha":"US","short_desc__LIKE":"TOPSOIL"})
+    show(rows, "TOPSOIL broad search")
 except Exception as e:
-    print(f"  ERROR: {e}")
+    print(f"  TOPSOIL broad: {e}")
 
-# 9. Check what short_desc values exist for wheat classes
-print("\n--- WHEAT CLASS VALUES ---")
 try:
-    rows = query({
-        "source_desc": "SURVEY",
-        "commodity_desc": "WHEAT",
-        "statisticcat_desc": "PROGRESS",
-        "freq_desc": "WEEKLY",
-        "year": "2025",
-        "state_alpha": "US",
-    })
-    descs = sorted(set(r.get("short_desc", "") for r in rows))
-    classes = sorted(set(r.get("class_desc", "") for r in rows))
-    print(f"  short_desc values: {descs}")
-    print(f"  class_desc values: {classes}")
+    rows = query({"source_desc":"SURVEY","freq_desc":"WEEKLY","year":"2025","state_alpha":"US","commodity_desc__LIKE":"PASTURE"})
+    show(rows, "commodity LIKE PASTURE")
 except Exception as e:
-    print(f"  ERROR: {e}")
+    print(f"  commodity LIKE PASTURE: {e}")
 
 print("\n" + "=" * 70)
-print("DIAGNOSTIC COMPLETE — share this output")
+print("DONE — share this output")
 print("=" * 70)

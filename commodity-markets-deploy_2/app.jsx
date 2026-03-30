@@ -3488,11 +3488,11 @@ function COTChartsPage({ ready }) {
   };
   useEffect(function(){ setHiddenYears(new Set()); }, [sel, timeRange]);
 
-  // ISO week to day-of-year mapping for seasonal chart
+  // ISO week to day-of-year mapping
   var weekToDoy = [];
   for (var wk = 0; wk < 53; wk++) { weekToDoy.push(wk * 7 + 2); }
 
-  // Month boundaries and labels on 0-365 scale
+  // Month layout on 0-365 scale
   var monthBounds = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
   var monthMids = [15, 45, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349];
   var monthLabels = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -3508,7 +3508,7 @@ function COTChartsPage({ ready }) {
     return k.toLocaleString(undefined, {maximumFractionDigits: 0});
   };
 
-  // Seasonal chart: each year overlaid on 0-365 x-axis
+  // Seasonal chart
   var mkSeasonalChart = useCallback(function(field) { return function(canvas) {
     var datasets = [];
     displayYears.forEach(function(yr) {
@@ -3526,7 +3526,7 @@ function COTChartsPage({ ready }) {
     var dataMin = Math.min.apply(null, visibleVals), dataMax = Math.max.apply(null, visibleVals);
     var range = dataMax - dataMin, pad = Math.max(range * 0.12, Math.abs(dataMax) * 0.03 || 100);
     var rawStep = (range + pad * 2) / 5, mag = Math.pow(10, Math.floor(Math.log10(rawStep || 1)));
-    var norm2 = rawStep / mag, niceNorm = norm2 <= 1.5 ? 1 : norm2 <= 3.5 ? 2 : norm2 <= 7.5 ? 5 : 10;
+    var nn = rawStep / mag, niceNorm = nn <= 1.5 ? 1 : nn <= 3.5 ? 2 : nn <= 7.5 ? 5 : 10;
     var step = niceNorm * mag;
     if (step < 1000) step = Math.max(500, step);
     new Chart(canvas, {type: "scatter", data: {datasets: datasets}, options: {
@@ -3570,42 +3570,50 @@ function COTChartsPage({ ready }) {
     }});
   };}, [sel, timeRange, d, hiddenYears]);
 
-  // Contiguous chart: all years concatenated on a continuous timeline
+  // Contiguous chart — all years concatenated
   var mkContigChart = useCallback(function(field) { return function(canvas) {
     var allPoints = [];
-    var yearBoundaries = [];
-    var yearLabelPositions = [];
+    var yearBounds2 = [];
+    var yearMids = [];
+    var xOffset = 0;
     displayYears.forEach(function(yr) {
       var yrData = yearly[String(yr)]; if (!yrData || !yrData[field]) return;
       var raw = yrData[field];
-      var yrStart = allPoints.length > 0 ? allPoints[allPoints.length - 1].x + 7 : 0;
-      if (allPoints.length > 0) yearBoundaries.push(yrStart);
-      var yrMid = yrStart;
-      var count = 0;
+      var yrStart = xOffset;
+      if (xOffset > 0) yearBounds2.push(xOffset);
       for (var i = 0; i < raw.length; i++) {
-        if (raw[i] != null) {
-          var x = yrStart + i * 7;
-          allPoints.push({x: x, y: raw[i]});
-          yrMid += x;
-          count++;
-        }
+        if (raw[i] != null) allPoints.push({x: xOffset + weekToDoy[i], y: raw[i]});
       }
-      if (count > 0) yearLabelPositions.push({x: Math.round(yrMid / count), label: String(yr)});
+      yearMids.push({x: xOffset + 182, label: String(yr)});
+      xOffset += 365;
     });
     if (allPoints.length === 0) return;
     var visibleVals = allPoints.map(function(p){return p.y;});
     var dataMin = Math.min.apply(null, visibleVals), dataMax = Math.max.apply(null, visibleVals);
     var range = dataMax - dataMin, pad = Math.max(range * 0.12, Math.abs(dataMax) * 0.03 || 100);
     var rawStep = (range + pad * 2) / 5, mag = Math.pow(10, Math.floor(Math.log10(rawStep || 1)));
-    var norm2 = rawStep / mag, niceNorm = norm2 <= 1.5 ? 1 : norm2 <= 3.5 ? 2 : norm2 <= 7.5 ? 5 : 10;
+    var nn = rawStep / mag, niceNorm = nn <= 1.5 ? 1 : nn <= 3.5 ? 2 : nn <= 7.5 ? 5 : 10;
     var step = niceNorm * mag;
     if (step < 1000) step = Math.max(500, step);
-    var xMax = allPoints[allPoints.length - 1].x + 7;
+    var xMax = xOffset;
+    // Rotate labels when >8 years displayed
+    var needsRotation = displayYears.length > 8;
     new Chart(canvas, {type: "scatter", data: {datasets: [{label: field, data: allPoints, borderColor: "#333", borderWidth: 1.5, pointRadius: 0, pointHitRadius: 6, tension: 0.3, fill: false, showLine: true}]}, options: {
       responsive: true, maintainAspectRatio: false,
       interaction: {mode: "nearest", intersect: false, axis: "xy"},
       plugins: {legend: {display: false}, tooltip: {mode: "nearest", intersect: false,
         callbacks: {
+          title: function(items) {
+            if (items.length === 0) return "";
+            var xVal = items[0].parsed.x;
+            // Find which year
+            var yrIdx = Math.floor(xVal / 365);
+            if (yrIdx >= displayYears.length) yrIdx = displayYears.length - 1;
+            var doy = xVal - yrIdx * 365;
+            var mi = 11;
+            for (var m = 0; m < 11; m++) { if (doy < monthBounds[m+1]) { mi = m; break; } }
+            return monthLabels[mi] + " " + displayYears[yrIdx];
+          },
           label: function(c2){return (c2.parsed.y != null ? (c2.parsed.y / 1000).toFixed(1) + "K" : "n/a");}
         },
       }},
@@ -3614,21 +3622,25 @@ function COTChartsPage({ ready }) {
           type: "linear", min: 0, max: xMax,
           ticks: {
             callback: function(val) {
-              for (var i = 0; i < yearLabelPositions.length; i++) {
-                if (Math.abs(val - yearLabelPositions[i].x) < 20) return yearLabelPositions[i].label;
+              for (var i = 0; i < yearMids.length; i++) {
+                if (Math.abs(val - yearMids[i].x) < 5) return yearMids[i].label;
               }
               return "";
             },
-            autoSkip: true, maxTicksLimit: displayYears.length, maxRotation: 0, font: {size: 10},
+            autoSkip: false, maxRotation: needsRotation ? 90 : 0, font: {size: 10},
           },
           afterBuildTicks: function(axis) {
-            axis.ticks = yearLabelPositions.map(function(p){return {value: p.x};});
+            var ticks = [];
+            for (var i = 0; i < yearBounds2.length; i++) { ticks.push({value: yearBounds2[i]}); }
+            for (var j = 0; j < yearMids.length; j++) { ticks.push({value: yearMids[j].x}); }
+            ticks.sort(function(a,b){return a.value - b.value;});
+            axis.ticks = ticks;
           },
           grid: {
             color: function(ctx) {
               var val = ctx.tick.value;
-              for (var i = 0; i < yearBoundaries.length; i++) {
-                if (Math.abs(val - yearBoundaries[i]) < 20) return "rgba(0,0,0,0.15)";
+              for (var i = 0; i < yearBounds2.length; i++) {
+                if (Math.abs(val - yearBounds2[i]) < 5) return "rgba(0,0,0,0.15)";
               }
               return "transparent";
             }, lineWidth: 0.75,
@@ -3639,11 +3651,11 @@ function COTChartsPage({ ready }) {
     }});
   };}, [sel, timeRange, d, hiddenYears]);
 
-  // CSV download
-  var downloadCSV = function() {
+  // CSV download using shared DownloadBtn
+  var dlCSV = function() {
     var fields = ["mm_net","mm_long","mm_short","prod_net","prod_long","prod_short","swap_net","swap_long","swap_short","other_net","other_long","other_short","oi"];
     var headers = ["Year","Week"].concat(fields);
-    var rows = [headers.join(",")];
+    var rows = [];
     displayYears.forEach(function(yr) {
       var yrData = yearly[String(yr)]; if (!yrData) return;
       for (var w = 0; w < 53; w++) {
@@ -3657,14 +3669,10 @@ function COTChartsPage({ ready }) {
           var val = yrData[fields[fi2]] ? yrData[fields[fi2]][w] : null;
           row.push(val != null ? val : "");
         }
-        rows.push(row.join(","));
+        rows.push(row);
       }
     });
-    var blob = new Blob([rows.join("\n")], {type: "text/csv"});
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement("a");
-    a.href = url; a.download = sel + "_cot_" + timeRange + "yr.csv"; a.click();
-    URL.revokeObjectURL(url);
+    downloadCSV(sel + "_cot_" + timeRange + "yr.csv", headers, rows);
   };
 
   var chevronSvg = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%23666' stroke-width='1.5'/%3E%3C/svg%3E\")";
@@ -3684,7 +3692,7 @@ function COTChartsPage({ ready }) {
   var mkChart = chartMode === "seasonal" ? mkSeasonalChart : mkContigChart;
 
   return (<div>
-    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,flexWrap:"wrap"}}>
+    <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:14,flexWrap:"wrap"}}>
       <div style={{display:"flex",alignItems:"center",gap:8}}>
         <span style={labelStyle2}>Commodity</span>
         <select value={sel} onChange={function(e){setSel(e.target.value);}} style={selectStyle}>{COT_COMMODITY_LIST.map(function(item){return <option key={item.id} value={item.id}>{item.label}</option>;})}</select>
@@ -3699,10 +3707,7 @@ function COTChartsPage({ ready }) {
         <button onClick={function(){setChartMode("seasonal");}} style={toggleBtnStyle(chartMode==="seasonal")}>Seasonal</button>
         <button onClick={function(){setChartMode("contiguous");}} style={toggleBtnStyle(chartMode==="contiguous")}>Contiguous</button>
       </div>
-      <button onClick={downloadCSV} style={{padding:"6px 14px",fontSize:12,fontWeight:500,border:"1px solid var(--color-border-secondary)",borderRadius:5,cursor:"pointer",background:"transparent",color:"var(--color-text-secondary)",display:"flex",alignItems:"center",gap:5}}>
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8 2v8m0 0l-3-3m3 3l3-3M3 12h10"/></svg>
-        CSV
-      </button>
+      <div style={{marginLeft:"auto"}}><DownloadBtn onClick={dlCSV} /></div>
     </div>
     <div style={{fontSize:13,color:"var(--color-text-tertiary)",marginBottom:12}}>{d.label} — {d.exchange} — Contract size: {d.contract}. Y-axis in thousand contracts.</div>
     {chartMode === "seasonal" && <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:20,alignItems:"center"}}>
@@ -4978,11 +4983,7 @@ function App() {
   const [chartReady, setChartReady] = useState(false);
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [openGroups, setOpenGroups] = useState({ grains: true, livestock: true, energy: true, drivers: true, cot: true });
-  const [refreshing, setRefreshing] = useState(false);
-  const [lastRefreshed, setLastRefreshed] = useState(() => {
-    const now = new Date();
-    return now.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-  });
+
 
   useEffect(() => {
     if (window.Chart) { setChartReady(true); return; }
@@ -4992,26 +4993,6 @@ function App() {
       setChartReady(true);
     }; document.head.appendChild(s);
   }, []);
-
-  useEffect(() => {
-    if (!document.getElementById("refresh-spin-style")) {
-      const style = document.createElement("style");
-      style.id = "refresh-spin-style";
-      style.textContent = "@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }";
-      document.head.appendChild(style);
-    }
-  }, []);
-
-  const handleRefresh = () => {
-    if (refreshing) return;
-    setRefreshing(true);
-    // Simulate API fetch — replace with real fetch logic when APIs are wired
-    setTimeout(() => {
-      const now = new Date();
-      setLastRefreshed(now.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }));
-      setRefreshing(false);
-    }, 1200);
-  };
 
   const toggleGroup = id => setOpenGroups(prev => ({ ...prev, [id]: !prev[id] }));
   const PageComp = PAGES[active]?.component;
@@ -5059,24 +5040,7 @@ function App() {
                 <h1 style={{ fontSize: 20, fontWeight: 500, color: "var(--color-text-primary)", margin: "0 0 2px" }}>{PAGES[active]?.title}</h1>
                 <div style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>Prototype v4 — representative data</div>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>{refreshing ? "Refreshing..." : `Last refreshed ${lastRefreshed}`}</span>
-                <button onClick={handleRefresh} disabled={refreshing} style={{
-                  display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 14px", fontSize: 12, cursor: refreshing ? "wait" : "pointer",
-                  borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-secondary)", background: "transparent",
-                  color: "var(--color-text-secondary)", transition: "all 0.15s", opacity: refreshing ? 0.6 : 1,
-                }}
-                onMouseEnter={e => { if (!refreshing) e.currentTarget.style.background = "var(--color-background-secondary)"; }}
-                onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
-                    style={{ animation: refreshing ? "spin 0.8s linear infinite" : "none" }}>
-                    <path d="M1.5 8a6.5 6.5 0 0 1 11.3-4.4M14.5 8a6.5 6.5 0 0 1-11.3 4.4"/>
-                    <path d="M14.5 2v4h-4M1.5 14v-4h4"/>
-                  </svg>
-                  Refresh
-                </button>
-              </div>
+
             </div>
           </div>
           {PageComp && <PageComp ready={chartReady} />}

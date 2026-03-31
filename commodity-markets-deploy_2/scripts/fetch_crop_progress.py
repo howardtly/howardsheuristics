@@ -244,18 +244,15 @@ def process_condition_with_builtins(rows):
 
 
 def build_state_output(weekly_by_state, avg_by_state, cur_year, last_year):
-    """Build final output structure: {state: {cur_year: [...], last_year: [...], 5yr_avg: [...]}}."""
+    """Build final output structure: {state: {year: [...], ..., 5yr_avg: [...]}}."""
     out = {}
-    cur_str = str(cur_year)
-    last_str = str(last_year)
     all_states = set(weekly_by_state.keys()) | set(avg_by_state.keys())
     for state in sorted(all_states):
         state_out = {}
         by_year = weekly_by_state.get(state, {})
-        if cur_str in by_year:
-            state_out[cur_str] = weekly_to_points(by_year[cur_str])
-        if last_str in by_year:
-            state_out[last_str] = weekly_to_points(by_year[last_str])
+        # Output ALL years (not just current + last)
+        for yr_str, week_dict in by_year.items():
+            state_out[yr_str] = weekly_to_points(week_dict)
         if state in avg_by_state:
             state_out["5yr_avg"] = weekly_to_points(avg_by_state[state])
         if state_out:

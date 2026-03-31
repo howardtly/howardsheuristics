@@ -386,11 +386,37 @@ def main():
         avg_weekly = compute_5yr_avg(cur_weekly, AVG_YEARS)
         result["pasture"]["poor_very_poor"] = build_state_output(cur_weekly, avg_weekly, CUR_YEAR, CUR_YEAR - 1)
 
+        # Also compute good + excellent
+        def sum_good(row_list):
+            grouped = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))
+            for r in row_list:
+                state = r.get("state_alpha", "US")
+                year = str(r.get("year", ""))
+                week = parse_week(r.get("reference_period_desc"))
+                unit = r.get("unit_desc", "")
+                val = parse_value(r.get("Value"))
+                if week and val is not None:
+                    grouped[state][year][week][unit] = val
+            result2 = defaultdict(lambda: defaultdict(dict))
+            for state in grouped:
+                for year in grouped[state]:
+                    for week in grouped[state][year]:
+                        v = grouped[state][year][week]
+                        result2[state][year][week] = v.get("PCT GOOD", 0) + v.get("PCT EXCELLENT", 0)
+            return dict(result2)
+
+        cur_good = sum_good(current_rows)
+        avg_good = compute_5yr_avg(cur_good, AVG_YEARS)
+        result["pasture"]["good_excellent"] = build_state_output(cur_good, avg_good, CUR_YEAR, CUR_YEAR - 1)
+
         # Override with NASS-provided 5yr avg if available
         if avg_rows:
             nass_avg = sum_poor(avg_rows)
             if "US" in nass_avg and str(CUR_YEAR) in nass_avg["US"]:
                 result["pasture"]["poor_very_poor"].setdefault("US", {})["5yr_avg"] = weekly_to_points(nass_avg["US"][str(CUR_YEAR)])
+            nass_avg_good = sum_good(avg_rows)
+            if "US" in nass_avg_good and str(CUR_YEAR) in nass_avg_good["US"]:
+                result["pasture"]["good_excellent"].setdefault("US", {})["5yr_avg"] = weekly_to_points(nass_avg_good["US"][str(CUR_YEAR)])
 
         us_cur = len(cur_weekly.get("US", {}).get(str(CUR_YEAR), {}))
         print(f"{len(all_rows)} rows, US {CUR_YEAR}: {us_cur} weeks")

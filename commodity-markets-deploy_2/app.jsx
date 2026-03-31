@@ -2441,7 +2441,7 @@ function CropProgressPage({ ready }) {
     grid:{color:function(ctx){var v=ctx.tick.value;if(v>0&&monthBounds.indexOf(v)>=0)return"rgba(0,0,0,0.12)";return"transparent";},lineWidth:0.75},
   };
 
-  // Build chart for a stage dataset
+  // Build chart for a stage dataset — dynamically trims x-axis to data range
   var mkStageChart = function(stageData, yLabel) { return function(canvas) {
     if (!stageData) return;
     var sd = stageData[selState] || stageData["US"] || {};
@@ -2454,8 +2454,24 @@ function CropProgressPage({ ready }) {
     if (avgPts.length>0) datasets.push({label:"5-yr avg",data:avgPts,borderColor:"#999",borderWidth:1.5,borderDash:[2,4],pointRadius:0,tension:0.3,fill:false,showLine:true});
     if (datasets.length===0) return;
     var allVals = datasets.flatMap(function(ds){return ds.data.map(function(p){return p.y;});});
+    var allX = datasets.flatMap(function(ds){return ds.data.map(function(p){return p.x;});});
     var yMax = Math.min(100,Math.ceil((Math.max.apply(null,allVals)+10)/10)*10);
     var yMin = Math.max(0,Math.floor((Math.min.apply(null,allVals)-5)/10)*10);
+    // Dynamic x-axis: snap to month boundaries with 1-month padding
+    var xDataMin = Math.min.apply(null, allX);
+    var xDataMax = Math.max.apply(null, allX);
+    var xMin = 0, xMax = 365;
+    for (var mi2 = 11; mi2 >= 0; mi2--) { if (monthBounds[mi2] <= xDataMin) { xMin = Math.max(0, monthBounds[Math.max(0, mi2 - 1)]); break; } }
+    for (var mi3 = 0; mi3 < 12; mi3++) { if (monthBounds[mi3] > xDataMax) { xMax = Math.min(365, mi3 < 11 ? monthBounds[mi3 + 1] : 365); break; } }
+    // Build ticks only for visible range
+    var dynTicks = [];
+    for (var ti = 0; ti < 12; ti++) { if (monthBounds[ti] >= xMin && monthBounds[ti] <= xMax) dynTicks.push({value:monthBounds[ti]}); if (monthMids[ti] >= xMin && monthMids[ti] <= xMax) dynTicks.push({value:monthMids[ti]}); }
+    var dynXConfig = {
+      type:"linear",min:xMin,max:xMax,
+      ticks:{callback:function(v){var idx=monthMids.indexOf(v);return idx>=0?monthLabels[idx]:"";},autoSkip:false,maxRotation:0,font:{size:10}},
+      afterBuildTicks:function(axis){axis.ticks=dynTicks;},
+      grid:{color:function(ctx){var v=ctx.tick.value;if(v>xMin&&monthBounds.indexOf(v)>=0)return"rgba(0,0,0,0.12)";return"transparent";},lineWidth:0.75},
+    };
     new Chart(canvas,{type:"scatter",data:{datasets:datasets},options:{
       responsive:true,maintainAspectRatio:false,
       interaction:{mode:"nearest",intersect:false,axis:"xy"},
@@ -2465,7 +2481,7 @@ function CropProgressPage({ ready }) {
           label:function(c2){return c2.dataset.label+": "+c2.parsed.y+"%";}
         },
       }},
-      scales:{x:xAxisConfig,y:{min:yMin,max:yMax,ticks:{font:{size:10},callback:function(v){return v+"%";}},grid:{color:"rgba(0,0,0,0.08)",lineWidth:0.75}}},
+      scales:{x:dynXConfig,y:{min:yMin,max:yMax,ticks:{font:{size:10},callback:function(v){return v+"%";}},grid:{color:"rgba(0,0,0,0.08)",lineWidth:0.75}}},
     }});
   };};
 
@@ -2556,6 +2572,182 @@ function CropProgressPage({ ready }) {
           ready && React.createElement(ChartBox,{id:"cp_"+tab+"_"+sid+"_"+selState,height:200,renderChart:mkStageChart(stageData[sid],STAGE_LABELS[sid]||sid),deps:tab+"_"+sid+"_"+selState+"_"+cpLoaded})
         );
       })
+    );
+  };
+
+  // ── State choropleth map for summary ──
+  var _mapCrop = useState("corn");
+  var mapCrop = _mapCrop[0], setMapCrop = _mapCrop[1];
+  var _mapStage = useState("planted");
+  var mapStage = _mapStage[0], setMapStage = _mapStage[1];
+
+  // Available stages per crop
+  var cropStageOptions = {};
+  Object.keys(crops).forEach(function(cid) {
+    var crop = crops[cid]; if (!crop) return;
+    cropStageOptions[cid] = Object.keys(crop.stages || {}).map(function(sid){
+      return {id:sid,label:STAGE_LABELS[sid]||sid};
+    });
+  });
+
+  // Ensure mapStage is valid for selected crop
+  useEffect(function(){
+    var opts = cropStageOptions[mapCrop] || [];
+    if (opts.length > 0 && !opts.find(function(o){return o.id === mapStage;})) {
+      setMapStage(opts[0].id);
+    }
+  }, [mapCrop]);
+
+  // State FIPS code to abbreviation mapping
+  var FIPS_TO_STATE = {"01":"AL","02":"AK","04":"AZ","05":"AR","06":"CA","08":"CO","09":"CT","10":"DE","11":"DC","12":"FL","13":"GA","15":"HI","16":"ID","17":"IL","18":"IN","19":"IA","20":"KS","21":"KY","22":"LA","23":"ME","24":"MD","25":"MA","26":"MI","27":"MN","28":"MS","29":"MO","30":"MT","31":"NE","32":"NV","33":"NH","34":"NJ","35":"NM","36":"NY","37":"NC","38":"ND","39":"OH","40":"OK","41":"OR","42":"PA","44":"RI","45":"SC","46":"SD","47":"TN","48":"TX","49":"UT","50":"VT","51":"VA","53":"WA","54":"WV","55":"WI","56":"WY"};
+
+  var mapRef = useRef(null);
+
+  // Map rendering effect — runs when crop/stage/state changes
+  useEffect(function() {
+    if (tab !== "summary" || !mapRef.current || !window.d3 || !window.topojson) return;
+    var crop = crops[mapCrop];
+    var stageData = crop && crop.stages ? crop.stages[mapStage] : null;
+      var container = mapRef.current;
+      container.innerHTML = "";
+
+      // Load US topology
+      d3.json("https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json").then(function(us) {
+        var states = topojson.feature(us, us.objects.states);
+        var width = container.clientWidth || 900;
+        var height = width * 0.62;
+
+        var svg = d3.select(container).append("svg")
+          .attr("viewBox", "0 0 960 600")
+          .attr("width", width).attr("height", height)
+          .style("max-width", "100%");
+
+        var projection = d3.geoAlbersUsa().scale(1200).translate([480, 300]);
+        var path = d3.geoPath().projection(projection);
+
+        // Get values per state
+        var stateVals = {};
+        var stateChg = {};
+        if (stageData) {
+          Object.keys(stageData).forEach(function(st) {
+            if (st === "US") return;
+            var sd = stageData[st];
+            var curPts = sd[String(curYear)] || [];
+            if (curPts.length > 0) {
+              var latest = curPts[curPts.length - 1].v;
+              stateVals[st] = latest;
+              if (curPts.length > 1) {
+                stateChg[st] = latest - curPts[curPts.length - 2].v;
+              }
+            }
+          });
+        }
+
+        var vals = Object.values(stateVals);
+        var colorMax = vals.length > 0 ? Math.max.apply(null, vals) : 100;
+        var colorMin = vals.length > 0 ? Math.min.apply(null, vals) : 0;
+        var colorScale = d3.scaleSequential(d3.interpolateYlGn)
+          .domain([colorMin, colorMax]);
+
+        // Draw states
+        svg.selectAll("path")
+          .data(states.features)
+          .enter().append("path")
+          .attr("d", path)
+          .attr("fill", function(d) {
+            var abbr = FIPS_TO_STATE[String(d.id).padStart(2, "0")];
+            return abbr && stateVals[abbr] != null ? colorScale(stateVals[abbr]) : "#f0f0f0";
+          })
+          .attr("stroke", "#999")
+          .attr("stroke-width", 0.5);
+
+        // State labels
+        svg.selectAll("text.state-label")
+          .data(states.features)
+          .enter().append("text")
+          .attr("class", "state-label")
+          .attr("transform", function(d) {
+            var centroid = path.centroid(d);
+            return isNaN(centroid[0]) ? "translate(-100,-100)" : "translate(" + centroid[0] + "," + centroid[1] + ")";
+          })
+          .attr("text-anchor", "middle")
+          .attr("dy", "-0.2em")
+          .attr("font-size", "8px")
+          .attr("font-weight", "600")
+          .attr("fill", "#333")
+          .text(function(d) {
+            var abbr = FIPS_TO_STATE[String(d.id).padStart(2, "0")];
+            if (!abbr || stateVals[abbr] == null) return "";
+            return abbr;
+          });
+
+        // Value labels
+        svg.selectAll("text.val-label")
+          .data(states.features)
+          .enter().append("text")
+          .attr("class", "val-label")
+          .attr("transform", function(d) {
+            var centroid = path.centroid(d);
+            return isNaN(centroid[0]) ? "translate(-100,-100)" : "translate(" + centroid[0] + "," + (centroid[1] + 8) + ")";
+          })
+          .attr("text-anchor", "middle")
+          .attr("font-size", "7px")
+          .attr("fill", "#333")
+          .text(function(d) {
+            var abbr = FIPS_TO_STATE[String(d.id).padStart(2, "0")];
+            if (!abbr || stateVals[abbr] == null) return "";
+            var val = stateVals[abbr] + "%";
+            var chg = stateChg[abbr];
+            if (chg != null && chg !== 0) val += " (" + (chg > 0 ? "+" : "") + chg + ")";
+            return val;
+          });
+
+        // Color legend
+        var legendW = 200, legendH = 10;
+        var legendG = svg.append("g").attr("transform", "translate(700, 560)");
+        var defs = svg.append("defs");
+        var grad = defs.append("linearGradient").attr("id", "map-legend-grad");
+        grad.append("stop").attr("offset", "0%").attr("stop-color", colorScale(colorMin));
+        grad.append("stop").attr("offset", "100%").attr("stop-color", colorScale(colorMax));
+        legendG.append("rect").attr("width", legendW).attr("height", legendH).attr("fill", "url(#map-legend-grad)").attr("stroke", "#ccc");
+        legendG.append("text").attr("y", -3).attr("font-size", "9px").attr("fill", "#666").text(Math.round(colorMin) + "%");
+        legendG.append("text").attr("x", legendW).attr("y", -3).attr("text-anchor", "end").attr("font-size", "9px").attr("fill", "#666").text(Math.round(colorMax) + "%");
+      });
+  }, [tab, mapCrop, mapStage, selState, cpLoaded]);
+
+  var renderMapSummary = function() {
+    var crop = crops[mapCrop];
+    var stageData = crop && crop.stages ? crop.stages[mapStage] : null;
+    var stageOpts = cropStageOptions[mapCrop] || [];
+    var cropLabel = crop ? crop.label : mapCrop;
+
+    // US summary line
+    var usData = stageData ? stageData["US"] : null;
+    var usInfo = usData ? (function(){
+      var pts = usData[String(curYear)] || [];
+      if (pts.length === 0) return null;
+      var latest = pts[pts.length - 1];
+      var prev = pts.length > 1 ? pts[pts.length - 2].v : null;
+      var chg = prev != null ? latest.v - prev : null;
+      return {val: latest.v, wk: latest.w, chg: chg};
+    })() : null;
+
+    return React.createElement("div", null,
+      React.createElement("div", {style:{display:"flex",alignItems:"center",gap:12,marginBottom:12,flexWrap:"wrap"}},
+        React.createElement("select", {value:mapCrop, onChange:function(e){setMapCrop(e.target.value);}, style:selectStyle},
+          Object.keys(crops).map(function(cid){return React.createElement("option",{key:cid,value:cid},crops[cid].label);})
+        ),
+        React.createElement("select", {value:mapStage, onChange:function(e){setMapStage(e.target.value);}, style:selectStyle},
+          stageOpts.map(function(o){return React.createElement("option",{key:o.id,value:o.id},o.label);})
+        ),
+        usInfo && React.createElement("div", {style:{fontSize:13,color:"var(--color-text-primary)",fontWeight:500}},
+          "U.S.: " + usInfo.val + "%",
+          usInfo.chg != null && React.createElement("span",{style:{color:usInfo.chg>0?"#639922":usInfo.chg<0?"#A32D2D":"#666",marginLeft:6,fontSize:12}},
+            "(" + (usInfo.chg > 0 ? "+" : "") + usInfo.chg + " vs prev wk)"
+          )
+        )
+      ),
+      React.createElement("div", {ref: mapRef, style:{width:"100%",minHeight:400,background:"var(--color-background-primary)",borderRadius:8,border:"0.5px solid var(--color-border-tertiary)",padding:8}})
     );
   };
 
@@ -2655,7 +2847,7 @@ function CropProgressPage({ ready }) {
       <div style={{marginLeft:"auto"}}><DownloadBtn onClick={dlCSV} /></div>
     </div>
     <div style={{fontSize:12,color:"var(--color-text-tertiary)",marginBottom:12}}>USDA NASS Crop Progress & Condition. {selState === "US" ? "U.S. Total" : selState} — {curYear} vs {lastYear} vs 5-yr avg.</div>
-    {tab === "summary" && renderSummary()}
+    {tab === "summary" && renderMapSummary()}
     {tab === "corn" && renderCropTab("corn")}
     {tab === "soybeans" && renderCropTab("soybeans")}
     {tab === "winter_wheat" && renderCropTab("winter_wheat")}
@@ -5132,6 +5324,13 @@ function App() {
 
 
   useEffect(() => {
+    // Load D3, topojson, and US atlas for maps
+    if (!window.d3) {
+      var d3s = document.createElement("script"); d3s.src = "https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"; document.head.appendChild(d3s);
+    }
+    if (!window.topojson) {
+      var tjs = document.createElement("script"); tjs.src = "https://cdnjs.cloudflare.com/ajax/libs/topojson-client/3.1.0/topojson-client.min.js"; document.head.appendChild(tjs);
+    }
     if (window.Chart) { setChartReady(true); return; }
     const s = document.createElement("script"); s.src = "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"; s.onload = () => {
       Chart.defaults.scale.ticks.padding = 4;

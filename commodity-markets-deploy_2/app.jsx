@@ -2605,6 +2605,22 @@ function CropProgressPage({ ready }) {
   var FIPS_TO_STATE = {"01":"AL","02":"AK","04":"AZ","05":"AR","06":"CA","08":"CO","09":"CT","10":"DE","11":"DC","12":"FL","13":"GA","15":"HI","16":"ID","17":"IL","18":"IN","19":"IA","20":"KS","21":"KY","22":"LA","23":"ME","24":"MD","25":"MA","26":"MI","27":"MN","28":"MS","29":"MO","30":"MT","31":"NE","32":"NV","33":"NH","34":"NJ","35":"NM","36":"NY","37":"NC","38":"ND","39":"OH","40":"OK","41":"OR","42":"PA","44":"RI","45":"SC","46":"SD","47":"TN","48":"TX","49":"UT","50":"VT","51":"VA","53":"WA","54":"WV","55":"WI","56":"WY"};
 
   var mapRef = useRef(null);
+  var _d3r = useState(function(){return !!(window.d3 && window.topojson);});
+  var d3Ready = _d3r[0], setD3Ready = _d3r[1];
+  useEffect(function() {
+    if (d3Ready) return;
+    var loaded = 0, needed = 0;
+    var checkDone = function() { loaded++; if (loaded >= needed && window.d3 && window.topojson) setD3Ready(true); };
+    if (!window.d3) {
+      needed++;
+      var d3s = document.createElement("script"); d3s.src = "https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"; d3s.onload = checkDone; document.head.appendChild(d3s);
+    }
+    if (!window.topojson) {
+      needed++;
+      var tjs = document.createElement("script"); tjs.src = "https://cdnjs.cloudflare.com/ajax/libs/topojson-client/3.1.0/topojson-client.min.js"; tjs.onload = checkDone; document.head.appendChild(tjs);
+    }
+    if (needed === 0) setD3Ready(true);
+  }, []);
 
   // Map rendering effect — runs when crop/stage/state changes
   useEffect(function() {
@@ -5330,20 +5346,7 @@ function App() {
   const [openGroups, setOpenGroups] = useState({ grains: true, livestock: true, energy: true, drivers: true, cot: true });
 
 
-  const [d3Ready, setD3Ready] = useState(!!(window.d3 && window.topojson));
   useEffect(() => {
-    // Load D3, topojson for maps
-    var loaded = 0, needed = 0;
-    var checkDone = () => { loaded++; if (loaded >= needed && window.d3 && window.topojson) setD3Ready(true); };
-    if (!window.d3) {
-      needed++;
-      var d3s = document.createElement("script"); d3s.src = "https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"; d3s.onload = checkDone; document.head.appendChild(d3s);
-    }
-    if (!window.topojson) {
-      needed++;
-      var tjs = document.createElement("script"); tjs.src = "https://cdnjs.cloudflare.com/ajax/libs/topojson-client/3.1.0/topojson-client.min.js"; tjs.onload = checkDone; document.head.appendChild(tjs);
-    }
-    if (needed === 0) setD3Ready(true);
     if (window.Chart) { setChartReady(true); return; }
     const s = document.createElement("script"); s.src = "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"; s.onload = () => {
       Chart.defaults.scale.ticks.padding = 4;

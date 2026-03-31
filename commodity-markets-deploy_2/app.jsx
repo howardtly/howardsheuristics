@@ -2457,12 +2457,15 @@ function CropProgressPage({ ready }) {
     var allX = datasets.flatMap(function(ds){return ds.data.map(function(p){return p.x;});});
     var yMax = Math.min(100,Math.ceil((Math.max.apply(null,allVals)+10)/10)*10);
     var yMin = Math.max(0,Math.floor((Math.min.apply(null,allVals)-5)/10)*10);
-    // Dynamic x-axis: snap to month boundaries with 1-month padding
+    // Dynamic x-axis: snap to enclosing month boundaries (tight fit)
     var xDataMin = Math.min.apply(null, allX);
     var xDataMax = Math.max.apply(null, allX);
     var xMin = 0, xMax = 365;
-    for (var mi2 = 11; mi2 >= 0; mi2--) { if (monthBounds[mi2] <= xDataMin) { xMin = Math.max(0, monthBounds[Math.max(0, mi2 - 1)]); break; } }
-    for (var mi3 = 0; mi3 < 12; mi3++) { if (monthBounds[mi3] > xDataMax) { xMax = Math.min(365, mi3 < 11 ? monthBounds[mi3 + 1] : 365); break; } }
+    // Find the month boundary at or just before the first data point
+    for (var mi2 = 11; mi2 >= 0; mi2--) { if (monthBounds[mi2] <= xDataMin) { xMin = monthBounds[mi2]; break; } }
+    // Find the month boundary just after the last data point
+    for (var mi3 = 0; mi3 < 12; mi3++) { if (monthBounds[mi3] > xDataMax) { xMax = monthBounds[mi3]; break; } }
+    if (xMax <= xMin) xMax = 365;
     // Build ticks only for visible range
     var dynTicks = [];
     for (var ti = 0; ti < 12; ti++) { if (monthBounds[ti] >= xMin && monthBounds[ti] <= xMax) dynTicks.push({value:monthBounds[ti]}); if (monthMids[ti] >= xMin && monthMids[ti] <= xMax) dynTicks.push({value:monthMids[ti]}); }
@@ -2605,14 +2608,16 @@ function CropProgressPage({ ready }) {
 
   // Map rendering effect — runs when crop/stage/state changes
   useEffect(function() {
-    if (tab !== "summary" || !mapRef.current || !window.d3 || !window.topojson) return;
+    if (tab !== "summary" || !mapRef.current || !d3Ready) return;
     var crop = crops[mapCrop];
     var stageData = crop && crop.stages ? crop.stages[mapStage] : null;
       var container = mapRef.current;
-      container.innerHTML = "";
+      container.innerHTML = "<p style='color:#999;text-align:center;padding:40px'>Drawing map...</p>";
 
       // Load US topology
       d3.json("https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json").then(function(us) {
+        if (!us || !us.objects || !us.objects.states) { container.innerHTML = "<p>Failed to load map data</p>"; return; }
+        container.innerHTML = "";  // Clear loading message
         var states = topojson.feature(us, us.objects.states);
         var width = container.clientWidth || 900;
         var height = width * 0.62;
@@ -2712,8 +2717,8 @@ function CropProgressPage({ ready }) {
         legendG.append("rect").attr("width", legendW).attr("height", legendH).attr("fill", "url(#map-legend-grad)").attr("stroke", "#ccc");
         legendG.append("text").attr("y", -3).attr("font-size", "9px").attr("fill", "#666").text(Math.round(colorMin) + "%");
         legendG.append("text").attr("x", legendW).attr("y", -3).attr("text-anchor", "end").attr("font-size", "9px").attr("fill", "#666").text(Math.round(colorMax) + "%");
-      });
-  }, [tab, mapCrop, mapStage, selState, cpLoaded]);
+      }).catch(function(err) { console.warn("Map load error:", err); if (container) container.innerHTML = "<p style='color:#999;padding:20px'>Map data unavailable</p>"; });
+  }, [tab, mapCrop, mapStage, selState, cpLoaded, d3Ready]);
 
   var renderMapSummary = function() {
     var crop = crops[mapCrop];
@@ -2747,7 +2752,9 @@ function CropProgressPage({ ready }) {
           )
         )
       ),
-      React.createElement("div", {ref: mapRef, style:{width:"100%",minHeight:400,background:"var(--color-background-primary)",borderRadius:8,border:"0.5px solid var(--color-border-tertiary)",padding:8}})
+      React.createElement("div", {ref: mapRef, style:{width:"100%",minHeight:400,background:"var(--color-background-primary)",borderRadius:8,border:"0.5px solid var(--color-border-tertiary)",padding:8,display:"flex",alignItems:"center",justifyContent:"center"}},
+        !d3Ready && React.createElement("span",{style:{color:"var(--color-text-tertiary)",fontSize:13}},"Loading map...")
+      )
     );
   };
 
@@ -5323,14 +5330,20 @@ function App() {
   const [openGroups, setOpenGroups] = useState({ grains: true, livestock: true, energy: true, drivers: true, cot: true });
 
 
+  const [d3Ready, setD3Ready] = useState(!!(window.d3 && window.topojson));
   useEffect(() => {
-    // Load D3, topojson, and US atlas for maps
+    // Load D3, topojson for maps
+    var loaded = 0, needed = 0;
+    var checkDone = () => { loaded++; if (loaded >= needed && window.d3 && window.topojson) setD3Ready(true); };
     if (!window.d3) {
-      var d3s = document.createElement("script"); d3s.src = "https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"; document.head.appendChild(d3s);
+      needed++;
+      var d3s = document.createElement("script"); d3s.src = "https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"; d3s.onload = checkDone; document.head.appendChild(d3s);
     }
     if (!window.topojson) {
-      var tjs = document.createElement("script"); tjs.src = "https://cdnjs.cloudflare.com/ajax/libs/topojson-client/3.1.0/topojson-client.min.js"; document.head.appendChild(tjs);
+      needed++;
+      var tjs = document.createElement("script"); tjs.src = "https://cdnjs.cloudflare.com/ajax/libs/topojson-client/3.1.0/topojson-client.min.js"; tjs.onload = checkDone; document.head.appendChild(tjs);
     }
+    if (needed === 0) setD3Ready(true);
     if (window.Chart) { setChartReady(true); return; }
     const s = document.createElement("script"); s.src = "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"; s.onload = () => {
       Chart.defaults.scale.ticks.padding = 4;

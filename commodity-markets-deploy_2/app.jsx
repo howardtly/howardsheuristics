@@ -2402,123 +2402,146 @@ function CropProgressPage({ ready }) {
   var tab = _tab[0], setTab = _tab[1];
   var _st = useState("US");
   var selState = _st[0], setSelState = _st[1];
-  var _mapCrop = useState("winter_wheat");
-  var mapCrop = _mapCrop[0], setMapCrop = _mapCrop[1];
-  var _mapStage = useState("planted");
-  var mapStage = _mapStage[0], setMapStage = _mapStage[1];
-  var mapRef = useRef(null);
-  var _d3r = useState(function(){ return !!(window.d3 && window.topojson); });
-  var d3Ready = _d3r[0], setD3Ready = _d3r[1];
-
-  // Load D3 + topojson
-  useEffect(function() {
-    if (d3Ready) return;
-    var loaded = 0, needed = 0;
-    var check = function() { loaded++; if (loaded >= needed && window.d3 && window.topojson) setD3Ready(true); };
-    if (!window.d3) { needed++; var s1 = document.createElement("script"); s1.src = "https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"; s1.onload = check; document.head.appendChild(s1); }
-    if (!window.topojson) { needed++; var s2 = document.createElement("script"); s2.src = "https://cdnjs.cloudflare.com/ajax/libs/topojson-client/3.1.0/topojson-client.min.js"; s2.onload = check; document.head.appendChild(s2); }
-    if (needed === 0) setD3Ready(true);
-  }, []);
 
   var curYear = cpData ? cpData.current_year : new Date().getFullYear();
   var lastYear = curYear - 1;
   var stateList = cpData ? ["US"].concat(cpData.states || []) : ["US"];
-  var crops = cpData ? cpData.crops || {} : {};
-  var pasture = cpData ? cpData.pasture || {} : {};
-  var soil = cpData ? cpData.soil || {} : {};
+  var allCrops = cpData ? cpData.crops || {} : {};
+  var pastureData = cpData ? cpData.pasture || {} : {};
+  var soilData = cpData ? cpData.soil || {} : {};
 
   var TABS = [{id:"summary",label:"Summary"},{id:"corn",label:"Corn"},{id:"soybeans",label:"Soybeans"},{id:"winter_wheat",label:"Winter Wheat"},{id:"spring_wheat",label:"Spring Wheat"},{id:"pasture",label:"Pasture"},{id:"soil",label:"Soil Moisture"}];
-  var STAGE_LABELS = {planted:"Planted",emerged:"Emerged",silking:"Silking",dough:"Dough",dented:"Dented",mature:"Mature",harvested:"Harvested",condition:"Condition (G+E%)",blooming:"Blooming",setting_pods:"Setting Pods",dropping_leaves:"Dropping Leaves",headed:"Headed"};
-  var weekToDoy = function(w) { return Math.max(0, Math.min(365, (w - 1) * 7 + 3)); };
-  var monthBounds = [0,31,59,90,120,151,181,212,243,273,304,334];
-  var monthMids = [15,45,74,105,135,166,196,227,258,288,319,349];
-  var mLabels = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  var SL = {planted:"Planted",emerged:"Emerged",silking:"Silking",dough:"Dough",dented:"Dented",mature:"Mature",harvested:"Harvested",condition:"Condition (G+E%)",blooming:"Blooming",setting_pods:"Setting Pods",dropping_leaves:"Dropping Leaves",headed:"Headed"};
 
-  // ── Chart builder ──
-  var mkStageChart = function(stageObj) { return function(canvas) {
+  var weekToDoy = function(w) { return Math.max(0, Math.min(365, (w - 1) * 7 + 3)); };
+  var mBounds = [0,31,59,90,120,151,181,212,243,273,304,334];
+  var mMids = [15,45,74,105,135,166,196,227,258,288,319,349];
+  var mNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+  var mkChart = function(stageObj) { return function(canvas) {
     if (!stageObj) return;
     var sd = stageObj[selState] || stageObj["US"] || {};
-    var datasets = [];
-    var curPts = (sd[String(curYear)] || []).map(function(p){return {x:weekToDoy(p.w),y:p.v};});
-    var prevPts = (sd[String(lastYear)] || []).map(function(p){return {x:weekToDoy(p.w),y:p.v};});
-    var avgPts = (sd["5yr_avg"] || []).map(function(p){return {x:weekToDoy(p.w),y:p.v};});
-    if (curPts.length>0) datasets.push({label:String(curYear),data:curPts,borderColor:"#333",borderWidth:2.5,pointRadius:0,pointHitRadius:6,tension:0.3,fill:false,showLine:true});
-    if (prevPts.length>0) datasets.push({label:String(lastYear),data:prevPts,borderColor:"#378ADD",borderWidth:1.5,borderDash:[5,3],pointRadius:0,tension:0.3,fill:false,showLine:true});
-    if (avgPts.length>0) datasets.push({label:"5-yr avg",data:avgPts,borderColor:"#999",borderWidth:1.5,borderDash:[2,4],pointRadius:0,tension:0.3,fill:false,showLine:true});
-    if (datasets.length===0) return;
-    var allVals = datasets.flatMap(function(ds){return ds.data.map(function(p){return p.y;});});
-    var allX = datasets.flatMap(function(ds){return ds.data.map(function(p){return p.x;});});
-    var yMax = Math.min(100,Math.ceil((Math.max.apply(null,allVals)+10)/10)*10);
-    var yMin = Math.max(0,Math.floor((Math.min.apply(null,allVals)-5)/10)*10);
-    var xMin=0,xMax=365;
-    var xDMin=Math.min.apply(null,allX),xDMax=Math.max.apply(null,allX);
-    for(var i=11;i>=0;i--){if(monthBounds[i]<=xDMin){xMin=monthBounds[i];break;}}
-    for(var j=0;j<12;j++){if(monthBounds[j]>xDMax){xMax=monthBounds[j];break;}}
-    if(xMax<=xMin)xMax=365;
-    var dynTicks=[];for(var t=0;t<12;t++){if(monthBounds[t]>=xMin&&monthBounds[t]<=xMax)dynTicks.push({value:monthBounds[t]});if(monthMids[t]>=xMin&&monthMids[t]<=xMax)dynTicks.push({value:monthMids[t]});}
-    new Chart(canvas,{type:"scatter",data:{datasets:datasets},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:"nearest",intersect:false,axis:"xy"},plugins:{legend:{display:false},tooltip:{mode:"nearest",intersect:false,backgroundColor:"rgba(0,0,0,0.6)",titleFont:{size:11},bodyFont:{size:11},callbacks:{title:function(items){if(!items.length)return"";var doy=items[0].parsed.x;var mi=11;for(var m=0;m<11;m++){if(doy<monthBounds[m+1]){mi=m;break;}}return mLabels[mi]+" "+(Math.floor(doy-monthBounds[mi])+1);},label:function(c2){return c2.dataset.label+": "+c2.parsed.y+"%";}}}},scales:{x:{type:"linear",min:xMin,max:xMax,ticks:{callback:function(v){var idx=monthMids.indexOf(v);return idx>=0?mLabels[idx]:"";},autoSkip:false,maxRotation:0,font:{size:10}},afterBuildTicks:function(axis){axis.ticks=dynTicks;},grid:{color:function(ctx){var v=ctx.tick.value;if(v>xMin&&monthBounds.indexOf(v)>=0)return"rgba(0,0,0,0.12)";return"transparent";},lineWidth:0.75}},y:{min:yMin,max:yMax,ticks:{font:{size:10},callback:function(v){return v+"%";}},grid:{color:"rgba(0,0,0,0.08)",lineWidth:0.75}}}}});
+    var ds = [];
+    var cp = (sd[String(curYear)] || []).map(function(p){return {x:weekToDoy(p.w),y:p.v};});
+    var pp = (sd[String(lastYear)] || []).map(function(p){return {x:weekToDoy(p.w),y:p.v};});
+    var ap = (sd["5yr_avg"] || []).map(function(p){return {x:weekToDoy(p.w),y:p.v};});
+    if (cp.length > 0) ds.push({label:String(curYear),data:cp,borderColor:"#333",borderWidth:2.5,pointRadius:0,pointHitRadius:6,tension:0.3,fill:false,showLine:true});
+    if (pp.length > 0) ds.push({label:String(lastYear),data:pp,borderColor:"#378ADD",borderWidth:1.5,pointRadius:0,tension:0.3,fill:false,showLine:true});
+    if (ap.length > 0) ds.push({label:"5-yr avg",data:ap,borderColor:"#999",borderWidth:1.5,borderDash:[2,4],pointRadius:0,tension:0.3,fill:false,showLine:true});
+    if (ds.length === 0) return;
+    var allY = ds.flatMap(function(d){return d.data.map(function(p){return p.y;});});
+    var allX = ds.flatMap(function(d){return d.data.map(function(p){return p.x;});});
+    var yMax = Math.min(100, Math.ceil((Math.max.apply(null, allY) + 10) / 10) * 10);
+    var yMin = Math.max(0, Math.floor((Math.min.apply(null, allY) - 5) / 10) * 10);
+    var xMin = 0, xMax = 365;
+    var xDMin = Math.min.apply(null, allX), xDMax = Math.max.apply(null, allX);
+    for (var i = 11; i >= 0; i--) { if (mBounds[i] <= xDMin) { xMin = mBounds[i]; break; } }
+    for (var j = 0; j < 12; j++) { if (mBounds[j] > xDMax) { xMax = mBounds[j]; break; } }
+    if (xMax <= xMin) xMax = 365;
+    var tks = [];
+    for (var k = 0; k < 12; k++) { if (mBounds[k] >= xMin && mBounds[k] <= xMax) tks.push({value:mBounds[k]}); if (mMids[k] >= xMin && mMids[k] <= xMax) tks.push({value:mMids[k]}); }
+    new Chart(canvas, {type:"scatter",data:{datasets:ds},options:{
+      responsive:true,maintainAspectRatio:false,
+      interaction:{mode:"nearest",intersect:false,axis:"xy"},
+      plugins:{legend:{display:false},tooltip:{mode:"nearest",intersect:false,backgroundColor:"rgba(0,0,0,0.6)",titleFont:{size:11},bodyFont:{size:11},
+        callbacks:{
+          title:function(items){if(!items.length)return"";var doy=items[0].parsed.x;var mi=11;for(var m=0;m<11;m++){if(doy<mBounds[m+1]){mi=m;break;}}return mNames[mi]+" "+(Math.floor(doy-mBounds[mi])+1);},
+          label:function(c2){return c2.dataset.label+": "+c2.parsed.y+"%";}
+        },
+      }},
+      scales:{
+        x:{type:"linear",min:xMin,max:xMax,ticks:{callback:function(v){var idx=mMids.indexOf(v);return idx>=0?mNames[idx]:"";},autoSkip:false,maxRotation:0,font:{size:10}},afterBuildTicks:function(ax){ax.ticks=tks;},grid:{color:function(ctx){var v=ctx.tick.value;if(v>xMin&&mBounds.indexOf(v)>=0)return"rgba(0,0,0,0.12)";return"transparent";},lineWidth:0.75}},
+        y:{min:yMin,max:yMax,ticks:{font:{size:10},callback:function(v){return v+"%";}},grid:{color:"rgba(0,0,0,0.08)",lineWidth:0.75}}
+      },
+    }});
   };};
 
-  var ChartLeg = function(){return React.createElement("div",{style:{display:"flex",gap:12,marginBottom:4,fontSize:10.5}},React.createElement("span",null,React.createElement("span",{style:{display:"inline-block",width:16,borderTop:"2.5px solid #333",verticalAlign:"middle",marginRight:4}}),""+curYear),React.createElement("span",null,React.createElement("span",{style:{display:"inline-block",width:16,borderTop:"2px dashed #378ADD",verticalAlign:"middle",marginRight:4}}),""+lastYear),React.createElement("span",null,React.createElement("span",{style:{display:"inline-block",width:16,borderTop:"2px dashed #999",verticalAlign:"middle",marginRight:4}}),"5-yr avg"));};
-
-  // ── FIPS to state abbreviation ──
-  var FIPS={"01":"AL","02":"AK","04":"AZ","05":"AR","06":"CA","08":"CO","09":"CT","10":"DE","12":"FL","13":"GA","15":"HI","16":"ID","17":"IL","18":"IN","19":"IA","20":"KS","21":"KY","22":"LA","23":"ME","24":"MD","25":"MA","26":"MI","27":"MN","28":"MS","29":"MO","30":"MT","31":"NE","32":"NV","33":"NH","34":"NJ","35":"NM","36":"NY","37":"NC","38":"ND","39":"OH","40":"OK","41":"OR","42":"PA","44":"RI","45":"SC","46":"SD","47":"TN","48":"TX","49":"UT","50":"VT","51":"VA","53":"WA","54":"WV","55":"WI","56":"WY"};
-
-  // ── Map rendering ──
-  var stageOptsForCrop = function(cid) {
-    var crop = crops[cid]; if (!crop || !crop.stages) return [];
-    return Object.keys(crop.stages).map(function(sid){ return {id:sid,label:STAGE_LABELS[sid]||sid}; });
+  var getLatest = function(stageObj) {
+    if (!stageObj) return {cur:null,prev:null,avg:null,wk:null};
+    var sd = stageObj[selState] || stageObj["US"] || {};
+    var cp2 = sd[String(curYear)] || [];
+    var pp2 = sd[String(lastYear)] || [];
+    var ap2 = sd["5yr_avg"] || [];
+    var curVal = cp2.length > 0 ? cp2[cp2.length - 1].v : null;
+    var curWk = cp2.length > 0 ? cp2[cp2.length - 1].w : null;
+    var prevVal = null, avgVal = null;
+    if (curWk) {
+      var pm = pp2.find(function(p){return p.w === curWk;});
+      if (pm) prevVal = pm.v;
+      var am = ap2.find(function(p){return Math.abs(p.w - curWk) <= 1;});
+      if (am) avgVal = am.v;
+    }
+    return {cur:curVal,prev:prevVal,avg:avgVal,wk:curWk};
   };
 
-  useEffect(function(){
-    var opts = stageOptsForCrop(mapCrop);
-    if (opts.length > 0 && !opts.find(function(o){return o.id===mapStage;})) setMapStage(opts[0].id);
-  }, [mapCrop, cpLoaded]);
-
-  useEffect(function(){
-    if (tab !== "summary" || !mapRef.current || !d3Ready) return;
-    var crop = crops[mapCrop];
-    var stageData = crop && crop.stages ? crop.stages[mapStage] : null;
-    var container = mapRef.current;
-    container.innerHTML = "<p style='color:#999;text-align:center;padding:40px'>Drawing map...</p>";
-    d3.json("https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json").then(function(us){
-      if (!us||!us.objects||!us.objects.states){container.innerHTML="<p>Map data unavailable</p>";return;}
-      container.innerHTML="";
-      var feat=topojson.feature(us,us.objects.states);
-      var w=container.clientWidth||900,h=w*0.62;
-      var svg=d3.select(container).append("svg").attr("viewBox","0 0 960 600").attr("width",w).attr("height",h).style("max-width","100%");
-      var proj=d3.geoAlbersUsa().scale(1200).translate([480,300]);
-      var pathGen=d3.geoPath().projection(proj);
-      var sVals={},sChg={};
-      if(stageData){Object.keys(stageData).forEach(function(st){if(st==="US")return;var sd=stageData[st];var pts=sd[String(curYear)]||[];if(pts.length>0){sVals[st]=pts[pts.length-1].v;if(pts.length>1)sChg[st]=pts[pts.length-1].v-pts[pts.length-2].v;}});}
-      var vals=Object.values(sVals);var cMax=vals.length?Math.max.apply(null,vals):100;var cMin=vals.length?Math.min.apply(null,vals):0;
-      var cs=d3.scaleSequential(d3.interpolateYlGn).domain([cMin,cMax]);
-      svg.selectAll("path").data(feat.features).enter().append("path").attr("d",pathGen).attr("fill",function(d){var a=FIPS[String(d.id).padStart(2,"0")];return a&&sVals[a]!=null?cs(sVals[a]):"#f0f0f0";}).attr("stroke","#999").attr("stroke-width",0.5);
-      svg.selectAll("text.sl").data(feat.features).enter().append("text").attr("class","sl").attr("transform",function(d){var c2=pathGen.centroid(d);return isNaN(c2[0])?"translate(-100,-100)":"translate("+c2[0]+","+(c2[1]-2)+")";}).attr("text-anchor","middle").attr("font-size","8px").attr("font-weight","600").attr("fill","#333").text(function(d){var a=FIPS[String(d.id).padStart(2,"0")];return a&&sVals[a]!=null?a:"";});
-      svg.selectAll("text.vl").data(feat.features).enter().append("text").attr("class","vl").attr("transform",function(d){var c2=pathGen.centroid(d);return isNaN(c2[0])?"translate(-100,-100)":"translate("+c2[0]+","+(c2[1]+8)+")";}).attr("text-anchor","middle").attr("font-size","7px").attr("fill","#333").text(function(d){var a=FIPS[String(d.id).padStart(2,"0")];if(!a||sVals[a]==null)return"";var t=sVals[a]+"%";var ch=sChg[a];if(ch!=null&&ch!==0)t+=" ("+(ch>0?"+":"")+ch+")";return t;});
-      var lW=200,lH=10;var lg=svg.append("g").attr("transform","translate(700,560)");var defs=svg.append("defs");var gr=defs.append("linearGradient").attr("id","mlg");gr.append("stop").attr("offset","0%").attr("stop-color",cs(cMin));gr.append("stop").attr("offset","100%").attr("stop-color",cs(cMax));lg.append("rect").attr("width",lW).attr("height",lH).attr("fill","url(#mlg)").attr("stroke","#ccc");lg.append("text").attr("y",-3).attr("font-size","9px").attr("fill","#666").text(Math.round(cMin)+"%");lg.append("text").attr("x",lW).attr("y",-3).attr("text-anchor","end").attr("font-size","9px").attr("fill","#666").text(Math.round(cMax)+"%");
-    }).catch(function(e){console.warn("Map error:",e);if(container)container.innerHTML="<p style='color:#999;padding:20px'>Map unavailable</p>";});
-  }, [tab, mapCrop, mapStage, cpLoaded, d3Ready]);
-
-  // ── CSV download ──
   var dlCSV = function() {
-    var headers = ["Week"];
-    var cropIds = ["corn","soybeans","winter_wheat","spring_wheat"];
-    cropIds.forEach(function(cid){var cr=crops[cid];if(!cr)return;Object.keys(cr.stages||{}).forEach(function(sid){headers.push((cr.label||cid)+" "+(STAGE_LABELS[sid]||sid));});});
-    if(pasture.poor_very_poor)headers.push("Pasture Poor+VPoor%");
-    if(soil.topsoil_adequate_surplus)headers.push("Topsoil Adeq+Surp%");
-    if(soil.subsoil_adequate_surplus)headers.push("Subsoil Adeq+Surp%");
+    var hdrs = ["Week#","Date"];
+    var cids = ["corn","soybeans","winter_wheat","spring_wheat"];
+    cids.forEach(function(cid){var cr=allCrops[cid];if(!cr)return;Object.keys(cr.stages||{}).forEach(function(sid){hdrs.push((cr.label||cid)+" "+(SL[sid]||sid));});});
+    if(pastureData.poor_very_poor)hdrs.push("Pasture Poor+VPoor%");
+    if(soilData.topsoil_adequate_surplus)hdrs.push("Topsoil Adeq+Surp%");
+    if(soilData.subsoil_adequate_surplus)hdrs.push("Subsoil Adeq+Surp%");
     var rows=[];
-    for(var wk=1;wk<=52;wk++){var row=[wk];cropIds.forEach(function(cid){var cr=crops[cid];if(!cr)return;Object.keys(cr.stages||{}).forEach(function(sid){var sd=(cr.stages[sid]||{})[selState]||{};var pts=sd[String(curYear)]||[];var m=pts.find(function(p){return p.w===wk;});row.push(m?m.v:"");});});
-    var addSp=function(data){var sd=(data||{})[selState]||{};var pts=sd[String(curYear)]||[];var m=pts.find(function(p){return p.w===wk;});row.push(m?m.v:"");};
-    if(pasture.poor_very_poor)addSp(pasture.poor_very_poor);if(soil.topsoil_adequate_surplus)addSp(soil.topsoil_adequate_surplus);if(soil.subsoil_adequate_surplus)addSp(soil.subsoil_adequate_surplus);rows.push(row);}
-    downloadCSV("crop_progress_"+selState+"_"+curYear+".csv",headers,rows);
+    for(var wk=1;wk<=52;wk++){var doy=weekToDoy(wk);var mi=11;for(var m=0;m<11;m++){if(doy<mBounds[m+1]){mi=m;break;}}var row=[wk,mNames[mi]+" "+(Math.floor(doy-mBounds[mi])+1)];cids.forEach(function(cid){var cr=allCrops[cid];if(!cr)return;Object.keys(cr.stages||{}).forEach(function(sid){var sd2=(cr.stages[sid]||{})[selState]||{};var pts=sd2[String(curYear)]||[];var mt=pts.find(function(p){return p.w===wk;});row.push(mt?mt.v:"");});});var addS=function(obj){var sd2=(obj||{})[selState]||{};var pts=sd2[String(curYear)]||[];var mt=pts.find(function(p){return p.w===wk;});row.push(mt?mt.v:"");};if(pastureData.poor_very_poor)addS(pastureData.poor_very_poor);if(soilData.topsoil_adequate_surplus)addS(soilData.topsoil_adequate_surplus);if(soilData.subsoil_adequate_surplus)addS(soilData.subsoil_adequate_surplus);rows.push(row);}
+    downloadCSV("crop_progress_"+selState+"_"+curYear+".csv",hdrs,rows);
   };
 
-  // ── Styles ──
   var chevSvg = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%23666' stroke-width='1.5'/%3E%3C/svg%3E\")";
   var selSt = {padding:"6px 24px 6px 10px",fontSize:13,fontWeight:500,border:"1px solid var(--color-border-secondary)",borderRadius:6,background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontFamily:"inherit",cursor:"pointer",appearance:"none",backgroundImage:chevSvg,backgroundRepeat:"no-repeat",backgroundPosition:"right 6px center"};
   var tabSt = function(a){return{padding:"6px 14px",fontSize:12,fontWeight:a?600:400,border:"1px solid var(--color-border-secondary)",borderRadius:5,cursor:"pointer",background:a?"#333":"transparent",color:a?"#fff":"var(--color-text-secondary)",transition:"all 0.15s"};};
+
+  var lgnd = (<div style={{display:"flex",gap:12,marginBottom:4,fontSize:10.5}}>
+    <span><span style={{display:"inline-block",width:16,borderTop:"2.5px solid #333",verticalAlign:"middle",marginRight:4}}></span>{curYear}</span>
+    <span><span style={{display:"inline-block",width:16,borderTop:"2px solid #378ADD",verticalAlign:"middle",marginRight:4}}></span>{lastYear}</span>
+    <span><span style={{display:"inline-block",width:16,borderTop:"2px dashed #999",verticalAlign:"middle",marginRight:4}}></span>5-yr avg</span>
+  </div>);
+
+  // Summary table
+  var summaryTbl = (function() {
+    var cids = ["corn","soybeans","winter_wheat","spring_wheat"];
+    var thS = {padding:"5px 8px",textAlign:"right",fontWeight:500,fontSize:11,color:"var(--color-text-secondary)",borderBottom:"1.5px solid var(--color-border-primary)",whiteSpace:"nowrap"};
+    var thL = Object.assign({},thS,{textAlign:"left"});
+    var tdS = {padding:"4px 8px",textAlign:"right",fontSize:12,borderBottom:"0.5px solid var(--color-border-tertiary)"};
+    var tdL = Object.assign({},tdS,{textAlign:"left",fontWeight:500});
+    var dSp = function(cur,comp) {
+      if (cur==null||comp==null) return null;
+      var d2 = cur - comp;
+      var col = d2>0?"#639922":d2<0?"#A32D2D":"var(--color-text-tertiary)";
+      return <span style={{color:col,fontSize:10,marginLeft:4}}>({d2>0?"+":""}{d2})</span>;
+    };
+    var trs = [];
+    cids.forEach(function(cid) {
+      var cr = allCrops[cid]; if (!cr) return;
+      trs.push(<tr key={cid+"h"}><td colSpan={5} style={{padding:"10px 8px 4px",fontWeight:600,fontSize:13,color:"var(--color-text-primary)",borderBottom:"1px solid var(--color-border-secondary)"}}>{cr.label}</td></tr>);
+      Object.keys(cr.stages || {}).forEach(function(sid) {
+        var info = getLatest((cr.stages||{})[sid]);
+        trs.push(<tr key={cid+sid}>
+          <td style={tdL}>&nbsp;&nbsp;{SL[sid]||sid}</td>
+          <td style={tdS}>{info.wk ? "#"+info.wk : "—"}</td>
+          <td style={tdS}>{info.cur!=null?info.cur+"%":"—"}</td>
+          <td style={tdS}>{info.prev!=null?info.prev+"%":"—"}{dSp(info.cur,info.prev)}</td>
+          <td style={tdS}>{info.avg!=null?info.avg+"%":"—"}{dSp(info.cur,info.avg)}</td>
+        </tr>);
+      });
+    });
+    return (<table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+      <thead><tr><th style={thL}>Commodity / Stage</th><th style={thS}>Week</th><th style={thS}>{curYear}</th><th style={thS}>{lastYear}</th><th style={thS}>5-yr Avg</th></tr></thead>
+      <tbody>{trs}</tbody>
+    </table>);
+  })();
+
+  var cropTab = function(cid) {
+    var cr = allCrops[cid];
+    if (!cr) return <div style={{padding:20,color:"var(--color-text-tertiary)"}}>No data yet — will appear when growing season begins.</div>;
+    var sids = Object.keys(cr.stages || {});
+    return (<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16}}>
+      {sids.map(function(sid) { return (<div key={sid}>
+        <div style={{fontSize:13,fontWeight:500,color:"var(--color-text-secondary)",marginBottom:4,textAlign:"center"}}>{SL[sid]||sid}</div>
+        {lgnd}
+        {ready && <ChartBox id={"cp_"+cid+"_"+sid+"_"+selState} height={200} renderChart={mkChart((cr.stages||{})[sid])} deps={cid+"_"+sid+"_"+selState+"_"+cpLoaded} />}
+      </div>); })}
+    </div>);
+  };
 
   return (<div>
     <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:14,flexWrap:"wrap"}}>
@@ -2528,65 +2551,33 @@ function CropProgressPage({ ready }) {
       <div style={{display:"flex",alignItems:"center",gap:6}}>
         <span style={{fontSize:11,fontWeight:600,color:"var(--color-text-secondary)",textTransform:"uppercase"}}>State</span>
         <select value={selState} onChange={function(e){setSelState(e.target.value);}} style={selSt}>
-          {stateList.map(function(s){return <option key={s} value={s}>{s==="US"?"U.S. Total":s}</option>;})}
+          {stateList.map(function(s){return <option key={s} value={s}>{s === "US" ? "U.S. Total" : s}</option>;})}
         </select>
       </div>
       <div style={{marginLeft:"auto"}}><DownloadBtn onClick={dlCSV} /></div>
     </div>
-    <div style={{fontSize:12,color:"var(--color-text-tertiary)",marginBottom:12}}>USDA NASS Crop Progress & Condition — {selState==="US"?"U.S. Total":selState}</div>
-
-    {tab === "summary" && (<div>
-      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12,flexWrap:"wrap"}}>
-        <select value={mapCrop} onChange={function(e){setMapCrop(e.target.value);}} style={selSt}>
-          {Object.keys(crops).map(function(cid){return <option key={cid} value={cid}>{crops[cid].label}</option>;})}
-        </select>
-        <select value={mapStage} onChange={function(e){setMapStage(e.target.value);}} style={selSt}>
-          {stageOptsForCrop(mapCrop).map(function(o){return <option key={o.id} value={o.id}>{o.label}</option>;})}
-        </select>
-        {(function(){var cr=crops[mapCrop];var sd=cr&&cr.stages?cr.stages[mapStage]:null;var us=sd?sd["US"]:null;var pts=us?us[String(curYear)]||[]:[];if(pts.length===0)return null;var last=pts[pts.length-1];var chg=pts.length>1?last.v-pts[pts.length-2].v:null;return <span style={{fontSize:13,fontWeight:500,color:"var(--color-text-primary)"}}>U.S.: {last.v}%{chg!=null&&<span style={{color:chg>0?"#639922":chg<0?"#A32D2D":"#666",marginLeft:6,fontSize:12}}>({chg>0?"+":""}{chg} vs prev wk)</span>}</span>;})()}
-      </div>
-      <div ref={mapRef} style={{width:"100%",minHeight:400,background:"var(--color-background-primary)",borderRadius:8,border:"0.5px solid var(--color-border-tertiary)",padding:8,display:"flex",alignItems:"center",justifyContent:"center"}}>
-        {!d3Ready && <span style={{color:"var(--color-text-tertiary)",fontSize:13}}>Loading map...</span>}
-      </div>
-    </div>)}
-
-    {["corn","soybeans","winter_wheat","spring_wheat"].indexOf(tab) >= 0 && (function(){
-      var crop = crops[tab]; if (!crop) return <div style={{padding:20,color:"var(--color-text-tertiary)"}}>No data yet.</div>;
-      var sids = Object.keys(crop.stages || {});
-      return <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16}}>
-        {sids.map(function(sid){return <div key={sid}>
-          <div style={{fontSize:13,fontWeight:500,color:"var(--color-text-secondary)",marginBottom:4,textAlign:"center"}}>{STAGE_LABELS[sid]||sid}</div>
-          {React.createElement(ChartLeg)}
-          {ready && <ChartBox id={"cp_"+tab+"_"+sid+"_"+selState} height={200} renderChart={mkStageChart((crop.stages||{})[sid])} deps={tab+"_"+sid+"_"+selState+"_"+cpLoaded} />}
-        </div>;})}
-      </div>;
-    })()}
-
-    {tab === "pasture" && (<div>
+    <div style={{fontSize:12,color:"var(--color-text-tertiary)",marginBottom:12}}>USDA NASS Crop Progress & Condition — {selState === "US" ? "U.S. Total" : selState} — {curYear} vs {lastYear} vs 5-yr avg.</div>
+    {tab === "summary" && summaryTbl}
+    {tab === "corn" && cropTab("corn")}
+    {tab === "soybeans" && cropTab("soybeans")}
+    {tab === "winter_wheat" && cropTab("winter_wheat")}
+    {tab === "spring_wheat" && cropTab("spring_wheat")}
+    {tab === "pasture" && <div>
       <div style={{fontSize:13,color:"var(--color-text-tertiary)",marginBottom:12}}>Pastureland condition — percentage rated Poor or Very Poor</div>
-      {React.createElement(ChartLeg)}
-      {ready && <ChartBox id={"cp_pasture_"+selState} height={280} renderChart={mkStageChart(pasture.poor_very_poor)} deps={"pasture_"+selState+"_"+cpLoaded} />}
-    </div>)}
-
-    {tab === "soil" && (<div>
+      {lgnd}
+      {ready && <ChartBox id={"cp_pasture_"+selState} height={280} renderChart={mkChart(pastureData.poor_very_poor)} deps={"pasture_"+selState+"_"+cpLoaded} />}
+    </div>}
+    {tab === "soil" && <div>
       <div style={{fontSize:13,color:"var(--color-text-tertiary)",marginBottom:12}}>Soil moisture — percentage rated Adequate or Surplus</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:18}}>
-        <div>
-          <div style={{fontSize:14,fontWeight:600,color:"var(--color-text-primary)",marginBottom:6}}>Topsoil</div>
-          {React.createElement(ChartLeg)}
-          {ready && <ChartBox id={"cp_topsoil_"+selState} height={250} renderChart={mkStageChart(soil.topsoil_adequate_surplus)} deps={"topsoil_"+selState+"_"+cpLoaded} />}
-        </div>
-        <div>
-          <div style={{fontSize:14,fontWeight:600,color:"var(--color-text-primary)",marginBottom:6}}>Subsoil</div>
-          {React.createElement(ChartLeg)}
-          {ready && <ChartBox id={"cp_subsoil_"+selState} height={250} renderChart={mkStageChart(soil.subsoil_adequate_surplus)} deps={"subsoil_"+selState+"_"+cpLoaded} />}
-        </div>
+        <div><div style={{fontSize:14,fontWeight:600,color:"var(--color-text-primary)",marginBottom:6}}>Topsoil</div>{lgnd}{ready && <ChartBox id={"cp_topsoil_"+selState} height={250} renderChart={mkChart(soilData.topsoil_adequate_surplus)} deps={"topsoil_"+selState+"_"+cpLoaded} />}</div>
+        <div><div style={{fontSize:14,fontWeight:600,color:"var(--color-text-primary)",marginBottom:6}}>Subsoil</div>{lgnd}{ready && <ChartBox id={"cp_subsoil_"+selState} height={250} renderChart={mkChart(soilData.subsoil_adequate_surplus)} deps={"subsoil_"+selState+"_"+cpLoaded} />}</div>
       </div>
-    </div>)}
-
+    </div>}
     <div style={{marginTop:14,fontSize:11,color:"var(--color-text-tertiary)"}}>Source: USDA National Agricultural Statistics Service (NASS). Weekly crop progress reports.</div>
   </div>);
 }
+
 
 function EthanolPage({ ready }) {
   const [hProd, tProd] = useToggle();

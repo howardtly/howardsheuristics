@@ -2439,14 +2439,15 @@ function CropProgressPage({ ready }) {
   var _d3r = useState(0);
   var d3v = _d3r[0], setD3v = _d3r[1];
 
-  // Load D3 + topojson
+  // Wait for D3 + topojson (loaded by App component)
   useEffect(function() {
     if (window.d3 && window.topojson) { setD3v(1); return; }
-    function load(url) { if (!document.querySelector("script[src=\"" + url + "\"]")) { var s = document.createElement("script"); s.src = url; s.async = true; document.head.appendChild(s); } }
-    load("https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js");
-    load("https://cdnjs.cloudflare.com/ajax/libs/topojson-client/3.1.0/topojson-client.min.js");
     var n = 0;
-    var iv = setInterval(function() { n++; if (window.d3 && window.topojson) { clearInterval(iv); setD3v(1); } else if (n > 60) { clearInterval(iv); setD3v(-1); } }, 200);
+    var iv = setInterval(function() {
+      n++;
+      if (window.d3 && window.topojson) { clearInterval(iv); setD3v(1); }
+      else if (n > 100) { clearInterval(iv); setD3v(-1); }
+    }, 200);
     return function() { clearInterval(iv); };
   }, []);
 
@@ -2703,7 +2704,7 @@ function CropProgressPage({ ready }) {
       </div>
       <div ref={mapRef} style={{width:"100%",minHeight:300,background:"var(--color-background-primary)",borderRadius:8,border:"0.5px solid var(--color-border-tertiary)",marginBottom:24,display:"flex",alignItems:"center",justifyContent:"center"}}>
         {d3v === 0 && <span style={{color:"var(--color-text-tertiary)",fontSize:13}}>Loading map...</span>}
-        {d3v === -1 && <span style={{color:"var(--color-text-tertiary)",fontSize:13}}>Map failed to load</span>}
+        {d3v === -1 && <span style={{color:"var(--color-text-tertiary)",fontSize:13}}>Map libraries failed to load. Open browser console (F12) for details.</span>}
       </div>
       {summaryTbl}
     </div>}
@@ -5198,15 +5199,17 @@ function App() {
 
 
   useEffect(() => {
-    // Load D3 + topojson for maps
-    if (!window.d3) { var d3s = document.createElement("script"); d3s.src = "https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"; document.head.appendChild(d3s); }
-    if (!window.topojson) { var tjs = document.createElement("script"); tjs.src = "https://cdnjs.cloudflare.com/ajax/libs/topojson-client/3.1.0/topojson-client.min.js"; document.head.appendChild(tjs); }
-    if (window.Chart) { setChartReady(true); return; }
-    const s = document.createElement("script"); s.src = "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"; s.onload = () => {
-      Chart.defaults.scale.ticks.padding = 4;
-      Chart.defaults.scale.grid.drawTicks = false;
-      setChartReady(true);
-    }; document.head.appendChild(s);
+    // Load Chart.js
+    if (!window.Chart) {
+      const s = document.createElement("script"); s.src = "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"; s.onload = () => {
+        Chart.defaults.scale.ticks.padding = 4;
+        Chart.defaults.scale.grid.drawTicks = false;
+        setChartReady(true);
+      }; document.head.appendChild(s);
+    } else { setChartReady(true); }
+    // Load D3 + topojson (for maps)
+    if (!window.d3) { const d = document.createElement("script"); d.src = "https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"; document.head.appendChild(d); }
+    if (!window.topojson) { const t = document.createElement("script"); t.src = "https://cdnjs.cloudflare.com/ajax/libs/topojson-client/3.1.0/topojson-client.min.js"; document.head.appendChild(t); }
   }, []);
 
   const toggleGroup = id => setOpenGroups(prev => ({ ...prev, [id]: !prev[id] }));

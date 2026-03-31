@@ -2480,8 +2480,7 @@ function CropProgressPage({ ready }) {
     for(var i=11;i>=0;i--){if(mB[i]<=xDMin){xMin=mB[i];break;}}
     for(var j=0;j<12;j++){if(mB[j]>xDMax){xMax=mB[j];break;}}
     if(xMax<=xMin)xMax=365;
-    if (forceXMin != null) xMin = forceXMin;
-    if (forceXMax != null) xMax = forceXMax;
+    // forceXMin/forceXMax only filter data — axis still trims to actual data range
     var tks=[];for(var k=0;k<12;k++){if(mB[k]>=xMin&&mB[k]<=xMax)tks.push({value:mB[k]});if(mM[k]>=xMin&&mM[k]<=xMax)tks.push({value:mM[k]});}
     new Chart(canvas,{type:"scatter",data:{datasets:ds},options:{responsive:true,maintainAspectRatio:false,
       interaction:{mode:"x",intersect:false},

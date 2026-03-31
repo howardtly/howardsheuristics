@@ -2431,6 +2431,25 @@ function CropProgressPage({ ready }) {
   var _hy = useState(new Set());
   var hiddenYrs = _hy[0], setHiddenYrs = _hy[1];
 
+  var _mc = useState("corn");
+  var mapCrop = _mc[0], setMapCrop = _mc[1];
+  var _ms = useState("planted");
+  var mapStage = _ms[0], setMapStage = _ms[1];
+  var mapRef = useRef(null);
+  var _d3r = useState(0);
+  var d3v = _d3r[0], setD3v = _d3r[1];
+
+  // Load D3 + topojson
+  useEffect(function() {
+    if (window.d3 && window.topojson) { setD3v(1); return; }
+    function load(url) { if (!document.querySelector("script[src=\"" + url + "\"]")) { var s = document.createElement("script"); s.src = url; s.async = true; document.head.appendChild(s); } }
+    load("https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js");
+    load("https://cdnjs.cloudflare.com/ajax/libs/topojson-client/3.1.0/topojson-client.min.js");
+    var n = 0;
+    var iv = setInterval(function() { n++; if (window.d3 && window.topojson) { clearInterval(iv); setD3v(1); } else if (n > 60) { clearInterval(iv); setD3v(-1); } }, 200);
+    return function() { clearInterval(iv); };
+  }, []);
+
   var curYear = cpData ? cpData.current_year : new Date().getFullYear();
   var lastYear = curYear - 1;
   var stateList = cpData ? ["US"].concat(cpData.states || []) : ["US"];
@@ -2449,6 +2468,67 @@ function CropProgressPage({ ready }) {
   var getYrColor = function(yr) { return yr === curYear ? "#333" : yrColors[(curYear - yr - 1) % yrColors.length]; };
 
   useEffect(function(){ setHiddenYrs(new Set()); }, [tab, selState]);
+
+  // Stage options per crop for map dropdown
+  var mapStageOpts = function(cid) {
+    var cr = allCrops[cid]; if (!cr) return [];
+    return Object.keys(cr.stages || {}).map(function(sid){ return {id:sid,label:SL[sid]||sid}; });
+  };
+  useEffect(function(){
+    var opts = mapStageOpts(mapCrop);
+    if (opts.length > 0 && !opts.find(function(o){return o.id===mapStage;})) setMapStage(opts[0].id);
+  }, [mapCrop, cpLoaded]);
+
+  // Map FIPS to state abbreviation
+  var FIPS = {"01":"AL","02":"AK","04":"AZ","05":"AR","06":"CA","08":"CO","09":"CT","10":"DE","12":"FL","13":"GA","15":"HI","16":"ID","17":"IL","18":"IN","19":"IA","20":"KS","21":"KY","22":"LA","23":"ME","24":"MD","25":"MA","26":"MI","27":"MN","28":"MS","29":"MO","30":"MT","31":"NE","32":"NV","33":"NH","34":"NJ","35":"NM","36":"NY","37":"NC","38":"ND","39":"OH","40":"OK","41":"OR","42":"PA","44":"RI","45":"SC","46":"SD","47":"TN","48":"TX","49":"UT","50":"VT","51":"VA","53":"WA","54":"WV","55":"WI","56":"WY"};
+
+  // Map rendering
+  useEffect(function() {
+    if (tab !== "summary" || !mapRef.current || d3v !== 1 || !cpLoaded) return;
+    var cr = allCrops[mapCrop];
+    var sd = cr && cr.stages ? cr.stages[mapStage] : null;
+    var el = mapRef.current;
+    el.innerHTML = "";
+    d3.json("https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json").then(function(us) {
+      if (!us || !us.objects) { el.innerHTML = "<p style=\"color:#999;text-align:center;padding:20px\">Map error</p>"; return; }
+      el.innerHTML = "";
+      var feat = topojson.feature(us, us.objects.states);
+      var svg = d3.select(el).append("svg").attr("viewBox","0 0 960 600").style("width","100%").style("height","auto");
+      var proj = d3.geoAlbersUsa().scale(1200).translate([480,300]);
+      var geoPath = d3.geoPath().projection(proj);
+      // Collect state values
+      var vals = {}, chgs = {};
+      if (sd) { Object.keys(sd).forEach(function(st){ if(st==="US")return; var s2=sd[st]; var pts=s2[String(curYear)]||[]; if(pts.length>0){vals[st]=pts[pts.length-1].v; if(pts.length>1)chgs[st]=pts[pts.length-1].v-pts[pts.length-2].v;} }); }
+      var vArr = Object.values(vals);
+      var cMax = vArr.length > 0 ? Math.max.apply(null, vArr) : 100;
+      var cMin = vArr.length > 0 ? Math.min.apply(null, vArr) : 0;
+      var cs = d3.scaleSequential(d3.interpolateYlGn).domain([cMin, cMax]);
+      // Draw states
+      svg.selectAll("path").data(feat.features).enter().append("path").attr("d",geoPath)
+        .attr("fill",function(d){var ab=FIPS[String(d.id).padStart(2,"0")];return ab&&vals[ab]!=null?cs(vals[ab]):"#f0f0f0";})
+        .attr("stroke","#fff").attr("stroke-width",1);
+      // State abbreviation labels
+      svg.selectAll(".sl").data(feat.features).enter().append("text").attr("class","sl")
+        .attr("transform",function(d){var ct=geoPath.centroid(d);return isNaN(ct[0])?"translate(-999,-999)":"translate("+ct[0]+","+(ct[1]-2)+")";})
+        .attr("text-anchor","middle").attr("font-size","8").attr("font-weight","700").attr("fill","#222")
+        .text(function(d){var ab=FIPS[String(d.id).padStart(2,"0")];return ab&&vals[ab]!=null?ab:"";});
+      // Value + change labels
+      svg.selectAll(".vl").data(feat.features).enter().append("text").attr("class","vl")
+        .attr("transform",function(d){var ct=geoPath.centroid(d);return isNaN(ct[0])?"translate(-999,-999)":"translate("+ct[0]+","+(ct[1]+8)+")";})
+        .attr("text-anchor","middle").attr("font-size","7").attr("fill","#333")
+        .text(function(d){var ab=FIPS[String(d.id).padStart(2,"0")];if(!ab||vals[ab]==null)return"";var s3=vals[ab]+"%";var cg=chgs[ab];if(cg!=null&&cg!==0)s3+=" ("+(cg>0?"+":"")+cg+")";return s3;});
+      // Legend bar
+      var lg=svg.append("g").attr("transform","translate(380,570)");
+      var df2=svg.append("defs");var gr=df2.append("linearGradient").attr("id","cplg");
+      gr.append("stop").attr("offset","0%").attr("stop-color",cs(cMin));
+      gr.append("stop").attr("offset","100%").attr("stop-color",cs(cMax));
+      lg.append("text").attr("y",-6).attr("x",100).attr("text-anchor","middle").attr("font-size","10").attr("font-weight","600").attr("fill","#444").text("Percentage Scale");
+      lg.append("rect").attr("width",200).attr("height",10).attr("rx",2).attr("fill","url(#cplg)").attr("stroke","#ccc");
+      lg.append("text").attr("y",20).attr("font-size","9").attr("fill","#666").text(Math.round(cMin)+"%");
+      lg.append("text").attr("x",200).attr("y",20).attr("text-anchor","end").attr("font-size","9").attr("fill","#666").text(Math.round(cMax)+"%");
+    }).catch(function(e){ el.innerHTML = "<p style=\"color:#999;text-align:center;padding:20px\">Map unavailable</p>"; });
+  }, [tab, mapCrop, mapStage, cpLoaded, d3v]);
+
   var toggleYr = function(label) { setHiddenYrs(function(prev){ var next = new Set(prev); if(next.has(label))next.delete(label);else next.add(label); return next; }); };
 
   // Multi-year chart builder with optional forced x range
@@ -2611,7 +2691,22 @@ function CropProgressPage({ ready }) {
       <div style={{marginLeft:"auto"}}><DownloadBtn onClick={dlCSV} /></div>
     </div>
     <div style={{fontSize:12,color:"var(--color-text-tertiary)",marginBottom:12}}>USDA NASS Crop Progress & Condition — {selState === "US" ? "U.S. Total" : selState} — {curYear} season.</div>
-    {tab === "summary" && summaryTbl}
+    {tab === "summary" && <div>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12,flexWrap:"wrap"}}>
+        <select value={mapCrop} onChange={function(e){setMapCrop(e.target.value);}} style={selSt}>
+          {Object.keys(allCrops).map(function(cid){return <option key={cid} value={cid}>{allCrops[cid].label}</option>;})}
+        </select>
+        <select value={mapStage} onChange={function(e){setMapStage(e.target.value);}} style={selSt}>
+          {mapStageOpts(mapCrop).map(function(o){return <option key={o.id} value={o.id}>{o.label}</option>;})}
+        </select>
+        {(function(){var cr=allCrops[mapCrop];var sd2=cr&&cr.stages?cr.stages[mapStage]:null;var us=sd2?sd2["US"]:null;var pts=us?us[String(curYear)]||[]:[];if(pts.length===0)return null;var last=pts[pts.length-1];var chg=pts.length>1?last.v-pts[pts.length-2].v:null;return <span style={{fontSize:13,fontWeight:500,color:"var(--color-text-primary)"}}>U.S.: {last.v}%{chg!=null&&<span style={{color:chg>0?"#639922":chg<0?"#A32D2D":"#666",marginLeft:6,fontSize:12}}>({chg>0?"+":""}{chg} vs prev wk)</span>}</span>;})()}
+      </div>
+      <div ref={mapRef} style={{width:"100%",minHeight:300,background:"var(--color-background-primary)",borderRadius:8,border:"0.5px solid var(--color-border-tertiary)",marginBottom:24,display:"flex",alignItems:"center",justifyContent:"center"}}>
+        {d3v === 0 && <span style={{color:"var(--color-text-tertiary)",fontSize:13}}>Loading map...</span>}
+        {d3v === -1 && <span style={{color:"var(--color-text-tertiary)",fontSize:13}}>Map failed to load</span>}
+      </div>
+      {summaryTbl}
+    </div>}
     {tab === "corn" && cropTab("corn")}
     {tab === "soybeans" && cropTab("soybeans")}
     {tab === "winter_wheat" && cropTab("winter_wheat")}

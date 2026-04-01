@@ -2557,24 +2557,24 @@ function CropProgressPage({ ready }) {
         // Red-to-green change legend
         legendEl.innerHTML = "<span style='font-size:10px;color:#A32D2D;font-weight:500'>Decline</span>";
         var gb = document.createElement("div");
-        gb.style.cssText = "width:240px;height:12px;border-radius:3px;border:1px solid #ccc;background:linear-gradient(to right, #e55, #f0f0f0, #5a5);";
+        gb.style.cssText = "width:280px;height:14px;border-radius:4px;border:1px solid #ccc;background:linear-gradient(to right, #e55, #f0f0f0, #5a5);";
         legendEl.appendChild(gb);
-        var sp2 = document.createElement("span"); sp2.style.cssText="font-size:12px;color:#639922;font-weight:600;"; sp2.textContent="Increase"; legendEl.appendChild(sp2);
+        var sp2 = document.createElement("span"); sp2.style.cssText="font-size:13px;color:#639922;font-weight:600;"; sp2.textContent="Increase"; legendEl.appendChild(sp2);
         var sp3 = document.createElement("span"); sp3.style.cssText="font-size:11px;color:#999;margin-left:8px;"; sp3.textContent="(week-over-week change)"; legendEl.appendChild(sp3);
       } else {
         // 0-max% value legend
-        var sp1 = document.createElement("span"); sp1.style.cssText="font-size:12px;color:#666;font-weight:500;"; sp1.textContent="0%"; legendEl.appendChild(sp1);
+        var sp1 = document.createElement("span"); sp1.style.cssText="font-size:13px;color:#666;font-weight:500;"; sp1.textContent="0%"; legendEl.appendChild(sp1);
         var gb2 = document.createElement("div");
-        gb2.style.cssText = "width:240px;height:12px;border-radius:3px;border:1px solid #ccc;background:linear-gradient(to right,"+valScale(0)+","+valScale(cMax/2)+","+valScale(cMax)+");";
+        gb2.style.cssText = "width:280px;height:14px;border-radius:4px;border:1px solid #ccc;background:linear-gradient(to right,"+valScale(0)+","+valScale(cMax/2)+","+valScale(cMax)+");";
         legendEl.appendChild(gb2);
-        var sp2b = document.createElement("span"); sp2b.style.cssText="font-size:12px;color:#666;font-weight:500;"; sp2b.textContent=Math.round(cMax)+"%"; legendEl.appendChild(sp2b);
+        var sp2b = document.createElement("span"); sp2b.style.cssText="font-size:13px;color:#666;font-weight:500;"; sp2b.textContent=Math.round(cMax)+"%"; legendEl.appendChild(sp2b);
       }
       el.style.display = "block";
       el.appendChild(legendEl);
 
       // SVG map
-      var svg = d3.select(el).append("svg").attr("viewBox","0 0 960 520").style("width","100%").style("max-height","420px").style("height","auto");
-      var proj = d3.geoAlbersUsa().scale(1100).translate([480,265]);
+      var svg = d3.select(el).append("svg").attr("viewBox","0 0 960 520").style("width","100%").style("max-height","360px").style("height","auto");
+      var proj = d3.geoAlbersUsa().scale(1050).translate([480,260]);
       var geoPath = d3.geoPath().projection(proj);
 
       svg.selectAll("path").data(feat.features).enter().append("path").attr("d",geoPath)
@@ -2780,7 +2780,7 @@ function CropProgressPage({ ready }) {
       </div>}
       <div style={{marginLeft:"auto"}}><DownloadBtn onClick={dlCSV} /></div>
     </div>
-    <div style={{fontSize:12,color:"var(--color-text-tertiary)",marginBottom:12}}>USDA NASS Crop Progress & Condition — {selState === "US" ? "U.S. Total" : selState} — {curYear} season.</div>
+    <div style={{fontSize:12,color:"var(--color-text-tertiary)",marginBottom:12}}>USDA NASS Crop Progress & Condition — {tab === "summary" ? "U.S. Total" : (selState === "US" ? "U.S. Total" : selState)} — {curYear} season.</div>
 
     {tab === "summary" && <div>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12,flexWrap:"wrap"}}>
@@ -2792,7 +2792,7 @@ function CropProgressPage({ ready }) {
         </select>
         {(function(){var cr=allCrops[mapCrop];var sd2=cr&&cr.stages?cr.stages[mapStage]:null;var us=sd2?sd2["US"]:null;var pts=us?us[String(curYear)]||[]:[];if(pts.length===0)return null;var last=pts[pts.length-1];var chg=pts.length>1?last.v-pts[pts.length-2].v:null;var wk=last.w;var doy2=weekToDoy(wk);var mi2=11;for(var m2=0;m2<11;m2++){if(doy2<mB[m2+1]){mi2=m2;break;}}var dateStr2=mN[mi2]+" "+(Math.floor(doy2-mB[mi2])+1)+", "+curYear;return <span style={{fontSize:13,fontWeight:500,color:"var(--color-text-primary)"}}>U.S.: {last.v}%{chg!=null&&<span style={{color:chg>0?"#639922":chg<0?"#A32D2D":"#666",marginLeft:6,fontSize:12}}>({chg>0?"+":""}{chg} vs prev wk)</span>}<span style={{color:"var(--color-text-tertiary)",marginLeft:10,fontSize:12,fontWeight:400}}>as of {dateStr2}</span></span>;})()}
       </div>
-      <div ref={mapRef} style={{width:"100%",minHeight:200,background:"var(--color-background-primary)",borderRadius:8,border:"0.5px solid var(--color-border-tertiary)",marginBottom:24,display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div ref={mapRef} style={{width:"100%",minHeight:100,background:"var(--color-background-primary)",borderRadius:8,border:"0.5px solid var(--color-border-tertiary)",marginBottom:24,display:"flex",alignItems:"center",justifyContent:"center"}}>
         <span style={{color:"var(--color-text-tertiary)",fontSize:13}}>Loading map...</span>
       </div>
       {summaryTbl}

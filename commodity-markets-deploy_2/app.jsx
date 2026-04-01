@@ -2573,7 +2573,7 @@ function CropProgressPage({ ready }) {
       el.appendChild(legendEl);
 
       // SVG map
-      var svg = d3.select(el).append("svg").attr("viewBox","0 0 960 600").style("width","100%").style("max-height","630px").style("height","auto");
+      var svg = d3.select(el).append("svg").attr("viewBox","0 0 960 600").style("width","100%").style("max-height","640px").style("height","auto");
       var proj = d3.geoAlbersUsa().scale(1200).translate([480,300]);
       var geoPath = d3.geoPath().projection(proj);
 
@@ -2611,7 +2611,7 @@ function CropProgressPage({ ready }) {
       // Sidebar list for tiny NE states — rendered inside SVG on right side
       var sidebarStates = Object.keys(sidebarSet).filter(function(ab){return vals[ab]!=null;}).sort();
       if (sidebarStates.length > 0) {
-        var sbG = svg.append("g").attr("transform","translate(900,220)");
+        var sbG = svg.append("g").attr("transform","translate(905,230)");
         sidebarStates.forEach(function(ab, i) {
           var y = i * 18;
           sbG.append("rect").attr("x",0).attr("y",y-8).attr("width",10).attr("height",10).attr("rx",2).attr("fill",getColor(ab)).attr("stroke","#ccc").attr("stroke-width",0.5);

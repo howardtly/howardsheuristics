@@ -2488,10 +2488,12 @@ function CropProgressPage({ ready }) {
     var sd = cr && cr.stages ? cr.stages[mapStage] : null;
     var el = mapRef.current;
     el.innerHTML = "";
+
     fetch("https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json").then(function(r){return r.json();}).then(function(us) {
       if (!us || !us.objects) { el.innerHTML = "<p style='color:#999;text-align:center;padding:20px'>No map data</p>"; return; }
       el.innerHTML = "";
-      // Inline topojson.feature decode (avoids external topojson dependency)
+
+      // Inline topojson decoder
       var topoFeature = function(topology, obj) {
         var arcs = topology.arcs;
         var transform = topology.transform;
@@ -2520,29 +2522,78 @@ function CropProgressPage({ ready }) {
         };
         var features = obj.geometries.map(function(geom) {
           var coordinates;
-          if (geom.type === "Polygon") {
-            coordinates = geom.arcs.map(decodeRing);
-          } else if (geom.type === "MultiPolygon") {
-            coordinates = geom.arcs.map(function(polygon) { return polygon.map(decodeRing); });
-          } else { coordinates = []; }
+          if (geom.type === "Polygon") { coordinates = geom.arcs.map(decodeRing); }
+          else if (geom.type === "MultiPolygon") { coordinates = geom.arcs.map(function(polygon) { return polygon.map(decodeRing); }); }
+          else { coordinates = []; }
           return {type:"Feature", id:geom.id, properties:geom.properties||{}, geometry:{type:geom.type,coordinates:coordinates}};
         });
         return {type:"FeatureCollection", features:features};
       };
       var feat = topoFeature(us, us.objects.states);
-      var svg = d3.select(el).append("svg").attr("viewBox","0 0 960 600").style("width","100%").style("height","auto");
-      var proj = d3.geoAlbersUsa().scale(1200).translate([480,300]);
-      var geoPath = d3.geoPath().projection(proj);
+
+      // Collect state values
       var vals={},chgs={};
       if(sd){Object.keys(sd).forEach(function(st){if(st==="US")return;var s2=sd[st];var pts=s2[String(curYear)]||[];if(pts.length>0){vals[st]=pts[pts.length-1].v;if(pts.length>1)chgs[st]=pts[pts.length-1].v-pts[pts.length-2].v;}});}
       var vArr=Object.values(vals);
-      if (vArr.length === 0) { el.innerHTML="<p style='color:#999;text-align:center;padding:40px'>No data available for this selection. Try Winter Wheat or a different stage.</p>"; return; }
+      if (vArr.length === 0) { el.innerHTML="<p style='color:#999;text-align:center;padding:40px'>No state-level data for this selection.</p>"; return; }
       var cMax=Math.max.apply(null,vArr);var cMin=Math.min.apply(null,vArr);
       var cs=d3.scaleSequential(d3.interpolateYlGn).domain([cMin,cMax]);
-      svg.selectAll("path").data(feat.features).enter().append("path").attr("d",geoPath).attr("fill",function(d){var ab=FIPS[String(d.id).padStart(2,"0")];return ab&&vals[ab]!=null?cs(vals[ab]):"#f0f0f0";}).attr("stroke","#fff").attr("stroke-width",1);
-      svg.selectAll(".sl").data(feat.features).enter().append("text").attr("class","sl").attr("transform",function(d){var ct=geoPath.centroid(d);return isNaN(ct[0])?"translate(-999,-999)":"translate("+ct[0]+","+(ct[1]-2)+")";}).attr("text-anchor","middle").attr("font-size","8").attr("font-weight","700").attr("fill","#222").text(function(d){var ab=FIPS[String(d.id).padStart(2,"0")];return ab&&vals[ab]!=null?ab:"";});
-      svg.selectAll(".vl").data(feat.features).enter().append("text").attr("class","vl").attr("transform",function(d){var ct=geoPath.centroid(d);return isNaN(ct[0])?"translate(-999,-999)":"translate("+ct[0]+","+(ct[1]+8)+")";}).attr("text-anchor","middle").attr("font-size","7").attr("fill","#333").text(function(d){var ab=FIPS[String(d.id).padStart(2,"0")];if(!ab||vals[ab]==null)return"";var s3=vals[ab]+"%";var cg=chgs[ab];if(cg!=null&&cg!==0)s3+=" ("+(cg>0?"+":"")+cg+")";return s3;});
-      var lg=svg.append("g").attr("transform","translate(380,570)");var df2=svg.append("defs");var gr=df2.append("linearGradient").attr("id","cplg");gr.append("stop").attr("offset","0%").attr("stop-color",cs(cMin));gr.append("stop").attr("offset","100%").attr("stop-color",cs(cMax));lg.append("text").attr("y",-6).attr("x",100).attr("text-anchor","middle").attr("font-size","10").attr("font-weight","600").attr("fill","#444").text("Percentage Scale");lg.append("rect").attr("width",200).attr("height",10).attr("rx",2).attr("fill","url(#cplg)").attr("stroke","#ccc");lg.append("text").attr("y",20).attr("font-size","9").attr("fill","#666").text(Math.round(cMin)+"%");lg.append("text").attr("x",200).attr("y",20).attr("text-anchor","end").attr("font-size","9").attr("fill","#666").text(Math.round(cMax)+"%");
+
+      // Determine if a color is dark (needs white text)
+      var isDark = function(hexOrRgb) {
+        var r,g,b;
+        if (hexOrRgb.charAt(0) === "#") {
+          var hex = hexOrRgb.replace("#","");
+          r = parseInt(hex.substring(0,2),16); g = parseInt(hex.substring(2,4),16); b = parseInt(hex.substring(4,6),16);
+        } else {
+          var m = hexOrRgb.match(/\d+/g);
+          if (!m || m.length < 3) return false;
+          r = parseInt(m[0]); g = parseInt(m[1]); b = parseInt(m[2]);
+        }
+        var lum = (0.299*r + 0.587*g + 0.114*b) / 255;
+        return lum < 0.55;
+      };
+
+      // Legend bar — rendered ABOVE the map as HTML
+      var legendDiv = document.createElement("div");
+      legendDiv.style.cssText = "display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:8px;";
+      legendDiv.innerHTML = "<span style='font-size:11px;font-weight:600;color:#444'>Percentage Scale</span>";
+      var gradBar = document.createElement("div");
+      gradBar.style.cssText = "width:200px;height:10px;border-radius:3px;border:1px solid #ccc;background:linear-gradient(to right,"+cs(cMin)+","+cs((cMin+cMax)/2)+","+cs(cMax)+");";
+      legendDiv.appendChild(gradBar);
+      legendDiv.innerHTML += "<span style='font-size:10px;color:#666'>"+Math.round(cMin)+"%</span>";
+      // Rebuild so gradient is preserved
+      var ld2 = document.createElement("div");
+      ld2.style.cssText = "display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:8px;";
+      var s1 = document.createElement("span"); s1.style.cssText="font-size:10px;color:#666;"; s1.textContent=Math.round(cMin)+"%"; ld2.appendChild(s1);
+      var gb = document.createElement("div"); gb.style.cssText="width:200px;height:10px;border-radius:3px;border:1px solid #ccc;background:linear-gradient(to right,"+cs(cMin)+","+cs((cMin+cMax)/2)+","+cs(cMax)+");"; ld2.appendChild(gb);
+      var s2 = document.createElement("span"); s2.style.cssText="font-size:10px;color:#666;"; s2.textContent=Math.round(cMax)+"%"; ld2.appendChild(s2);
+      el.appendChild(ld2);
+
+      // SVG map — compact viewBox
+      var svg = d3.select(el).append("svg").attr("viewBox","0 0 960 550").style("width","100%").style("height","auto");
+      var proj = d3.geoAlbersUsa().scale(1150).translate([480,280]);
+      var geoPath = d3.geoPath().projection(proj);
+
+      // Draw states
+      svg.selectAll("path").data(feat.features).enter().append("path").attr("d",geoPath)
+        .attr("fill",function(d){var ab=FIPS[String(d.id).padStart(2,"0")];return ab&&vals[ab]!=null?cs(vals[ab]):"#f0f0f0";})
+        .attr("stroke","#fff").attr("stroke-width",1);
+
+      // State labels with dynamic contrast
+      svg.selectAll(".sl").data(feat.features).enter().append("text").attr("class","sl")
+        .attr("transform",function(d){var ct=geoPath.centroid(d);return isNaN(ct[0])?"translate(-999,-999)":"translate("+ct[0]+","+(ct[1]-3)+")";})
+        .attr("text-anchor","middle").attr("font-size","9.5").attr("font-weight","700")
+        .attr("fill",function(d){var ab=FIPS[String(d.id).padStart(2,"0")];if(!ab||vals[ab]==null)return"#999";return isDark(cs(vals[ab]))?"#fff":"#222";})
+        .text(function(d){var ab=FIPS[String(d.id).padStart(2,"0")];return ab&&vals[ab]!=null?ab:"";});
+
+      // Value + change labels
+      svg.selectAll(".vl").data(feat.features).enter().append("text").attr("class","vl")
+        .attr("transform",function(d){var ct=geoPath.centroid(d);return isNaN(ct[0])?"translate(-999,-999)":"translate("+ct[0]+","+(ct[1]+9)+")";})
+        .attr("text-anchor","middle").attr("font-size","8")
+        .attr("fill",function(d){var ab=FIPS[String(d.id).padStart(2,"0")];if(!ab||vals[ab]==null)return"#999";return isDark(cs(vals[ab]))?"#eee":"#333";})
+        .text(function(d){var ab=FIPS[String(d.id).padStart(2,"0")];if(!ab||vals[ab]==null)return"";var s3=vals[ab]+"%";var cg=chgs[ab];if(cg!=null&&cg!==0)s3+=" ("+(cg>0?"+":"")+cg+")";return s3;});
+
     }).catch(function(err){ if(el)el.innerHTML="<p style='color:#999;text-align:center;padding:20px'>Map error: "+err.message+"</p>"; });
   }, [tab, mapCrop, mapStage, cpLoaded]);
 
@@ -2740,7 +2791,7 @@ function CropProgressPage({ ready }) {
         </select>
         {(function(){var cr=allCrops[mapCrop];var sd2=cr&&cr.stages?cr.stages[mapStage]:null;var us=sd2?sd2["US"]:null;var pts=us?us[String(curYear)]||[]:[];if(pts.length===0)return null;var last=pts[pts.length-1];var chg=pts.length>1?last.v-pts[pts.length-2].v:null;return <span style={{fontSize:13,fontWeight:500,color:"var(--color-text-primary)"}}>U.S.: {last.v}%{chg!=null&&<span style={{color:chg>0?"#639922":chg<0?"#A32D2D":"#666",marginLeft:6,fontSize:12}}>({chg>0?"+":""}{chg} vs prev wk)</span>}</span>;})()}
       </div>
-      <div ref={mapRef} style={{width:"100%",minHeight:300,background:"var(--color-background-primary)",borderRadius:8,border:"0.5px solid var(--color-border-tertiary)",marginBottom:24,display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div ref={mapRef} style={{width:"100%",minHeight:200,background:"var(--color-background-primary)",borderRadius:8,border:"0.5px solid var(--color-border-tertiary)",marginBottom:24,display:"flex",alignItems:"center",justifyContent:"center"}}>
         <span style={{color:"var(--color-text-tertiary)",fontSize:13}}>Loading map...</span>
       </div>
       {summaryTbl}

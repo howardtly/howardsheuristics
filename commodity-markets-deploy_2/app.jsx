@@ -2648,7 +2648,7 @@ function CropProgressPage({ ready }) {
         <span><span style={{color:"var(--color-text-secondary)"}}>{comp}% </span><span style={{color:col,fontWeight:500}}>({d2>0?"+":""}{d2}%)</span></span>
       </div>);
     };
-    return (<div style={{background:"var(--color-background-secondary)",borderRadius:"var(--border-radius-md)",padding:"12px 14px",minWidth:0,borderLeft:"3px solid "+(color||"#333")}}>
+    return (<div style={{background:"var(--color-background-secondary)",borderRadius:"var(--border-radius-md)",padding:"12px 14px",minWidth:0}}>
       <div style={{fontSize:11,color:"var(--color-text-secondary)",marginBottom:3,textTransform:"uppercase",letterSpacing:"0.4px"}}>{label}</div>
       <div style={{fontSize:22,fontWeight:500,color:"var(--color-text-primary)",marginBottom:4}}>{info.cur != null ? info.cur+"%" : "—"}</div>
       {info.date && <div style={{fontSize:10,color:"var(--color-text-tertiary)",marginBottom:6}}>as of Week #{info.wk} (~{info.date})</div>}
@@ -2979,7 +2979,7 @@ function EthanolPage({ ready }) {
       var col = d2 > 0 ? "#639922" : d2 < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
       return (<div style={{display:"flex",justifyContent:"space-between",fontSize:10.5,padding:"1px 0"}}>
         <span style={{color:"var(--color-text-tertiary)"}}>{lbl}</span>
-        <span style={{color:col,fontWeight:500}}>({d2 > 0 ? "+" : ""}{d2.toLocaleString()})</span>
+        <span><span style={{color:"var(--color-text-secondary)"}}>{comp.toLocaleString()} </span><span style={{color:col,fontWeight:500}}>({d2 > 0 ? "+" : ""}{d2.toLocaleString()})</span></span>
       </div>);
     };
     return (<div style={{background:"var(--color-background-secondary)",borderRadius:"var(--border-radius-md)",padding:"12px 14px",minWidth:0}}>

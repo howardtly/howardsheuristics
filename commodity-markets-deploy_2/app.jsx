@@ -2573,8 +2573,8 @@ function CropProgressPage({ ready }) {
       el.appendChild(legendEl);
 
       // SVG map
-      var svg = d3.select(el).append("svg").attr("viewBox","0 0 960 540").style("width","100%").style("max-height","480px").style("height","auto");
-      var proj = d3.geoAlbersUsa().scale(1130).translate([480,275]);
+      var svg = d3.select(el).append("svg").attr("viewBox","0 0 960 600").style("width","100%").style("height","auto");
+      var proj = d3.geoAlbersUsa().scale(1200).translate([480,300]);
       var geoPath = d3.geoPath().projection(proj);
 
       svg.selectAll("path").data(feat.features).enter().append("path").attr("d",geoPath)
@@ -2583,13 +2583,13 @@ function CropProgressPage({ ready }) {
 
       svg.selectAll(".sl").data(feat.features).enter().append("text").attr("class","sl")
         .attr("transform",function(d){var ct=geoPath.centroid(d);return isNaN(ct[0])?"translate(-999,-999)":"translate("+ct[0]+","+(ct[1]-3)+")";})
-        .attr("text-anchor","middle").attr("font-size","9.5").attr("font-weight","700")
+        .attr("text-anchor","middle").attr("font-size","11").attr("font-weight","700")
         .attr("fill",function(d){var ab=FIPS[String(d.id).padStart(2,"0")];if(!ab||vals[ab]==null)return"#ccc";return isDark(getColor(ab))?"#fff":"#222";})
         .text(function(d){var ab=FIPS[String(d.id).padStart(2,"0")];return ab&&vals[ab]!=null?ab:"";});
 
       svg.selectAll(".vl").data(feat.features).enter().append("text").attr("class","vl")
         .attr("transform",function(d){var ct=geoPath.centroid(d);return isNaN(ct[0])?"translate(-999,-999)":"translate("+ct[0]+","+(ct[1]+9)+")";})
-        .attr("text-anchor","middle").attr("font-size","8")
+        .attr("text-anchor","middle").attr("font-size","9.5")
         .attr("fill",function(d){var ab=FIPS[String(d.id).padStart(2,"0")];if(!ab||vals[ab]==null)return"#ccc";return isDark(getColor(ab))?"#eee":"#333";})
         .text(function(d){var ab=FIPS[String(d.id).padStart(2,"0")];if(!ab||vals[ab]==null)return"";var s3=vals[ab]+"%";var cg=chgs[ab];if(cg!=null&&cg!==0)s3+=" ("+(cg>0?"+":"")+cg+")";return s3;});
 

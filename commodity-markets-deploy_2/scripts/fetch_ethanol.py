@@ -27,13 +27,13 @@ START_DATE = "2014-09-01"
 SERIES = {
     "production": "W_EPOOXE_YOP_NUS_MBBLD",
     "stocks": "W_EPOOXE_SAE_NUS_MBBL",
-    "exports": "W_EPOOXE_EEX_NUS_MBBLD",
+    "exports": "W_EPOOXE_EEX_NUS-Z00_MBBLD",
 }
 
 # Fallback series IDs for exports if primary returns empty
 EXPORT_FALLBACKS = [
-    "WCEEXUS2",           # Older EIA series format
     "W_EPOOXE_EEX_NUS_MBBLD",
+    "WCEEXUS2",
 ]
 
 
@@ -100,12 +100,9 @@ def main():
             # If exports came back empty, try fallbacks
             if name == "exports" and len(points) == 0:
                 for fb in EXPORT_FALLBACKS:
-                    if fb == series_id:
-                        continue
                     print(f"\n    Trying fallback {fb}...", end=" ", flush=True)
                     points = fetch_series(fb)
                     if len(points) > 0:
-                        print(f"SUCCESS with {fb}")
                         break
             result[name] = points
             print(f"{len(points)} points")

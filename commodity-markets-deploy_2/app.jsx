@@ -2876,8 +2876,8 @@ function EthanolPage({ ready }) {
   // Gallons: production=million gal/week (kbd*7*42/1000), stocks=million gal (k bbl*42/1000)
   var convProd = function(v) { return v == null ? null : isGal ? Math.round(v * 7 * GAL_PER_BBL / 1000 * 100) / 100 : v; };
   var convStk = function(v) { return v == null ? null : isGal ? Math.round(v * GAL_PER_BBL / 1000 * 100) / 100 : v; };
-  var prodUnit = isGal ? "M gal/wk" : "kbd";
-  var stkUnit = isGal ? "M gallons" : "k barrels";
+  var prodUnit = isGal ? "million gallons" : "thousand barrels per day";
+  var stkUnit = isGal ? "million gallons" : "thousand barrels";
 
   // Marketing year: Sep 1 - Aug 31
   var mktN = ["Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug"];
@@ -2938,7 +2938,7 @@ function EthanolPage({ ready }) {
   var startMY = curMY - rangeN;
 
   var yrColors = ["#A32D2D","#D85A30","#E8A735","#639922","#1D9E75","#378ADD","#534AB7","#8B5CF6","#EC4899","#6B7280"];
-  var getColor = function(my) { return my === curMY ? "#333" : yrColors[(curMY - my - 1) % yrColors.length]; };
+  var getColor = function(my) { return my === curMY ? "#333" : yrColors[(my - startMY) % yrColors.length]; };
 
   // Build legend items (chronological, oldest first)
   var buildItems = function(byMY) {
@@ -3040,15 +3040,44 @@ function EthanolPage({ ready }) {
       var yMin2 = Math.floor(rMin / st2) * st2;
       var yMax2 = Math.ceil(rMax / st2) * st2;
       if (yMax2 === rMax) yMax2 += st2;
-      var gridLines = [];
-      years.forEach(function(yr, idx) { if (idx > 0) gridLines.push(idx * 365); });
+      // Build x-axis ticks and gridlines based on range
+      var totalDays = years.length * 365;
+      var isShort = years.length <= 2;
+      var xTicks = [];
+      var xGrids = [];
+      if (isShort) {
+        // Short range: mmm-yy labels every 2 months, gridlines at Sep boundaries
+        years.forEach(function(yr, idx) {
+          for (var mi = 0; mi < 12; mi++) {
+            var dayPos = idx * 365 + mktB[mi];
+            if (dayPos <= totalDays) {
+              // Label every other month
+              if (mi % 2 === 0) xTicks.push({ value: dayPos, label: mktN[mi] + "-" + String(mi >= 4 ? yr + 1 : yr).slice(2) });
+              else xTicks.push({ value: dayPos, label: "" });
+            }
+          }
+          if (idx > 0) xGrids.push(idx * 365);
+        });
+      } else {
+        // Long range: yyyy labels at Jan 1 (= mktB[4] offset in each MY), gridlines at Sep boundaries
+        years.forEach(function(yr, idx) {
+          // Sep 1 gridline
+          if (idx > 0) xGrids.push(idx * 365);
+          // Jan 1 label (4 months into marketing year)
+          var janPos = idx * 365 + mktB[4];
+          if (janPos <= totalDays) xTicks.push({ value: janPos, label: String(yr + 1) });
+        });
+      }
       new Chart(canvas, { type: "scatter", data: { datasets: ds }, options: {
         responsive: true, maintainAspectRatio: false,
         interaction: { mode: "nearest", intersect: false },
-        plugins: { legend: { display: false }, tooltip: { backgroundColor: "rgba(0,0,0,0.6)" } },
-        scales: { x: { type: "linear", min: 0, max: years.length * 365,
-          ticks: { callback: function(v) { var yrIdx = Math.floor(v / 365); if (yrIdx < years.length) { var dayInYr = v - yrIdx * 365; if (Math.abs(dayInYr - 182) < 10) return myLabel(years[yrIdx]); } return ""; }, autoSkip: false, maxRotation: 0, font: { size: 10 } },
-          grid: { color: function(ctx) { var v = ctx.tick.value; return gridLines.indexOf(v) >= 0 ? "rgba(0,0,0,0.2)" : "transparent"; } } },
+        plugins: { legend: { display: false }, tooltip: { backgroundColor: "rgba(0,0,0,0.6)", titleFont: { size: 11 }, bodyFont: { size: 11 },
+          callbacks: { title: function(items) { if (!items.length) return ""; var v = items[0].parsed.x; var yrIdx = Math.floor(v / 365); var dayInYr = v - yrIdx * 365; if (yrIdx >= years.length) return ""; var mi = 11; for (var m = 0; m < 11; m++) { if (dayInYr < mktB[m + 1]) { mi = m; break; } } var calYr = mi >= 4 ? years[yrIdx] + 1 : years[yrIdx]; return mktN[mi] + " " + (Math.floor(dayInYr - mktB[mi]) + 1) + ", " + calYr; },
+            label: function(c2) { return c2.parsed.y == null ? null : c2.parsed.y.toLocaleString(); } } } },
+        scales: { x: { type: "linear", min: 0, max: totalDays,
+          afterBuildTicks: function(ax) { ax.ticks = xTicks.map(function(t) { return { value: t.value }; }); },
+          ticks: { callback: function(v) { var found = xTicks.find(function(t) { return Math.abs(t.value - v) < 5; }); return found ? found.label : ""; }, autoSkip: false, maxRotation: 0, font: { size: 10 } },
+          grid: { color: function(ctx) { var v = ctx.tick.value; return xGrids.some(function(g) { return Math.abs(g - v) < 5; }) ? "rgba(0,0,0,0.2)" : "transparent"; } } },
           y: { min: yMin2, max: yMax2, ticks: { stepSize: st2, font: { size: 10 }, callback: function(v) { return v.toLocaleString(); } }, grid: { color: "rgba(0,0,0,0.08)" } } }
       } });
     }
@@ -3079,7 +3108,7 @@ function EthanolPage({ ready }) {
   var CHARTS = [
     { key: "prod", label: "Weekly Production", data: prod, yLabel: prodUnit },
     { key: "stk", label: "Weekly Stocks", data: stk, yLabel: stkUnit },
-    { key: "oft", label: "Implied Offtake", data: oft, yLabel: stkUnit },
+    { key: "oft", label: "Weekly Implied Offtake", data: oft, yLabel: stkUnit },
     { key: "exp", label: "Weekly Exports", data: exp, yLabel: prodUnit },
   ];
 
@@ -3109,7 +3138,7 @@ function EthanolPage({ ready }) {
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:10,marginBottom:16}}>
       {statCard("Production", prodInfo, prodUnit)}
       {statCard("Stocks", stkInfo, stkUnit)}
-      {statCard("Implied Offtake", oftInfo, stkUnit)}
+      {statCard("Weekly Implied Offtake", oftInfo, stkUnit)}
       {statCard("Exports", expInfo, prodUnit)}
     </div>
 

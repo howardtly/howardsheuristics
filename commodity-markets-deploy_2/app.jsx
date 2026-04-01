@@ -2557,24 +2557,24 @@ function CropProgressPage({ ready }) {
         // Red-to-green change legend
         legendEl.innerHTML = "<span style='font-size:10px;color:#A32D2D;font-weight:500'>Decline</span>";
         var gb = document.createElement("div");
-        gb.style.cssText = "width:180px;height:10px;border-radius:3px;border:1px solid #ccc;background:linear-gradient(to right, #e55, #f0f0f0, #5a5);";
+        gb.style.cssText = "width:240px;height:12px;border-radius:3px;border:1px solid #ccc;background:linear-gradient(to right, #e55, #f0f0f0, #5a5);";
         legendEl.appendChild(gb);
-        var sp2 = document.createElement("span"); sp2.style.cssText="font-size:10px;color:#639922;font-weight:500;"; sp2.textContent="Increase"; legendEl.appendChild(sp2);
-        var sp3 = document.createElement("span"); sp3.style.cssText="font-size:10px;color:#999;margin-left:8px;"; sp3.textContent="(week-over-week change)"; legendEl.appendChild(sp3);
+        var sp2 = document.createElement("span"); sp2.style.cssText="font-size:12px;color:#639922;font-weight:600;"; sp2.textContent="Increase"; legendEl.appendChild(sp2);
+        var sp3 = document.createElement("span"); sp3.style.cssText="font-size:11px;color:#999;margin-left:8px;"; sp3.textContent="(week-over-week change)"; legendEl.appendChild(sp3);
       } else {
         // 0-max% value legend
-        var sp1 = document.createElement("span"); sp1.style.cssText="font-size:10px;color:#666;"; sp1.textContent="0%"; legendEl.appendChild(sp1);
+        var sp1 = document.createElement("span"); sp1.style.cssText="font-size:12px;color:#666;font-weight:500;"; sp1.textContent="0%"; legendEl.appendChild(sp1);
         var gb2 = document.createElement("div");
-        gb2.style.cssText = "width:180px;height:10px;border-radius:3px;border:1px solid #ccc;background:linear-gradient(to right,"+valScale(0)+","+valScale(cMax/2)+","+valScale(cMax)+");";
+        gb2.style.cssText = "width:240px;height:12px;border-radius:3px;border:1px solid #ccc;background:linear-gradient(to right,"+valScale(0)+","+valScale(cMax/2)+","+valScale(cMax)+");";
         legendEl.appendChild(gb2);
-        var sp2b = document.createElement("span"); sp2b.style.cssText="font-size:10px;color:#666;"; sp2b.textContent=Math.round(cMax)+"%"; legendEl.appendChild(sp2b);
+        var sp2b = document.createElement("span"); sp2b.style.cssText="font-size:12px;color:#666;font-weight:500;"; sp2b.textContent=Math.round(cMax)+"%"; legendEl.appendChild(sp2b);
       }
       el.style.display = "block";
       el.appendChild(legendEl);
 
       // SVG map
-      var svg = d3.select(el).append("svg").attr("viewBox","0 0 960 550").style("width","100%").style("height","auto");
-      var proj = d3.geoAlbersUsa().scale(1150).translate([480,280]);
+      var svg = d3.select(el).append("svg").attr("viewBox","0 0 960 520").style("width","100%").style("max-height","420px").style("height","auto");
+      var proj = d3.geoAlbersUsa().scale(1100).translate([480,265]);
       var geoPath = d3.geoPath().projection(proj);
 
       svg.selectAll("path").data(feat.features).enter().append("path").attr("d",geoPath)
@@ -2772,12 +2772,12 @@ function CropProgressPage({ ready }) {
       <div style={{display:"flex",gap:3,flexWrap:"wrap"}}>
         {TABS.map(function(t){return <button key={t.id} onClick={function(){setTab(t.id);}} style={tabSt(tab===t.id)}>{t.label}</button>;})}
       </div>
-      <div style={{display:"flex",alignItems:"center",gap:6}}>
+      {tab !== "summary" && <div style={{display:"flex",alignItems:"center",gap:6}}>
         <span style={{fontSize:11,fontWeight:600,color:"var(--color-text-secondary)",textTransform:"uppercase"}}>State</span>
         <select value={selState} onChange={function(e){setSelState(e.target.value);}} style={selSt}>
           {stateList.map(function(s){return <option key={s} value={s}>{s === "US" ? "U.S. Total" : s}</option>;})}
         </select>
-      </div>
+      </div>}
       <div style={{marginLeft:"auto"}}><DownloadBtn onClick={dlCSV} /></div>
     </div>
     <div style={{fontSize:12,color:"var(--color-text-tertiary)",marginBottom:12}}>USDA NASS Crop Progress & Condition — {selState === "US" ? "U.S. Total" : selState} — {curYear} season.</div>

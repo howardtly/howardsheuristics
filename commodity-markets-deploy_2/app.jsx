@@ -2440,11 +2440,11 @@ function CropProgressPage({ ready }) {
 
   // Check if D3 is available (loaded via index.html or dynamically)
   useEffect(function() {
-    if (window.d3 && window.topojson) { setD3v(1); return; }
+    if (window.d3) { setD3v(1); return; }
     var n = 0;
     var iv = setInterval(function() {
       n++;
-      if (window.d3 && window.topojson) { clearInterval(iv); setD3v(1); }
+      if (window.d3) { clearInterval(iv); setD3v(1); }
       else if (n > 50) { clearInterval(iv); setD3v(-1); }
     }, 200);
     return function() { clearInterval(iv); };
@@ -2483,18 +2483,53 @@ function CropProgressPage({ ready }) {
 
   // Map rendering
   useEffect(function() {
-    console.log("MAP EFFECT:", "tab="+tab, "ref="+!!mapRef.current, "d3="+!!window.d3, "topo="+!!window.topojson, "loaded="+cpLoaded);
-    if (tab !== "summary" || !mapRef.current || !window.d3 || !window.topojson || !cpLoaded) return;
+    if (tab !== "summary" || !mapRef.current || !window.d3 || !cpLoaded) return;
     var cr = allCrops[mapCrop];
     var sd = cr && cr.stages ? cr.stages[mapStage] : null;
     var el = mapRef.current;
     el.innerHTML = "";
-    console.log("Map: d3=", !!window.d3, "topojson=", !!window.topojson, "el=", !!el);
     fetch("https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json").then(function(r){return r.json();}).then(function(us) {
-      console.log("Map: atlas loaded, features=", us && us.objects ? Object.keys(us.objects) : "none");
       if (!us || !us.objects) { el.innerHTML = "<p style='color:#999;text-align:center;padding:20px'>No map data</p>"; return; }
       el.innerHTML = "";
-      var feat = topojson.feature(us, us.objects.states);
+      // Inline topojson.feature decode (avoids external topojson dependency)
+      var topoFeature = function(topology, obj) {
+        var arcs = topology.arcs;
+        var transform = topology.transform;
+        var decodeArc = function(arcIdx) {
+          var reversed = arcIdx < 0;
+          var arc = arcs[reversed ? ~arcIdx : arcIdx];
+          var coords = [];
+          var x = 0, y = 0;
+          for (var i = 0; i < arc.length; i++) {
+            x += arc[i][0]; y += arc[i][1];
+            var pt = [x, y];
+            if (transform) { pt = [pt[0] * transform.scale[0] + transform.translate[0], pt[1] * transform.scale[1] + transform.translate[1]]; }
+            coords.push(pt);
+          }
+          if (reversed) coords.reverse();
+          return coords;
+        };
+        var decodeRing = function(ring) {
+          var coords = [];
+          for (var i = 0; i < ring.length; i++) {
+            var decoded = decodeArc(ring[i]);
+            if (i > 0) decoded = decoded.slice(1);
+            coords = coords.concat(decoded);
+          }
+          return coords;
+        };
+        var features = obj.geometries.map(function(geom) {
+          var coordinates;
+          if (geom.type === "Polygon") {
+            coordinates = geom.arcs.map(decodeRing);
+          } else if (geom.type === "MultiPolygon") {
+            coordinates = geom.arcs.map(function(polygon) { return polygon.map(decodeRing); });
+          } else { coordinates = []; }
+          return {type:"Feature", id:geom.id, properties:geom.properties||{}, geometry:{type:geom.type,coordinates:coordinates}};
+        });
+        return {type:"FeatureCollection", features:features};
+      };
+      var feat = topoFeature(us, us.objects.states);
       var svg = d3.select(el).append("svg").attr("viewBox","0 0 960 600").style("width","100%").style("height","auto");
       var proj = d3.geoAlbersUsa().scale(1200).translate([480,300]);
       var geoPath = d3.geoPath().projection(proj);
@@ -5219,9 +5254,7 @@ function App() {
         setChartReady(true);
       }; document.head.appendChild(s);
     } else { setChartReady(true); }
-    // Load D3 + topojson (for maps)
-    if (!window.d3) { const d = document.createElement("script"); d.src = "https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"; document.head.appendChild(d); }
-    if (!window.topojson) { const t = document.createElement("script"); t.src = "https://cdnjs.cloudflare.com/ajax/libs/topojson-client/3.1.0/topojson-client.min.js"; document.head.appendChild(t); }
+    // D3 loaded via index.html
   }, []);
 
   const toggleGroup = id => setOpenGroups(prev => ({ ...prev, [id]: !prev[id] }));

@@ -2573,7 +2573,7 @@ function CropProgressPage({ ready }) {
       el.appendChild(legendEl);
 
       // SVG map
-      var svg = d3.select(el).append("svg").attr("viewBox","0 0 960 600").style("width","100%").style("max-height","590px").style("height","auto");
+      var svg = d3.select(el).append("svg").attr("viewBox","0 0 960 600").style("width","100%").style("max-height","610px").style("height","auto");
       var proj = d3.geoAlbersUsa().scale(1200).translate([480,300]);
       var geoPath = d3.geoPath().projection(proj);
 
@@ -2608,24 +2608,18 @@ function CropProgressPage({ ready }) {
         .attr("fill",function(d){var ab=FIPS[String(d.id).padStart(2,"0")];if(!ab||!stackSet[ab]||chgs[ab]==null||chgs[ab]===0)return"transparent";return isDark(getColor(ab))?"#ddd":"#555";})
         .text(function(d){var ab=FIPS[String(d.id).padStart(2,"0")];if(!ab||!stackSet[ab]||chgs[ab]==null||chgs[ab]===0)return"";return"("+(chgs[ab]>0?"+":"")+chgs[ab]+")";});
 
-      // Sidebar list for tiny states (rendered as HTML below the SVG)
+      // Sidebar list for tiny NE states — rendered inside SVG on right side
       var sidebarStates = Object.keys(sidebarSet).filter(function(ab){return vals[ab]!=null;}).sort();
       if (sidebarStates.length > 0) {
-        var listDiv = document.createElement("div");
-        listDiv.style.cssText = "display:flex;flex-wrap:wrap;gap:4px 16px;padding:6px 0;justify-content:center;";
-        sidebarStates.forEach(function(ab) {
-          var sp = document.createElement("span");
-          sp.style.cssText = "font-size:11px;color:#333;white-space:nowrap;";
-          var dot = document.createElement("span");
-          dot.style.cssText = "display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:middle;background:"+getColor(ab)+";border:1px solid #ccc;";
-          sp.appendChild(dot);
-          var txt = ab + " " + vals[ab] + "%";
+        var sbG = svg.append("g").attr("transform","translate(870,120)");
+        sidebarStates.forEach(function(ab, i) {
+          var y = i * 18;
+          sbG.append("rect").attr("x",0).attr("y",y-8).attr("width",10).attr("height",10).attr("rx",2).attr("fill",getColor(ab)).attr("stroke","#ccc").attr("stroke-width",0.5);
+          var txt = ab + "  " + vals[ab] + "%";
           var cg = chgs[ab];
           if (cg != null && cg !== 0) txt += " (" + (cg > 0 ? "+" : "") + cg + ")";
-          sp.appendChild(document.createTextNode(txt));
-          listDiv.appendChild(sp);
+          sbG.append("text").attr("x",14).attr("y",y).attr("font-size","9.5").attr("fill","#333").attr("font-weight","500").text(txt);
         });
-        el.appendChild(listDiv);
       }
 
       // Store latest week for date display

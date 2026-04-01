@@ -30,6 +30,12 @@ SERIES = {
     "exports": "W_EPOOXE_EEX_NUS_MBBLD",
 }
 
+# Fallback series IDs for exports if primary returns empty
+EXPORT_FALLBACKS = [
+    "WCEEXUS2",           # Older EIA series format
+    "W_EPOOXE_EEX_NUS_MBBLD",
+]
+
 
 def fetch_series(series_id):
     """Fetch a single EIA series."""
@@ -91,6 +97,16 @@ def main():
         print(f"  {name} ({series_id})...", end=" ", flush=True)
         try:
             points = fetch_series(series_id)
+            # If exports came back empty, try fallbacks
+            if name == "exports" and len(points) == 0:
+                for fb in EXPORT_FALLBACKS:
+                    if fb == series_id:
+                        continue
+                    print(f"\n    Trying fallback {fb}...", end=" ", flush=True)
+                    points = fetch_series(fb)
+                    if len(points) > 0:
+                        print(f"SUCCESS with {fb}")
+                        break
             result[name] = points
             print(f"{len(points)} points")
             if points:

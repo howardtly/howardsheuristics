@@ -2528,7 +2528,7 @@ function CropProgressPage({ ready }) {
       var isCondition = mapStage === "condition";
 
       // Color scales
-      var valScale = d3.scaleSequential(d3.interpolateYlGn).domain([0, Math.max(cMax, 1)]);
+      var valScale = d3.scaleSequential(d3.interpolateYlGn).domain([0, 100]);
       var chgScale = function(chg) {
         if (chg == null || chg === 0) return "#f0f0f0";
         if (chg > 0) return d3.interpolateGreens(Math.min(chg / 15, 1) * 0.7 + 0.15);
@@ -2567,14 +2567,14 @@ function CropProgressPage({ ready }) {
         var gb2 = document.createElement("div");
         gb2.style.cssText = "width:280px;height:14px;border-radius:4px;border:1px solid #ccc;background:linear-gradient(to right,"+valScale(0)+","+valScale(cMax/2)+","+valScale(cMax)+");";
         legendEl.appendChild(gb2);
-        var sp2b = document.createElement("span"); sp2b.style.cssText="font-size:13px;color:#666;font-weight:500;"; sp2b.textContent=Math.round(cMax)+"%"; legendEl.appendChild(sp2b);
+        var sp2b = document.createElement("span"); sp2b.style.cssText="font-size:13px;color:#666;font-weight:500;"; sp2b.textContent="100%"; legendEl.appendChild(sp2b);
       }
       el.style.display = "block";
       el.appendChild(legendEl);
 
       // SVG map
-      var svg = d3.select(el).append("svg").attr("viewBox","0 0 960 520").style("width","100%").style("max-height","360px").style("height","auto");
-      var proj = d3.geoAlbersUsa().scale(1050).translate([480,260]);
+      var svg = d3.select(el).append("svg").attr("viewBox","0 0 960 540").style("width","100%").style("max-height","480px").style("height","auto");
+      var proj = d3.geoAlbersUsa().scale(1130).translate([480,275]);
       var geoPath = d3.geoPath().projection(proj);
 
       svg.selectAll("path").data(feat.features).enter().append("path").attr("d",geoPath)

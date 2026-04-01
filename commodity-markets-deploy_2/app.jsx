@@ -2555,6 +2555,7 @@ function CropProgressPage({ ready }) {
         legendEl.appendChild(gb2);
         var sp2b = document.createElement("span"); sp2b.style.cssText="font-size:10px;color:#666;"; sp2b.textContent=Math.round(cMax)+"%"; legendEl.appendChild(sp2b);
       }
+      el.style.display = "block";
       el.appendChild(legendEl);
 
       // SVG map

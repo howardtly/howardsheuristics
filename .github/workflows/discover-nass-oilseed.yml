@@ -1,0 +1,16 @@
+name: Discover NASS Oilseed Data
+on:
+  workflow_dispatch:
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run discovery
+        env:
+          NASS_API_KEY: ${{ secrets.NASS_API_KEY }}
+        run: python commodity-markets-deploy_2/scripts/discover_nass_oilseed.py

@@ -2565,7 +2565,7 @@ function CropProgressPage({ ready }) {
         // 0-max% value legend
         var sp1 = document.createElement("span"); sp1.style.cssText="font-size:13px;color:#666;font-weight:500;"; sp1.textContent="0%"; legendEl.appendChild(sp1);
         var gb2 = document.createElement("div");
-        gb2.style.cssText = "width:280px;height:14px;border-radius:4px;border:1px solid #ccc;background:linear-gradient(to right,"+valScale(0)+","+valScale(cMax/2)+","+valScale(cMax)+");";
+        gb2.style.cssText = "width:280px;height:14px;border-radius:4px;border:1px solid #ccc;background:linear-gradient(to right,"+valScale(0)+","+valScale(50)+","+valScale(100)+");";
         legendEl.appendChild(gb2);
         var sp2b = document.createElement("span"); sp2b.style.cssText="font-size:13px;color:#666;font-weight:500;"; sp2b.textContent="100%"; legendEl.appendChild(sp2b);
       }

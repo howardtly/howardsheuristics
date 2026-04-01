@@ -2872,10 +2872,12 @@ function EthanolPage({ ready }) {
 
   var GAL_PER_BBL = 42;
   var isGal = unit === "gal";
-  var convProd = function(v) { return v == null ? null : isGal ? Math.round(v * GAL_PER_BBL * 10) / 10 : v; };
-  var convStk = function(v) { return v == null ? null : isGal ? Math.round(v * GAL_PER_BBL) : v; };
-  var prodUnit = isGal ? "k gal/day" : "kbd";
-  var stkUnit = isGal ? "k gallons" : "k barrels";
+  // Barrels: production=kbd, stocks=k bbl
+  // Gallons: production=million gal/week (kbd*7*42/1000), stocks=million gal (k bbl*42/1000)
+  var convProd = function(v) { return v == null ? null : isGal ? Math.round(v * 7 * GAL_PER_BBL / 1000 * 100) / 100 : v; };
+  var convStk = function(v) { return v == null ? null : isGal ? Math.round(v * GAL_PER_BBL / 1000 * 100) / 100 : v; };
+  var prodUnit = isGal ? "M gal/wk" : "kbd";
+  var stkUnit = isGal ? "M gallons" : "k barrels";
 
   // Marketing year: Sep 1 - Aug 31
   var mktN = ["Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug"];
@@ -2931,16 +2933,17 @@ function EthanolPage({ ready }) {
 
   var now = new Date();
   var curMY = now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1;
+  // Range: "1" = current + 1 previous, "5" = current + 5 previous, "10" = current + 10 previous
   var rangeN = parseInt(range);
   var startMY = curMY - rangeN;
 
   var yrColors = ["#A32D2D","#D85A30","#E8A735","#639922","#1D9E75","#378ADD","#534AB7","#8B5CF6","#EC4899","#6B7280"];
   var getColor = function(my) { return my === curMY ? "#333" : yrColors[(curMY - my - 1) % yrColors.length]; };
 
-  // Build legend items
+  // Build legend items (chronological, oldest first)
   var buildItems = function(byMY) {
     var items = [];
-    for (var y = startMY + 1; y <= curMY; y++) {
+    for (var y = startMY; y <= curMY; y++) {
       if (byMY[y]) items.push({ label: myLabel(y), my: y, color: getColor(y) });
     }
     return items;
@@ -2953,11 +2956,7 @@ function EthanolPage({ ready }) {
     if (!rawPts || !rawPts.length) return { cur: null, prevWk: null, date: null };
     var sorted = rawPts.slice().sort(function(a, b) { return a.d < b.d ? 1 : -1; });
     var latest = sorted[0]; var prev = sorted.length > 1 ? sorted[1] : null;
-    return {
-      cur: convFn(latest.v),
-      prevWk: prev ? convFn(prev.v) : null,
-      date: latest.d,
-    };
+    return { cur: convFn(latest.v), prevWk: prev ? convFn(prev.v) : null, date: latest.d };
   };
 
   var prodInfo = ethData ? getCardInfo(ethData.production, convProd) : {};
@@ -2966,17 +2965,17 @@ function EthanolPage({ ready }) {
   var oftRaw = computeOfftake();
   var oftInfo = getCardInfo(oftRaw, convStk);
 
-  var statCard = function(label, info, unitLabel, color) {
+  var statCard = function(label, info, unitLabel) {
     var diffLine = function(lbl, comp) {
       if (info.cur == null || comp == null) return null;
-      var d2 = Math.round((info.cur - comp) * 10) / 10;
+      var d2 = Math.round((info.cur - comp) * 100) / 100;
       var col = d2 > 0 ? "#639922" : d2 < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
       return (<div style={{display:"flex",justifyContent:"space-between",fontSize:10.5,padding:"1px 0"}}>
         <span style={{color:"var(--color-text-tertiary)"}}>{lbl}</span>
-        <span style={{color:col,fontWeight:500}}>({d2 > 0 ? "+" : ""}{d2})</span>
+        <span style={{color:col,fontWeight:500}}>({d2 > 0 ? "+" : ""}{d2.toLocaleString()})</span>
       </div>);
     };
-    return (<div style={{background:"var(--color-background-secondary)",borderRadius:"var(--border-radius-md)",padding:"12px 14px",minWidth:0,borderLeft:"3px solid "+(color||"#333")}}>
+    return (<div style={{background:"var(--color-background-secondary)",borderRadius:"var(--border-radius-md)",padding:"12px 14px",minWidth:0}}>
       <div style={{fontSize:11,color:"var(--color-text-secondary)",marginBottom:3,textTransform:"uppercase",letterSpacing:"0.4px"}}>{label}</div>
       <div style={{fontSize:22,fontWeight:500,color:"var(--color-text-primary)",marginBottom:2}}>{info.cur != null ? info.cur.toLocaleString() : "—"}<span style={{fontSize:12,fontWeight:400,color:"var(--color-text-secondary)",marginLeft:4}}>{unitLabel}</span></div>
       {info.date && <div style={{fontSize:10,color:"var(--color-text-tertiary)",marginBottom:6}}>as of {info.date}</div>}
@@ -2986,14 +2985,14 @@ function EthanolPage({ ready }) {
     </div>);
   };
 
-  // Chart builder
+  // Chart builder with nice y-axis intervals
   var mkChart = function(byMY, yLabel) { return function(canvas) {
     if (!byMY || Object.keys(byMY).length === 0) return;
     var isSeasonal = mode === "seasonal";
     var ds = [];
 
     if (isSeasonal) {
-      for (var y = startMY + 1; y <= curMY; y++) {
+      for (var y = startMY; y <= curMY; y++) {
         var pts = byMY[y];
         if (!pts || !pts.length) continue;
         var label = myLabel(y);
@@ -3002,8 +3001,15 @@ function EthanolPage({ ready }) {
       if (ds.length === 0) return;
       var vis = ds.filter(function(d) { return !d.hidden; }).flatMap(function(d) { return d.data.map(function(p) { return p.y; }); });
       if (vis.length === 0) return;
-      var yMax = Math.ceil(Math.max.apply(null, vis) * 1.05);
-      var yMin = Math.floor(Math.min.apply(null, vis) * 0.95);
+      var rawMax = Math.max.apply(null, vis), rawMin = Math.min.apply(null, vis);
+      var span = rawMax - rawMin || 1;
+      // Nice tick interval
+      var step = Math.pow(10, Math.floor(Math.log10(span / 4)));
+      if (span / step < 4) step = step / 2;
+      if (span / step > 8) step = step * 2;
+      var yMin = Math.floor(rawMin / step) * step;
+      var yMax = Math.ceil(rawMax / step) * step;
+      if (yMax === rawMax) yMax += step;
       var tks = []; for (var k = 0; k < 12; k++) { tks.push({ value: mktB[k] }); tks.push({ value: mktM[k] }); }
       new Chart(canvas, { type: "scatter", data: { datasets: ds }, options: {
         responsive: true, maintainAspectRatio: false,
@@ -3012,23 +3018,28 @@ function EthanolPage({ ready }) {
           callbacks: { title: function(items) { if (!items.length) return ""; var doy = items[0].parsed.x; var mi = 11; for (var m = 0; m < 11; m++) { if (doy < mktB[m + 1]) { mi = m; break; } } return mktN[mi] + " " + (Math.floor(doy - mktB[mi]) + 1); },
             label: function(c2) { return c2.parsed.y == null ? null : c2.dataset.label + ": " + c2.parsed.y.toLocaleString(); } } } },
         scales: { x: { type: "linear", min: 0, max: 365, ticks: { callback: function(v) { var idx = mktM.indexOf(v); return idx >= 0 ? mktN[idx] : ""; }, autoSkip: false, maxRotation: 0, font: { size: 10 } }, afterBuildTicks: function(ax) { ax.ticks = tks; }, grid: { color: function(ctx) { var v = ctx.tick.value; if (v > 0 && mktB.indexOf(v) >= 0) return "rgba(0,0,0,0.12)"; return "transparent"; }, lineWidth: 0.75 } },
-          y: { min: yMin, max: yMax, ticks: { font: { size: 10 } }, grid: { color: "rgba(0,0,0,0.08)", lineWidth: 0.75 } } }
+          y: { min: yMin, max: yMax, ticks: { stepSize: step, font: { size: 10 }, callback: function(v) { return v.toLocaleString(); } }, grid: { color: "rgba(0,0,0,0.08)", lineWidth: 0.75 } } }
       } });
     } else {
       // Contiguous mode
       var allPts = [];
       var years = [];
-      for (var y2 = startMY + 1; y2 <= curMY; y2++) { if (byMY[y2]) years.push(y2); }
+      for (var y2 = startMY; y2 <= curMY; y2++) { if (byMY[y2]) years.push(y2); }
       years.forEach(function(yr, idx) {
-        var pts2 = byMY[yr];
-        if (!pts2) return;
+        var pts2 = byMY[yr]; if (!pts2) return;
         pts2.forEach(function(p) { allPts.push({ x: idx * 365 + p.x, y: p.y }); });
       });
       if (allPts.length === 0) return;
       ds.push({ label: "Ethanol", data: allPts, borderColor: "#333", borderWidth: 1.5, pointRadius: 0, tension: 0.3, fill: false, showLine: true });
       var allY = allPts.map(function(p) { return p.y; });
-      var yMax2 = Math.ceil(Math.max.apply(null, allY) * 1.05);
-      var yMin2 = Math.floor(Math.min.apply(null, allY) * 0.95);
+      var rMax = Math.max.apply(null, allY), rMin = Math.min.apply(null, allY);
+      var sp2 = rMax - rMin || 1;
+      var st2 = Math.pow(10, Math.floor(Math.log10(sp2 / 4)));
+      if (sp2 / st2 < 4) st2 = st2 / 2;
+      if (sp2 / st2 > 8) st2 = st2 * 2;
+      var yMin2 = Math.floor(rMin / st2) * st2;
+      var yMax2 = Math.ceil(rMax / st2) * st2;
+      if (yMax2 === rMax) yMax2 += st2;
       var gridLines = [];
       years.forEach(function(yr, idx) { if (idx > 0) gridLines.push(idx * 365); });
       new Chart(canvas, { type: "scatter", data: { datasets: ds }, options: {
@@ -3038,14 +3049,14 @@ function EthanolPage({ ready }) {
         scales: { x: { type: "linear", min: 0, max: years.length * 365,
           ticks: { callback: function(v) { var yrIdx = Math.floor(v / 365); if (yrIdx < years.length) { var dayInYr = v - yrIdx * 365; if (Math.abs(dayInYr - 182) < 10) return myLabel(years[yrIdx]); } return ""; }, autoSkip: false, maxRotation: 0, font: { size: 10 } },
           grid: { color: function(ctx) { var v = ctx.tick.value; return gridLines.indexOf(v) >= 0 ? "rgba(0,0,0,0.2)" : "transparent"; } } },
-          y: { min: yMin2, max: yMax2, ticks: { font: { size: 10 } }, grid: { color: "rgba(0,0,0,0.08)" } } }
+          y: { min: yMin2, max: yMax2, ticks: { stepSize: st2, font: { size: 10 }, callback: function(v) { return v.toLocaleString(); } }, grid: { color: "rgba(0,0,0,0.08)" } } }
       } });
     }
   }; };
 
   // CSV download
   var dlCSV = function() {
-    var hdrs = ["Date", "Production (" + prodUnit + ")", "Stocks (" + stkUnit + ")", "Exports (" + prodUnit + ")", "Implied Offtake (" + stkUnit + ")"];
+    var hdrs = ["Date", "MY", "Production (" + prodUnit + ")", "Stocks (" + stkUnit + ")", "Implied Offtake (" + stkUnit + ")", "Exports (" + prodUnit + ")"];
     var rows = [];
     var allDates = {};
     if (ethData) {
@@ -3056,7 +3067,7 @@ function EthanolPage({ ready }) {
     computeOfftake().forEach(function(p) { allDates[p.d] = allDates[p.d] || {}; allDates[p.d].oft = convStk(p.v); });
     Object.keys(allDates).sort().forEach(function(d) {
       var r = allDates[d];
-      rows.push([d, r.prod || "", r.stk || "", r.exp || "", r.oft || ""]);
+      rows.push([d, myLabel(dateToMY(d)), r.prod || "", r.stk || "", r.oft || "", r.exp || ""]);
     });
     downloadCSV("ethanol_" + unit + ".csv", hdrs, rows);
   };
@@ -3064,7 +3075,6 @@ function EthanolPage({ ready }) {
   var chevSvg = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%23666' stroke-width='1.5'/%3E%3C/svg%3E\")";
   var selSt = {padding:"6px 24px 6px 10px",fontSize:13,fontWeight:500,border:"1px solid var(--color-border-secondary)",borderRadius:6,background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontFamily:"inherit",cursor:"pointer",appearance:"none",backgroundImage:chevSvg,backgroundRepeat:"no-repeat",backgroundPosition:"right 6px center"};
   var modeSt = function(a) { return {padding:"6px 14px",fontSize:12,fontWeight:a?600:400,border:"1px solid "+(a?"#2563EB":"var(--color-border-secondary)"),borderRadius:5,cursor:"pointer",background:a?"#2563EB":"transparent",color:a?"#fff":"var(--color-text-secondary)",transition:"all 0.15s"}; };
-  var unitSt = function(a) { return {padding:"5px 12px",fontSize:12,fontWeight:a?600:400,border:"1px solid var(--color-border-secondary)",borderRadius:5,cursor:"pointer",background:a?"var(--color-background-secondary)":"transparent",color:a?"var(--color-text-primary)":"var(--color-text-secondary)"}; };
 
   var CHARTS = [
     { key: "prod", label: "Weekly Production", data: prod, yLabel: prodUnit },
@@ -3073,30 +3083,37 @@ function EthanolPage({ ready }) {
     { key: "exp", label: "Weekly Exports", data: exp, yLabel: prodUnit },
   ];
 
+  var hasExports = ethData && ethData.exports && ethData.exports.length > 0;
+
   return (<div>
-    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,flexWrap:"wrap"}}>
+    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,flexWrap:"wrap"}}>
+      <div style={{display:"flex",alignItems:"center",gap:6}}>
+        <span style={{fontSize:11,fontWeight:600,color:"var(--color-text-secondary)",textTransform:"uppercase"}}>Range</span>
+        <select value={range} onChange={function(e){setRange(e.target.value);}} style={selSt}>
+          <option value="1">1 Year</option>
+          <option value="5">5 Years</option>
+          <option value="10">10 Years</option>
+        </select>
+      </div>
       <div style={{display:"flex",gap:3}}>
         <button onClick={function(){setMode("seasonal");}} style={modeSt(mode==="seasonal")}>Seasonal</button>
         <button onClick={function(){setMode("contiguous");}} style={modeSt(mode==="contiguous")}>Contiguous</button>
       </div>
-      <select value={range} onChange={function(e){setRange(e.target.value);}} style={selSt}>
-        <option value="1">1 Year</option>
-        <option value="5">5 Years</option>
-        <option value="10">10 Years</option>
-      </select>
       <div style={{display:"flex",gap:3}}>
-        <button onClick={function(){setUnit("bbl");}} style={unitSt(unit==="bbl")}>Barrels</button>
-        <button onClick={function(){setUnit("gal");}} style={unitSt(unit==="gal")}>Gallons</button>
+        <button onClick={function(){setUnit("bbl");}} style={modeSt(unit==="bbl")}>Barrels</button>
+        <button onClick={function(){setUnit("gal");}} style={modeSt(unit==="gal")}>Gallons</button>
       </div>
       <div style={{marginLeft:"auto"}}><DownloadBtn onClick={dlCSV} /></div>
     </div>
 
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:10,marginBottom:16}}>
-      {statCard("Production", prodInfo, prodUnit, "#639922")}
-      {statCard("Stocks", stkInfo, stkUnit, "#378ADD")}
-      {statCard("Implied Offtake", oftInfo, stkUnit, "#D85A30")}
-      {statCard("Exports", expInfo, prodUnit, "#534AB7")}
+      {statCard("Production", prodInfo, prodUnit)}
+      {statCard("Stocks", stkInfo, stkUnit)}
+      {statCard("Implied Offtake", oftInfo, stkUnit)}
+      {statCard("Exports", expInfo, prodUnit)}
     </div>
+
+    {!hasExports && <div style={{fontSize:12,color:"var(--color-text-tertiary)",marginBottom:8,padding:"6px 10px",background:"var(--color-background-secondary)",borderRadius:6}}>Note: EIA ethanol export data may be unavailable. Checking series ID...</div>}
 
     {mode === "seasonal" && <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:16,alignItems:"center"}}>
       {allItems.map(function(item) { var isH = hiddenYrs.has(item.label); return (

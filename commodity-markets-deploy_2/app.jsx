@@ -1078,6 +1078,19 @@ function useLiveEthanol() {
   return { ethData: data, ethLoaded: loaded };
 }
 
+function useLiveOilseedCrushing() {
+  var _s = useState(null); var data = _s[0], setData = _s[1];
+  var _l = useState(false); var loaded = _l[0], setLoaded = _l[1];
+  useEffect(function() {
+    fetch("data/oilseed_crushing.json")
+      .then(function(r) { if (!r.ok) throw new Error("not found"); return r.json(); })
+      .then(function(d) { setData(d); setLoaded(true); })
+      .catch(function() { setLoaded(true); });
+  }, []);
+  return { oilData: data, oilLoaded: loaded };
+}
+
+
 // ─── Crop progress — live data from NASS API ────
 function useLiveCropProgress() {
   const [data, setData] = useState(null);
@@ -1104,39 +1117,6 @@ function useLiveCropProgress() {
 // Crush & production in million bushels (crush) / thousand short tons (meal) / million lbs (oil)
 // Stocks in thousand short tons (meal) / million lbs (oil)
 
-const FATS_OILS = {
-  months: ["Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep"],
-  crush: {
-    label: "Soybean crush", unit: "million bushels",
-    "2024/25": [196.2,193.8,198.5,201.3,185.4,198.8,null,null,null,null,null,null],
-    "2023/24": [188.5,186.2,191.8,194.5,178.2,192.4,185.8,190.2,182.5,178.8,185.2,188.6],
-    "5yr":     [182.4,180.5,186.2,189.8,172.5,186.5,180.2,184.8,177.2,173.5,179.8,183.2],
-  },
-  mealProduced: {
-    label: "Soybean meal produced", unit: "thousand short tons",
-    "2024/25": [4285,4232,4338,4395,4048,4342,null,null,null,null,null,null],
-    "2023/24": [4118,4068,4190,4249,3893,4205,4061,4157,3989,3908,4048,4122],
-    "5yr":     [3985,3942,4065,4142,3767,4073,3935,4035,3870,3790,3927,4001],
-  },
-  oilProduced: {
-    label: "Soybean oil produced", unit: "million lbs",
-    "2024/25": [2142,2115,2168,2198,2022,2172,null,null,null,null,null,null],
-    "2023/24": [2058,2032,2092,2124,1945,2102,2030,2078,1995,1955,2025,2062],
-    "5yr":     [1992,1968,2032,2070,1882,2035,1965,2015,1932,1892,1962,1998],
-  },
-  mealStocks: {
-    label: "Soybean meal stocks", unit: "thousand short tons",
-    "2024/25": [382,358,345,362,388,375,null,null,null,null,null,null],
-    "2023/24": [365,342,328,345,372,358,342,335,348,362,378,370],
-    "5yr":     [348,325,312,328,355,342,325,318,332,345,360,352],
-  },
-  oilStocks: {
-    label: "Soybean oil stocks", unit: "million lbs",
-    "2024/25": [1685,1612,1548,1502,1575,1622,null,null,null,null,null,null],
-    "2023/24": [1742,1668,1605,1558,1632,1678,1725,1692,1748,1802,1765,1718],
-    "5yr":     [1825,1752,1688,1642,1715,1762,1808,1775,1832,1885,1848,1802],
-  },
-};
 
 // ════════════════════════════════════════════════════════════════════════
 // NAV
@@ -3172,217 +3152,259 @@ function EthanolPage({ ready }) {
 
 
 function FatsOilsPage({ ready }) {
-  const [chartMode, setChartMode] = useState("seasonal");
-  const series = [
-    { key: "crush", color: "#1D9E75" },
-    { key: "mealProduced", color: "#D85A30" },
-    { key: "oilProduced", color: "#534AB7" },
-    { key: "mealStocks", color: "#A32D2D" },
-    { key: "oilStocks", color: "#378ADD" },
-  ];
+  var ref = useLiveOilseedCrushing();
+  var oilData = ref.oilData;
+  var oilLoaded = ref.oilLoaded;
+  var _mode = useState("seasonal");
+  var mode = _mode[0], setMode = _mode[1];
+  var _range = useState("1");
+  var range = _range[0], setRange = _range[1];
+  var _hy = useState(new Set());
+  var hiddenYrs = _hy[0], setHiddenYrs = _hy[1];
 
-  const [hiddenSets, setHiddenSets] = useState(() => {
-    const m = {};
-    series.forEach(s => { m[s.key] = new Set(); });
-    return m;
-  });
-  const toggleFor = (key) => (label) => {
-    setHiddenSets(prev => {
-      const n = new Set(prev[key]);
-      n.has(label) ? n.delete(label) : n.add(label);
-      return { ...prev, [key]: n };
+  useEffect(function(){ setHiddenYrs(new Set()); }, [mode, range]);
+  var toggleYr = function(label) { setHiddenYrs(function(prev){ var next = new Set(prev); if(next.has(label))next.delete(label);else next.add(label); return next; }); };
+
+  // Soybean marketing year: Oct 1 - Sep 30
+  var mktN = ["Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep"];
+  var monthToMktIdx = {"10":0,"11":1,"12":2,"01":3,"02":4,"03":5,"04":6,"05":7,"06":8,"07":9,"08":10,"09":11};
+
+  var dateToMY = function(ds) {
+    var m = parseInt(ds.split("-")[1]); var y = parseInt(ds.split("-")[0]);
+    return m >= 10 ? y : y - 1;
+  };
+  var myLabel = function(yr) { return yr + "/" + String(yr + 1).slice(2); };
+
+  var processRaw = function(rawPts) {
+    if (!rawPts || !rawPts.length) return {};
+    var byMY = {};
+    rawPts.forEach(function(pt) {
+      var my = dateToMY(pt.d);
+      var mm = pt.d.split("-")[1];
+      var idx = monthToMktIdx[mm];
+      if (idx == null) return;
+      if (!byMY[my]) byMY[my] = [];
+      byMY[my].push({ x: idx, y: pt.v });
     });
+    return byMY;
   };
 
-  const foLegend = [
-    { label: "2024/25", color: "#1D9E75", key: "2024/25" },
-    { label: "2023/24", color: "#378ADD", key: "2023/24", dash: "dashed" },
-    { label: "5-yr avg", color: "#333", key: "5yr", dash: "dotted" },
-  ];
-  const foDS = {
-    "2024/25": { borderColor: "#1D9E75", borderWidth: 2.5, pointRadius: 0, tension: 0.3 },
-    "2023/24": { borderColor: "#378ADD", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [5,3] },
-    "5yr":     { borderColor: "#333", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [2,3] },
-  };
-
-  const mkFOChart = useCallback((seriesData, hidden, yLabel, unitStr) => (canvas) => {
-    if (chartMode === "contiguous") {
-      const myYears23 = FATS_OILS.months.map(m => ["Oct","Nov","Dec"].includes(m) ? "23" : "24");
-      const myYears24 = FATS_OILS.months.map(m => ["Oct","Nov","Dec"].includes(m) ? "24" : "25");
-      const labels23 = FATS_OILS.months.map((m, i) => m + "-" + myYears23[i]);
-      const labels24 = FATS_OILS.months.map((m, i) => m + "-" + myYears24[i]);
-      const allLabels = [...labels23, ...labels24];
-      const allData = [...seriesData["2023/24"], ...seriesData["2024/25"]];
-      const allVals = allData.filter(v => v != null);
-      let yMin = 0, yMax = 100;
-      if (allVals.length > 0) {
-        const dataMin = Math.min(...allVals); const dataMax = Math.max(...allVals);
-        const range = dataMax - dataMin; const pad = Math.max(range * 0.2, dataMax * 0.02);
-        const rawStep = (range + pad * 2) / 6;
-        const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
-        const norm = rawStep / mag;
-        const niceNorm = norm <= 1.5 ? 1 : norm <= 3.5 ? 2 : norm <= 7.5 ? 5 : 10;
-        const step = niceNorm * mag;
-        yMin = Math.floor((dataMin - pad) / step) * step; yMax = Math.ceil((dataMax + pad) / step) * step;
+  // Compute oil yield: oil produced (M lbs) / crush (1000 bu) * 1000 = lbs/bu
+  var computeYield = function() {
+    if (!oilData || !oilData.oil_produced || !oilData.crush) return [];
+    var crushMap = {};
+    oilData.crush.forEach(function(pt) { crushMap[pt.d] = pt.v; });
+    var out = [];
+    oilData.oil_produced.forEach(function(pt) {
+      var crush = crushMap[pt.d];
+      if (crush && crush > 0 && pt.v != null) {
+        // oil is in M lbs, crush is in 1000 bu
+        // yield = (M lbs * 1000000) / (1000 bu * 1000) = M lbs / 1000 bu * 1000 = pt.v / crush * 1000
+        out.push({ d: pt.d, v: Math.round(pt.v / crush * 1000 * 100) / 100 });
       }
-      new Chart(canvas, {
-        type: "line", data: { labels: allLabels, datasets: [{
-          label: yLabel, data: allData, borderColor: "#1D9E75", backgroundColor: "rgba(29,158,117,0.06)",
-          fill: true, borderWidth: 2, pointRadius: 0, tension: 0.3, spanGaps: true,
-        }]},
-        options: { responsive: true, maintainAspectRatio: false,
-          interaction: { mode: "index", intersect: false },
-          plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.parsed.y != null ? c.parsed.y.toLocaleString() + " " + unitStr : "n/a"}` } } },
-          scales: {
-            x: { ticks: { autoSkip: true, maxTicksLimit: 12, maxRotation: 45, font: { size: 10 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
-            y: { min: yMin, max: yMax, title: { display: true, text: yLabel, font: { size: 11 } }, ticks: { font: { size: 11 }, callback: v => v.toLocaleString() }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
-          },
-        },
-      });
-      return;
-    }
-    const keys = ["2024/25","2023/24","5yr"].filter(k => !hidden.has(k));
-    const ds = keys.map(k => ({
-      label: k === "5yr" ? "5-yr avg" : k,
-      data: seriesData[k],
-      ...foDS[k],
-      spanGaps: true,
-    }));
-    const allVals = keys.flatMap(k => seriesData[k].filter(v => v != null));
-    let yMin, yMax;
-    if (allVals.length > 0) {
-      const dataMin = Math.min(...allVals);
-      const dataMax = Math.max(...allVals);
-      const range = dataMax - dataMin;
-      const pad = Math.max(range * 0.2, dataMax * 0.02);
-      const rawStep = (range + pad * 2) / 6;
-      const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
-      const norm = rawStep / mag;
-      const niceNorm = norm <= 1.5 ? 1 : norm <= 3.5 ? 2 : norm <= 7.5 ? 5 : 10;
-      const step = niceNorm * mag;
-      yMin = Math.floor((dataMin - pad) / step) * step;
-      yMax = Math.ceil((dataMax + pad) / step) * step;
-    } else { yMin = 0; yMax = 100; }
-    new Chart(canvas, {
-      type: "line",
-      data: { labels: FATS_OILS.months, datasets: ds },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        interaction: { mode: "index", intersect: false }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.parsed.y != null ? c.parsed.y.toLocaleString() + " " + unitStr : "n/a"}` } } },
-        scales: {
-          x: { ticks: { font: { size: 11 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
-          y: { min: yMin, max: yMax, title: { display: true, text: yLabel, font: { size: 11 } }, ticks: { font: { size: 11 }, callback: v => v.toLocaleString() }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
-        },
-      },
     });
-  }, [chartMode]);
-
-  const lastNN = (arr) => { for (let i = arr.length - 1; i >= 0; i--) { if (arr[i] != null) return { val: arr[i], idx: i }; } return { val: null, idx: -1 }; };
-  const asOfIdx = lastNN(FATS_OILS.crush["2024/25"]).idx;
-  const asOfMonth = asOfIdx >= 0 ? FATS_OILS.months[asOfIdx] : null;
-
-  const mkCard = (data, decimals = 1) => {
-    const cur = lastNN(data["2024/25"]);
-    if (cur.val === null) return { val: null };
-    const ya = data["2023/24"][cur.idx] ?? null;
-    const avg = data["5yr"][cur.idx] ?? null;
-    return { val: cur.val, ya, avg, unit: data.unit };
+    return out;
   };
 
-  const crushCard = mkCard(FATS_OILS.crush);
-  const mealPCard = mkCard(FATS_OILS.mealProduced);
-  const oilPCard = mkCard(FATS_OILS.oilProduced);
-  const mealSCard = mkCard(FATS_OILS.mealStocks);
-  const oilSCard = mkCard(FATS_OILS.oilStocks);
+  var crush = oilData ? processRaw(oilData.crush) : {};
+  var mealProd = oilData ? processRaw(oilData.meal_produced) : {};
+  var oilProd = oilData ? processRaw(oilData.oil_produced) : {};
+  var mealStk = oilData ? processRaw(oilData.meal_stocks) : {};
+  var oilStk = oilData ? processRaw(oilData.oil_stocks) : {};
+  var oilYield = processRaw(computeYield());
 
-  const pctChg = (a, b) => b != null && b !== 0 ? ((a - b) / b * 100).toFixed(1) : null;
+  var now = new Date();
+  var curMY = now.getMonth() >= 9 ? now.getFullYear() : now.getFullYear() - 1;
+  var rangeN = parseInt(range);
+  var startMY = curMY - rangeN;
 
-  const FODiffLine = ({ label, absVal, cur, inverted }) => {
-    if (absVal == null || cur == null) return null;
-    const d = Number(pctChg(cur, absVal));
-    if (isNaN(d)) return null;
-    const positive = inverted ? d < 0 : d > 0;
-    const negative = inverted ? d > 0 : d < 0;
-    const col = positive ? "#639922" : negative ? "#A32D2D" : "var(--color-text-tertiary)";
-    return (
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, padding: "2px 0" }}>
-        <span style={{ color: "var(--color-text-tertiary)" }}>{label} ({absVal.toLocaleString()})</span>
-        <span style={{ color: col, fontWeight: 500, fontFamily: "var(--font-mono)" }}>{d > 0 ? "+" : ""}{d}%</span>
+  var yrColors = ["#A32D2D","#D85A30","#E8A735","#639922","#1D9E75","#378ADD","#534AB7","#8B5CF6","#EC4899","#6B7280"];
+  var getColor = function(my) { if (my === curMY) return "#333"; var dist = curMY - my; if (dist === 1) return "#1D9E75"; if (dist === 2) return "#639922"; if (dist === 3) return "#E8A735"; if (dist === 4) return "#D85A30"; if (dist === 5) return "#A32D2D"; return yrColors[(dist - 1) % yrColors.length]; };
+
+  var buildItems = function(byMY) {
+    var items = [];
+    for (var y = startMY; y <= curMY; y++) { if (byMY[y]) items.push({ label: myLabel(y), my: y, color: getColor(y) }); }
+    return items;
+  };
+  var allItems = buildItems(crush);
+  var hk = Array.from(hiddenYrs).sort().join(",");
+
+  // Header card info
+  var getCardInfo = function(rawPts) {
+    if (!rawPts || !rawPts.length) return { cur: null, prevMo: null, lastYr: null, date: null };
+    var sorted = rawPts.slice().sort(function(a, b) { return a.d < b.d ? 1 : -1; });
+    var latest = sorted[0]; var prev = sorted.length > 1 ? sorted[1] : null;
+    var targetDate = new Date(latest.d + "-15");
+    targetDate.setFullYear(targetDate.getFullYear() - 1);
+    var targetStr = targetDate.toISOString().slice(0, 7);
+    var lastYrPt = rawPts.find(function(p) { return p.d === targetStr; });
+    return { cur: latest.v, prevMo: prev ? prev.v : null, lastYr: lastYrPt ? lastYrPt.v : null, date: latest.d };
+  };
+
+  var crushInfo = oilData ? getCardInfo(oilData.crush) : {};
+  var mealProdInfo = oilData ? getCardInfo(oilData.meal_produced) : {};
+  var oilProdInfo = oilData ? getCardInfo(oilData.oil_produced) : {};
+  var yieldRaw = computeYield();
+  var yieldInfo = getCardInfo(yieldRaw);
+  var mealStkInfo = oilData ? getCardInfo(oilData.meal_stocks) : {};
+  var oilStkInfo = oilData ? getCardInfo(oilData.oil_stocks) : {};
+
+  var statCard = function(label, info, unitLabel) {
+    var diffLine = function(lbl, comp) {
+      if (info.cur == null || comp == null) return null;
+      var d2 = Math.round((info.cur - comp) * 100) / 100;
+      var col = d2 > 0 ? "#639922" : d2 < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
+      return (<div style={{display:"flex",justifyContent:"space-between",fontSize:10.5,padding:"1px 0"}}>
+        <span style={{color:"var(--color-text-tertiary)"}}>{lbl}</span>
+        <span><span style={{color:"var(--color-text-secondary)"}}>{comp.toLocaleString()} </span><span style={{color:col,fontWeight:500}}>({d2 > 0 ? "+" : ""}{d2.toLocaleString()})</span></span>
+      </div>);
+    };
+    return (<div style={{background:"var(--color-background-secondary)",borderRadius:"var(--border-radius-md)",padding:"12px 14px",minWidth:0}}>
+      <div style={{fontSize:11,color:"var(--color-text-secondary)",marginBottom:3,textTransform:"uppercase",letterSpacing:"0.4px"}}>{label}</div>
+      <div style={{fontSize:22,fontWeight:500,color:"var(--color-text-primary)",marginBottom:2}}>{info.cur != null ? info.cur.toLocaleString() : "—"}<span style={{fontSize:12,fontWeight:400,color:"var(--color-text-secondary)",marginLeft:4}}>{unitLabel}</span></div>
+      {info.date && <div style={{fontSize:10,color:"var(--color-text-tertiary)",marginBottom:6}}>as of {info.date}</div>}
+      <div style={{borderTop:"0.5px solid var(--color-border-tertiary)",paddingTop:5}}>
+        {diffLine("vs. last month", info.prevMo)}
+        {diffLine("vs. last year", info.lastYr)}
       </div>
-    );
+    </div>);
   };
 
-  const FOMetric = ({ label, card, invStocks }) => {
-    if (!card || card.val === null) return null;
-    return (
-      <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px", minWidth: 0 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
-          <span style={{ fontSize: 11, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.4px" }}>{label}</span>
-          <span style={{ fontSize: 10, color: "var(--color-text-tertiary)" }}>{card.unit}</span>
-        </div>
-        <div style={{ fontSize: 22, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 6 }}>{card.val.toLocaleString()}</div>
-        <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 6, display: "flex", flexDirection: "column", gap: 1 }}>
-          <FODiffLine label="vs. last year" absVal={card.ya} cur={card.val} inverted={invStocks} />
-          <FODiffLine label="vs. 5-yr avg" absVal={card.avg} cur={card.val} inverted={invStocks} />
-        </div>
-      </div>
-    );
+  // Chart builder — monthly (x = 0-11 for Oct-Sep)
+  var mkChart = function(byMY) { return function(canvas) {
+    if (!byMY || Object.keys(byMY).length === 0) return;
+    var isSeasonal = mode === "seasonal";
+    var ds = [];
+    if (isSeasonal) {
+      for (var y = startMY; y <= curMY; y++) {
+        var pts = byMY[y]; if (!pts || !pts.length) continue;
+        var label = myLabel(y);
+        ds.push({ label: label, data: pts.slice(), borderColor: getColor(y), borderWidth: y === curMY ? 2.5 : 1.5, pointRadius: 3, pointHitRadius: 8, tension: 0.3, fill: false, showLine: true, hidden: hiddenYrs.has(label) });
+      }
+      if (ds.length === 0) return;
+      var vis = ds.filter(function(d) { return !d.hidden; }).flatMap(function(d) { return d.data.map(function(p) { return p.y; }); });
+      if (vis.length === 0) return;
+      var rawMax = Math.max.apply(null, vis), rawMin = Math.min.apply(null, vis);
+      var span = rawMax - rawMin || 1;
+      var step = Math.pow(10, Math.floor(Math.log10(span / 4)));
+      if (span / step < 4) step = step / 2;
+      if (span / step > 8) step = step * 2;
+      var yMin = Math.floor(rawMin / step) * step;
+      var yMax = Math.ceil(rawMax / step) * step;
+      if (yMax === rawMax) yMax += step;
+      new Chart(canvas, { type: "scatter", data: { datasets: ds }, options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: "x", intersect: false },
+        plugins: { legend: { display: false }, tooltip: { mode: "x", intersect: false, backgroundColor: "rgba(0,0,0,0.6)", titleFont: { size: 11 }, bodyFont: { size: 11 },
+          callbacks: { title: function(items) { if (!items.length) return ""; return mktN[Math.round(items[0].parsed.x)] || ""; },
+            label: function(c2) { return c2.parsed.y == null ? null : c2.dataset.label + ": " + c2.parsed.y.toLocaleString(); } } } },
+        scales: { x: { type: "linear", min: -0.5, max: 11.5, ticks: { callback: function(v) { return mktN[v] || ""; }, stepSize: 1, font: { size: 10 } }, grid: { color: "rgba(0,0,0,0.06)" } },
+          y: { min: yMin, max: yMax, ticks: { stepSize: step, font: { size: 10 }, callback: function(v) { return v.toLocaleString(); } }, grid: { color: "rgba(0,0,0,0.08)", lineWidth: 0.75 } } }
+      } });
+    } else {
+      var allPts = [];
+      var years = [];
+      for (var y2 = startMY; y2 <= curMY; y2++) { if (byMY[y2]) years.push(y2); }
+      years.forEach(function(yr, idx) { var pts2 = byMY[yr]; if (!pts2) return; pts2.forEach(function(p) { allPts.push({ x: idx * 12 + p.x, y: p.y }); }); });
+      if (allPts.length === 0) return;
+      ds.push({ label: "Data", data: allPts, borderColor: "#333", borderWidth: 1.5, pointRadius: 2, tension: 0.3, fill: false, showLine: true });
+      var allY = allPts.map(function(p) { return p.y; });
+      var rMax = Math.max.apply(null, allY), rMin = Math.min.apply(null, allY);
+      var sp2 = rMax - rMin || 1;
+      var st2 = Math.pow(10, Math.floor(Math.log10(sp2 / 4)));
+      if (sp2 / st2 < 4) st2 = st2 / 2;
+      if (sp2 / st2 > 8) st2 = st2 * 2;
+      var yMin2 = Math.floor(rMin / st2) * st2;
+      var yMax2 = Math.ceil(rMax / st2) * st2;
+      var isShort = years.length <= 2;
+      new Chart(canvas, { type: "scatter", data: { datasets: ds }, options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: "nearest", intersect: false },
+        plugins: { legend: { display: false }, tooltip: { backgroundColor: "rgba(0,0,0,0.6)", callbacks: { title: function(items) { if (!items.length) return ""; var v = items[0].parsed.x; var yrIdx = Math.floor(v / 12); var moIdx = Math.round(v - yrIdx * 12); if (yrIdx >= years.length) return ""; var calYr = moIdx >= 3 ? years[yrIdx] + 1 : years[yrIdx]; return mktN[moIdx] + " " + calYr; }, label: function(c2) { return c2.parsed.y == null ? null : c2.parsed.y.toLocaleString(); } } } },
+        scales: { x: { type: "linear", min: -0.5, max: years.length * 12 - 0.5,
+          ticks: { callback: function(v) { var yrIdx = Math.floor(v / 12); var moIdx = Math.round(v - yrIdx * 12); if (yrIdx >= years.length) return ""; if (isShort) { if (moIdx % 2 === 0) return mktN[moIdx] + "-" + String(moIdx >= 3 ? years[yrIdx] + 1 : years[yrIdx]).slice(2); return ""; } else { if (moIdx === 3) return String(years[yrIdx] + 1); return ""; } }, autoSkip: false, maxRotation: 0, font: { size: 10 } },
+          grid: { color: function(ctx) { var v = ctx.tick.value; if (Number.isInteger(v / 12) && v > 0) return "rgba(0,0,0,0.15)"; return "rgba(0,0,0,0.04)"; } } },
+          y: { min: yMin2, max: yMax2, ticks: { stepSize: st2, font: { size: 10 }, callback: function(v) { return v.toLocaleString(); } }, grid: { color: "rgba(0,0,0,0.08)" } } }
+      } });
+    }
+  }; };
+
+  var dlCSV = function() {
+    var hdrs = ["Date", "MY", "Crush (1000 bu)", "Meal Prod (1000 st)", "Oil Prod (M lbs)", "Oil Yield (lbs/bu)", "Meal Stocks (1000 st)", "Oil Stocks (M lbs)"];
+    var allDates = {};
+    if (oilData) {
+      (oilData.crush || []).forEach(function(p) { allDates[p.d] = allDates[p.d] || {}; allDates[p.d].crush = p.v; });
+      (oilData.meal_produced || []).forEach(function(p) { allDates[p.d] = allDates[p.d] || {}; allDates[p.d].mealP = p.v; });
+      (oilData.oil_produced || []).forEach(function(p) { allDates[p.d] = allDates[p.d] || {}; allDates[p.d].oilP = p.v; });
+      (oilData.meal_stocks || []).forEach(function(p) { allDates[p.d] = allDates[p.d] || {}; allDates[p.d].mealS = p.v; });
+      (oilData.oil_stocks || []).forEach(function(p) { allDates[p.d] = allDates[p.d] || {}; allDates[p.d].oilS = p.v; });
+    }
+    computeYield().forEach(function(p) { allDates[p.d] = allDates[p.d] || {}; allDates[p.d].yield = p.v; });
+    var rows = [];
+    Object.keys(allDates).sort().forEach(function(d) {
+      var r = allDates[d];
+      rows.push([d, myLabel(dateToMY(d)), r.crush||"", r.mealP||"", r.oilP||"", r.yield||"", r.mealS||"", r.oilS||""]);
+    });
+    downloadCSV("oilseed_crushing.csv", hdrs, rows);
   };
 
-  const dlFO = (data, fn) => () => {
-    const headers = ["Month", "2024/25", "2023/24", "5-yr avg"];
-    const rows = FATS_OILS.months.map((m, i) => [m, data["2024/25"][i] ?? "", data["2023/24"][i] ?? "", data["5yr"][i] ?? ""]);
-    downloadCSV(fn, headers, rows);
-  };
+  var chevSvg = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%23666' stroke-width='1.5'/%3E%3C/svg%3E\")";
+  var selSt = {padding:"6px 24px 6px 10px",fontSize:13,fontWeight:500,border:"1px solid var(--color-border-secondary)",borderRadius:6,background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontFamily:"inherit",cursor:"pointer",appearance:"none",backgroundImage:chevSvg,backgroundRepeat:"no-repeat",backgroundPosition:"right 6px center"};
+  var modeSt = function(a) { return {padding:"6px 14px",fontSize:12,fontWeight:a?600:400,border:"1px solid "+(a?"#2563EB":"var(--color-border-secondary)"),borderRadius:5,cursor:"pointer",background:a?"#2563EB":"transparent",color:a?"#fff":"var(--color-text-secondary)",transition:"all 0.15s"}; };
+
+  var CHARTS = [
+    { key: "crush", label: "Monthly Soybean Crush", data: crush, unit: "1,000 bu" },
+    { key: "yield", label: "Soybean Oil Yield", data: oilYield, unit: "lbs/bu" },
+    { key: "mealProd", label: "Monthly Soybean Meal Produced", data: mealProd, unit: "1,000 short tons" },
+    { key: "oilProd", label: "Monthly Soybean Oil Produced", data: oilProd, unit: "M lbs" },
+    { key: "mealStk", label: "Soybean Meal Stocks", data: mealStk, unit: "1,000 short tons" },
+    { key: "oilStk", label: "Soybean Oil Stocks", data: oilStk, unit: "M lbs" },
+  ];
 
   return (<div>
-    <div style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginBottom: 16 }}>
-      NASS Fats and Oils: Oilseed Crushings report — {asOfMonth ? `through ${asOfMonth} 2025` : ""} (marketing year Oct–Sep)
+    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,flexWrap:"wrap"}}>
+      <div style={{display:"flex",alignItems:"center",gap:6}}>
+        <span style={{fontSize:11,fontWeight:600,color:"var(--color-text-secondary)",textTransform:"uppercase"}}>Range</span>
+        <select value={range} onChange={function(e){setRange(e.target.value);}} style={selSt}>
+          <option value="1">1 Year</option>
+          <option value="5">5 Years</option>
+          <option value="10">10 Years</option>
+        </select>
+      </div>
+      <div style={{display:"flex",gap:3}}>
+        <button onClick={function(){setMode("seasonal");}} style={modeSt(mode==="seasonal")}>Seasonal</button>
+        <button onClick={function(){setMode("contiguous");}} style={modeSt(mode==="contiguous")}>Contiguous</button>
+      </div>
+      <div style={{marginLeft:"auto"}}><DownloadBtn onClick={dlCSV} /></div>
     </div>
 
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginBottom: 8 }}>
-      <FOMetric label="Crush" card={crushCard} />
-      <FOMetric label="Meal produced" card={mealPCard} />
-      <FOMetric label="Oil produced" card={oilPCard} />
-      <FOMetric label="Meal stocks" card={mealSCard} />
-      <FOMetric label="Oil stocks" card={oilSCard} />
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:16}}>
+      {statCard("Soybean Crush", crushInfo, "1,000 bu")}
+      {statCard("Oil Yield", yieldInfo, "lbs/bu")}
+      {statCard("Meal Produced", mealProdInfo, "1,000 st")}
+      {statCard("Oil Produced", oilProdInfo, "M lbs")}
+      {statCard("Meal Stocks", mealStkInfo, "1,000 st")}
+      {statCard("Oil Stocks", oilStkInfo, "M lbs")}
     </div>
 
-    <SectionTitle right={<div style={{ display: "flex", gap: 8, alignItems: "center" }}><ChartModeToggle mode={chartMode} setMode={setChartMode} /><DownloadBtn onClick={dlFO(FATS_OILS.crush, "soy_crush.csv")} /></div>}>
-      Monthly soybean crush
-    </SectionTitle>
-    {chartMode === "seasonal" && <InteractiveLegend items={foLegend} hidden={hiddenSets.crush} onToggle={toggleFor("crush")} />}
-    {ready && <ChartBox id={`fo_crush_${chartMode}`} renderChart={mkFOChart(FATS_OILS.crush, hiddenSets.crush, FATS_OILS.crush.unit, "M bu")} deps={`${chartMode}_${[...hiddenSets.crush].join()}`} />}
+    {mode === "seasonal" && <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:16,alignItems:"center"}}>
+      {allItems.map(function(item) { var isH = hiddenYrs.has(item.label); return (
+        <button key={item.label} onClick={function(){toggleYr(item.label);}} style={{display:"flex",alignItems:"center",gap:5,padding:"4px 10px",border:"1px solid var(--color-border-secondary)",borderRadius:5,background:isH?"var(--color-background-secondary)":"transparent",cursor:"pointer",opacity:isH?0.3:1,transition:"all 0.15s"}}>
+          <span style={{width:18,height:0,borderTop:"2.5px solid "+item.color,display:"inline-block"}}></span>
+          <span style={{fontSize:12,fontWeight:500,color:"var(--color-text-primary)"}}>{item.label}</span>
+        </button>); })}
+    </div>}
 
-    <SectionTitle right={<div style={{ display: "flex", gap: 8, alignItems: "center" }}><ChartModeToggle mode={chartMode} setMode={setChartMode} /><DownloadBtn onClick={dlFO(FATS_OILS.mealProduced, "soy_meal_produced.csv")} /></div>}>
-      Monthly soybean meal produced
-    </SectionTitle>
-    {chartMode === "seasonal" && <InteractiveLegend items={foLegend} hidden={hiddenSets.mealProduced} onToggle={toggleFor("mealProduced")} />}
-    {ready && <ChartBox id={`fo_mealp_${chartMode}`} renderChart={mkFOChart(FATS_OILS.mealProduced, hiddenSets.mealProduced, FATS_OILS.mealProduced.unit, "k st")} deps={`${chartMode}_${[...hiddenSets.mealProduced].join()}`} />}
-
-    <SectionTitle right={<div style={{ display: "flex", gap: 8, alignItems: "center" }}><ChartModeToggle mode={chartMode} setMode={setChartMode} /><DownloadBtn onClick={dlFO(FATS_OILS.oilProduced, "soy_oil_produced.csv")} /></div>}>
-      Monthly soybean oil produced
-    </SectionTitle>
-    {chartMode === "seasonal" && <InteractiveLegend items={foLegend} hidden={hiddenSets.oilProduced} onToggle={toggleFor("oilProduced")} />}
-    {ready && <ChartBox id={`fo_oilp_${chartMode}`} renderChart={mkFOChart(FATS_OILS.oilProduced, hiddenSets.oilProduced, FATS_OILS.oilProduced.unit, "M lbs")} deps={`${chartMode}_${[...hiddenSets.oilProduced].join()}`} />}
-
-    <SectionTitle right={<div style={{ display: "flex", gap: 8, alignItems: "center" }}><ChartModeToggle mode={chartMode} setMode={setChartMode} /><DownloadBtn onClick={dlFO(FATS_OILS.mealStocks, "soy_meal_stocks.csv")} /></div>}>
-      Soybean meal stocks (end of month)
-    </SectionTitle>
-    {chartMode === "seasonal" && <InteractiveLegend items={foLegend} hidden={hiddenSets.mealStocks} onToggle={toggleFor("mealStocks")} />}
-    {ready && <ChartBox id={`fo_meals_${chartMode}`} renderChart={mkFOChart(FATS_OILS.mealStocks, hiddenSets.mealStocks, FATS_OILS.mealStocks.unit, "k st")} deps={`${chartMode}_${[...hiddenSets.mealStocks].join()}`} />}
-
-    <SectionTitle right={<div style={{ display: "flex", gap: 8, alignItems: "center" }}><ChartModeToggle mode={chartMode} setMode={setChartMode} /><DownloadBtn onClick={dlFO(FATS_OILS.oilStocks, "soy_oil_stocks.csv")} /></div>}>
-      Soybean oil stocks (end of month)
-    </SectionTitle>
-    {chartMode === "seasonal" && <InteractiveLegend items={foLegend} hidden={hiddenSets.oilStocks} onToggle={toggleFor("oilStocks")} />}
-    {ready && <ChartBox id={`fo_oils_${chartMode}`} renderChart={mkFOChart(FATS_OILS.oilStocks, hiddenSets.oilStocks, FATS_OILS.oilStocks.unit, "M lbs")} deps={`${chartMode}_${[...hiddenSets.oilStocks].join()}`} />}
-
-    <div style={{ marginTop: 12, fontSize: 10, color: "var(--color-text-tertiary)" }}>
-      Source: USDA NASS Fats and Oils: Oilseed Crushings report. Monthly data, Oct–Sep marketing year. Crush in million bushels, meal in thousand short tons, oil in million pounds.
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+      {CHARTS.map(function(ch) { return (<div key={ch.key}>
+        <div style={{fontSize:14,fontWeight:600,color:"var(--color-text-primary)",marginBottom:6}}>{ch.label} <span style={{fontSize:11,fontWeight:400,color:"var(--color-text-tertiary)"}}>({ch.unit})</span></div>
+        {ready && <ChartBox id={"oil_"+ch.key+"_"+mode+"_"+range} height={220} renderChart={mkChart(ch.data)} deps={"oil_"+ch.key+"_"+mode+"_"+range+"_"+oilLoaded+"_"+hk} />}
+      </div>); })}
     </div>
+    <div style={{marginTop:14,fontSize:11,color:"var(--color-text-tertiary)"}}>Source: USDA NASS Fats & Oils: Oilseed Crushings. Soybean marketing year (Oct–Sep). Oil yield = oil produced ÷ bushels crushed.</div>
   </div>);
 }
+
 
 function HogsPigsPage({ ready }) {
   const [chartMode, setChartMode] = useState("seasonal");

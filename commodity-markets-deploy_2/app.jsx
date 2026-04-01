@@ -2430,7 +2430,7 @@ function CropProgressPage({ ready }) {
   var selState = _st[0], setSelState = _st[1];
   var _hy = useState(new Set());
   var hiddenYrs = _hy[0], setHiddenYrs = _hy[1];
-  var _mc = useState("corn");
+  var _mc = useState("winter_wheat");
   var mapCrop = _mc[0], setMapCrop = _mc[1];
   var _ms = useState("planted");
   var mapStage = _ms[0], setMapStage = _ms[1];
@@ -2483,13 +2483,15 @@ function CropProgressPage({ ready }) {
 
   // Map rendering
   useEffect(function() {
-    if (tab !== "summary" || !mapRef.current || d3v !== 1 || !cpLoaded) return;
+    if (tab !== "summary" || !mapRef.current || !window.d3 || !window.topojson || !cpLoaded) return;
     var cr = allCrops[mapCrop];
     var sd = cr && cr.stages ? cr.stages[mapStage] : null;
     var el = mapRef.current;
     el.innerHTML = "";
-    d3.json("https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json").then(function(us) {
-      if (!us || !us.objects) return;
+    console.log("Map: d3=", !!window.d3, "topojson=", !!window.topojson, "el=", !!el);
+    fetch("https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json").then(function(r){return r.json();}).then(function(us) {
+      console.log("Map: atlas loaded, features=", us && us.objects ? Object.keys(us.objects) : "none");
+      if (!us || !us.objects) { el.innerHTML = "<p style='color:#999;text-align:center;padding:20px'>No map data</p>"; return; }
       el.innerHTML = "";
       var feat = topojson.feature(us, us.objects.states);
       var svg = d3.select(el).append("svg").attr("viewBox","0 0 960 600").style("width","100%").style("height","auto");
@@ -2497,14 +2499,16 @@ function CropProgressPage({ ready }) {
       var geoPath = d3.geoPath().projection(proj);
       var vals={},chgs={};
       if(sd){Object.keys(sd).forEach(function(st){if(st==="US")return;var s2=sd[st];var pts=s2[String(curYear)]||[];if(pts.length>0){vals[st]=pts[pts.length-1].v;if(pts.length>1)chgs[st]=pts[pts.length-1].v-pts[pts.length-2].v;}});}
-      var vArr=Object.values(vals);var cMax=vArr.length>0?Math.max.apply(null,vArr):100;var cMin=vArr.length>0?Math.min.apply(null,vArr):0;
+      var vArr=Object.values(vals);
+      if (vArr.length === 0) { el.innerHTML="<p style='color:#999;text-align:center;padding:40px'>No data available for this selection. Try Winter Wheat or a different stage.</p>"; return; }
+      var cMax=Math.max.apply(null,vArr);var cMin=Math.min.apply(null,vArr);
       var cs=d3.scaleSequential(d3.interpolateYlGn).domain([cMin,cMax]);
       svg.selectAll("path").data(feat.features).enter().append("path").attr("d",geoPath).attr("fill",function(d){var ab=FIPS[String(d.id).padStart(2,"0")];return ab&&vals[ab]!=null?cs(vals[ab]):"#f0f0f0";}).attr("stroke","#fff").attr("stroke-width",1);
       svg.selectAll(".sl").data(feat.features).enter().append("text").attr("class","sl").attr("transform",function(d){var ct=geoPath.centroid(d);return isNaN(ct[0])?"translate(-999,-999)":"translate("+ct[0]+","+(ct[1]-2)+")";}).attr("text-anchor","middle").attr("font-size","8").attr("font-weight","700").attr("fill","#222").text(function(d){var ab=FIPS[String(d.id).padStart(2,"0")];return ab&&vals[ab]!=null?ab:"";});
       svg.selectAll(".vl").data(feat.features).enter().append("text").attr("class","vl").attr("transform",function(d){var ct=geoPath.centroid(d);return isNaN(ct[0])?"translate(-999,-999)":"translate("+ct[0]+","+(ct[1]+8)+")";}).attr("text-anchor","middle").attr("font-size","7").attr("fill","#333").text(function(d){var ab=FIPS[String(d.id).padStart(2,"0")];if(!ab||vals[ab]==null)return"";var s3=vals[ab]+"%";var cg=chgs[ab];if(cg!=null&&cg!==0)s3+=" ("+(cg>0?"+":"")+cg+")";return s3;});
       var lg=svg.append("g").attr("transform","translate(380,570)");var df2=svg.append("defs");var gr=df2.append("linearGradient").attr("id","cplg");gr.append("stop").attr("offset","0%").attr("stop-color",cs(cMin));gr.append("stop").attr("offset","100%").attr("stop-color",cs(cMax));lg.append("text").attr("y",-6).attr("x",100).attr("text-anchor","middle").attr("font-size","10").attr("font-weight","600").attr("fill","#444").text("Percentage Scale");lg.append("rect").attr("width",200).attr("height",10).attr("rx",2).attr("fill","url(#cplg)").attr("stroke","#ccc");lg.append("text").attr("y",20).attr("font-size","9").attr("fill","#666").text(Math.round(cMin)+"%");lg.append("text").attr("x",200).attr("y",20).attr("text-anchor","end").attr("font-size","9").attr("fill","#666").text(Math.round(cMax)+"%");
-    }).catch(function(){});
-  }, [tab, mapCrop, mapStage, cpLoaded, d3v]);
+    }).catch(function(err){ if(el)el.innerHTML="<p style='color:#999;text-align:center;padding:20px'>Map error: "+err.message+"</p>"; });
+  }, [tab, mapCrop, mapStage, cpLoaded]);
 
   // Get latest info for a stage
   var getLatest = function(stageObj) {
@@ -2700,8 +2704,9 @@ function CropProgressPage({ ready }) {
         </select>
         {(function(){var cr=allCrops[mapCrop];var sd2=cr&&cr.stages?cr.stages[mapStage]:null;var us=sd2?sd2["US"]:null;var pts=us?us[String(curYear)]||[]:[];if(pts.length===0)return null;var last=pts[pts.length-1];var chg=pts.length>1?last.v-pts[pts.length-2].v:null;return <span style={{fontSize:13,fontWeight:500,color:"var(--color-text-primary)"}}>U.S.: {last.v}%{chg!=null&&<span style={{color:chg>0?"#639922":chg<0?"#A32D2D":"#666",marginLeft:6,fontSize:12}}>({chg>0?"+":""}{chg} vs prev wk)</span>}</span>;})()}
       </div>
-      {d3v === 1 && <div ref={mapRef} style={{width:"100%",minHeight:300,background:"var(--color-background-primary)",borderRadius:8,border:"0.5px solid var(--color-border-tertiary)",marginBottom:24}}></div>}
-      {d3v === 0 && <div style={{width:"100%",minHeight:200,display:"flex",alignItems:"center",justifyContent:"center",color:"var(--color-text-tertiary)",fontSize:13,borderRadius:8,border:"0.5px solid var(--color-border-tertiary)",marginBottom:24}}>Loading map...</div>}
+      <div ref={mapRef} style={{width:"100%",minHeight:300,background:"var(--color-background-primary)",borderRadius:8,border:"0.5px solid var(--color-border-tertiary)",marginBottom:24,display:"flex",alignItems:"center",justifyContent:"center"}}>
+        <span style={{color:"var(--color-text-tertiary)",fontSize:13}}>Loading map...</span>
+      </div>
       {summaryTbl}
     </div>}
 

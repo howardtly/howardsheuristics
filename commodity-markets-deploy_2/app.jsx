@@ -2938,7 +2938,7 @@ function EthanolPage({ ready }) {
   var startMY = curMY - rangeN;
 
   var yrColors = ["#A32D2D","#D85A30","#E8A735","#639922","#1D9E75","#378ADD","#534AB7","#8B5CF6","#EC4899","#6B7280"];
-  var getColor = function(my) { return my === curMY ? "#333" : yrColors[(my - startMY) % yrColors.length]; };
+  var getColor = function(my) { return my === curMY ? "#333" : yrColors[(curMY - my - 1) % yrColors.length]; };
 
   // Build legend items (chronological, oldest first)
   var buildItems = function(byMY) {
@@ -2953,10 +2953,17 @@ function EthanolPage({ ready }) {
 
   // Get latest values for header cards
   var getCardInfo = function(rawPts, convFn) {
-    if (!rawPts || !rawPts.length) return { cur: null, prevWk: null, date: null };
+    if (!rawPts || !rawPts.length) return { cur: null, prevWk: null, lastYr: null, date: null };
     var sorted = rawPts.slice().sort(function(a, b) { return a.d < b.d ? 1 : -1; });
     var latest = sorted[0]; var prev = sorted.length > 1 ? sorted[1] : null;
-    return { cur: convFn(latest.v), prevWk: prev ? convFn(prev.v) : null, date: latest.d };
+    // Find same week last year (±7 days)
+    var latestDate = new Date(latest.d);
+    var targetDate = new Date(latestDate);
+    targetDate.setFullYear(targetDate.getFullYear() - 1);
+    var targetMs = targetDate.getTime();
+    var lastYrPt = null; var bestDiff = 8 * 86400000;
+    rawPts.forEach(function(p) { var diff = Math.abs(new Date(p.d).getTime() - targetMs); if (diff < bestDiff) { bestDiff = diff; lastYrPt = p; } });
+    return { cur: convFn(latest.v), prevWk: prev ? convFn(prev.v) : null, lastYr: lastYrPt ? convFn(lastYrPt.v) : null, date: latest.d };
   };
 
   var prodInfo = ethData ? getCardInfo(ethData.production, convProd) : {};
@@ -2981,6 +2988,7 @@ function EthanolPage({ ready }) {
       {info.date && <div style={{fontSize:10,color:"var(--color-text-tertiary)",marginBottom:6}}>as of {info.date}</div>}
       <div style={{borderTop:"0.5px solid var(--color-border-tertiary)",paddingTop:5}}>
         {diffLine("vs. last week", info.prevWk)}
+        {diffLine("vs. last year", info.lastYr)}
       </div>
     </div>);
   };
@@ -3077,7 +3085,7 @@ function EthanolPage({ ready }) {
         scales: { x: { type: "linear", min: 0, max: totalDays,
           afterBuildTicks: function(ax) { ax.ticks = xTicks.map(function(t) { return { value: t.value }; }); },
           ticks: { callback: function(v) { var found = xTicks.find(function(t) { return Math.abs(t.value - v) < 5; }); return found ? found.label : ""; }, autoSkip: false, maxRotation: 0, font: { size: 10 } },
-          grid: { color: function(ctx) { var v = ctx.tick.value; return xGrids.some(function(g) { return Math.abs(g - v) < 5; }) ? "rgba(0,0,0,0.2)" : "transparent"; } } },
+          grid: { color: function(ctx) { var v = ctx.tick.value; if (xGrids.some(function(g) { return Math.abs(g - v) < 5; })) return "rgba(0,0,0,0.15)"; var isMonthBound = xTicks.some(function(t) { return Math.abs(t.value - v) < 5 && t.label !== ""; }); return isMonthBound ? "rgba(0,0,0,0.06)" : "transparent"; } } },
           y: { min: yMin2, max: yMax2, ticks: { stepSize: st2, font: { size: 10 }, callback: function(v) { return v.toLocaleString(); } }, grid: { color: "rgba(0,0,0,0.08)" } } }
       } });
     }
@@ -4033,7 +4041,7 @@ function COTChartsPage({ ready }) {
 
   var chevronSvg = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%23666' stroke-width='1.5'/%3E%3C/svg%3E\")";
   var selectStyle = {padding: "7px 28px 7px 12px", fontSize: 14, fontWeight: 500, border: "1px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-primary)", color: "var(--color-text-primary)", fontFamily: "inherit", cursor: "pointer", appearance: "none", backgroundImage: chevronSvg, backgroundRepeat: "no-repeat", backgroundPosition: "right 8px center"};
-  var labelStyle2 = {fontSize: 12, fontWeight: 600, color: "#fff", background: "#333", padding: "4px 10px", borderRadius: 4, textTransform: "uppercase", letterSpacing: "0.4px"};
+  var labelStyle2 = {fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.4px"};
   var toggleBtnStyle = function(active) { return {padding: "6px 14px", fontSize: 12, fontWeight: 500, border: "1px solid " + (active ? "#2563EB" : "var(--color-border-secondary)"), borderRadius: 5, cursor: "pointer", background: active ? "#2563EB" : "transparent", color: active ? "#fff" : "var(--color-text-secondary)", transition: "all 0.15s"}; };
 
   var categories = [
@@ -5286,7 +5294,7 @@ function ExportSalesPage({ ready }) {
 
   const chevronSvg = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%23666' stroke-width='1.5'/%3E%3C/svg%3E")`;
   const selectStyle = { padding: "7px 28px 7px 12px", fontSize: 13, fontWeight: 500, border: "1px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-primary)", color: "var(--color-text-primary)", fontFamily: "inherit", cursor: "pointer", appearance: "none", backgroundImage: chevronSvg, backgroundRepeat: "no-repeat", backgroundPosition: "right 8px center" };
-  const labelStyle = { fontSize: 11, fontWeight: 600, color: "#fff", background: "#333", padding: "4px 10px", borderRadius: 4, textTransform: "uppercase", letterSpacing: "0.4px" };
+  const labelStyle = { fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.4px" };
 
   return (<div>
     <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>

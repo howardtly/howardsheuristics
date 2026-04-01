@@ -1065,6 +1065,19 @@ const COT_DATA = {
   "cot-nat-gas":       { label: "Natural Gas",   exchange: "NYMEX",contract: "10,000 MMBtu", ...mkFullCOT(8267,-10142,     156384,-10016, -62574,13336,  271683,-330163, -125825,5926,  1584208,-37239) },
 };
 
+// ─── Ethanol — live data from EIA API ────
+function useLiveEthanol() {
+  var _s = useState(null); var data = _s[0], setData = _s[1];
+  var _l = useState(false); var loaded = _l[0], setLoaded = _l[1];
+  useEffect(function() {
+    fetch("data/ethanol.json")
+      .then(function(r) { if (!r.ok) throw new Error("not found"); return r.json(); })
+      .then(function(d) { setData(d); setLoaded(true); })
+      .catch(function() { setLoaded(true); });
+  }, []);
+  return { ethData: data, ethLoaded: loaded };
+}
+
 // ─── Crop progress — live data from NASS API ────
 function useLiveCropProgress() {
   const [data, setData] = useState(null);
@@ -1084,26 +1097,6 @@ function useLiveCropProgress() {
 // Exports = thousand barrels per day (kbd)
 // Weekly data, Friday dates (report released following Wednesday)
 
-const ETHANOL_DATA = {
-  production: {
-    weeks: ["Jan 3","Jan 10","Jan 17","Jan 24","Jan 31","Feb 7","Feb 14","Feb 21","Feb 28","Mar 7","Mar 14","Mar 21","Mar 28","Apr 4","Apr 11","Apr 18","Apr 25","May 2","May 9","May 16","May 23","May 30","Jun 6","Jun 13","Jun 20","Jun 27","Jul 4","Jul 11","Jul 18","Jul 25","Aug 1","Aug 8","Aug 15","Aug 22","Aug 29","Sep 5","Sep 12","Sep 19","Sep 26","Oct 3","Oct 10","Oct 17","Oct 24","Oct 31","Nov 7","Nov 14","Nov 21","Nov 28","Dec 5","Dec 12","Dec 19","Dec 26"],
-    "2025": [1082,1098,1105,1092,1088,1101,1095,1108,1112,1098,1105,1110,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
-    "2024": [1048,1062,1055,1070,1058,1065,1072,1068,1078,1082,1075,1088,1092,1085,1078,1090,1095,1088,1082,1098,1105,1092,1078,1085,1095,1102,1068,1075,1088,1095,1082,1090,1098,1085,1078,1070,1065,1082,1090,1095,1102,1108,1098,1085,1072,1078,1062,1055,1068,1075,1058,1045],
-    "5yr":  [1005,1018,1025,1015,1010,1022,1028,1020,1032,1038,1030,1042,1048,1042,1035,1045,1050,1042,1038,1052,1058,1048,1035,1040,1050,1055,1025,1032,1042,1050,1038,1045,1052,1040,1035,1028,1022,1038,1045,1050,1058,1062,1052,1040,1030,1035,1020,1012,1025,1032,1018,1008],
-  },
-  stocks: {
-    weeks: ["Jan 3","Jan 10","Jan 17","Jan 24","Jan 31","Feb 7","Feb 14","Feb 21","Feb 28","Mar 7","Mar 14","Mar 21","Mar 28","Apr 4","Apr 11","Apr 18","Apr 25","May 2","May 9","May 16","May 23","May 30","Jun 6","Jun 13","Jun 20","Jun 27","Jul 4","Jul 11","Jul 18","Jul 25","Aug 1","Aug 8","Aug 15","Aug 22","Aug 29","Sep 5","Sep 12","Sep 19","Sep 26","Oct 3","Oct 10","Oct 17","Oct 24","Oct 31","Nov 7","Nov 14","Nov 21","Nov 28","Dec 5","Dec 12","Dec 19","Dec 26"],
-    "2025": [23450,23820,24110,24380,24050,23780,23510,23890,24200,24520,24150,23880,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
-    "2024": [24100,24350,24680,24920,24550,24280,23950,24150,24480,24750,24420,24180,23850,23620,23380,23650,23920,24180,24520,24850,25120,24780,24450,24180,23920,23650,23980,24250,24580,24850,24520,24280,23950,23680,23420,23780,24050,24320,24650,24920,25180,24850,24520,24250,24580,24320,24050,23780,24100,24380,24650,24920],
-    "5yr":  [23200,23480,23750,23980,23650,23380,23100,23350,23620,23880,23580,23320,23050,22820,22580,22850,23120,23380,23720,24050,24320,23980,23650,23380,23120,22850,23180,23450,23780,24050,23720,23480,23150,22880,22620,22980,23250,23520,23850,24120,24380,24050,23720,23450,23780,23520,23250,22980,23300,23580,23850,24120],
-  },
-  exports: {
-    weeks: ["Jan 3","Jan 10","Jan 17","Jan 24","Jan 31","Feb 7","Feb 14","Feb 21","Feb 28","Mar 7","Mar 14","Mar 21","Mar 28","Apr 4","Apr 11","Apr 18","Apr 25","May 2","May 9","May 16","May 23","May 30","Jun 6","Jun 13","Jun 20","Jun 27","Jul 4","Jul 11","Jul 18","Jul 25","Aug 1","Aug 8","Aug 15","Aug 22","Aug 29","Sep 5","Sep 12","Sep 19","Sep 26","Oct 3","Oct 10","Oct 17","Oct 24","Oct 31","Nov 7","Nov 14","Nov 21","Nov 28","Dec 5","Dec 12","Dec 19","Dec 26"],
-    "2025": [78,112,95,88,105,92,118,102,85,98,108,95,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
-    "2024": [65,88,72,95,82,78,105,92,68,85,98,75,88,102,68,92,108,85,72,98,112,78,65,88,95,72,58,75,92,105,82,68,85,98,72,62,78,92,105,88,95,112,85,72,68,82,58,52,75,88,65,55],
-    "5yr":  [55,72,62,78,68,65,85,75,58,70,82,62,72,85,58,75,88,68,60,80,92,65,55,72,78,60,48,62,75,85,68,58,70,80,60,52,65,75,85,72,78,92,70,60,55,68,48,42,62,72,55,45],
-  },
-};
 
 // ─── Fats & Oils data — NASS monthly report ─────────────────────────
 // Soybean crush, meal/oil production, meal/oil stocks
@@ -1270,7 +1263,7 @@ function ChartModeToggle({ mode, setMode }) {
         <button key={m.id} onClick={() => setMode(m.id)} style={{
           padding: "5px 14px", fontSize: 11, cursor: "pointer", border: "none",
           borderRight: m.id === "seasonal" ? "1px solid var(--color-border-secondary)" : "none",
-          background: mode === m.id ? "#333" : "transparent",
+          background: mode === m.id ? "#2563EB" : "transparent",
           color: mode === m.id ? "#fff" : "var(--color-text-tertiary)",
           fontWeight: 500, transition: "all 0.15s",
         }}>{m.label}</button>
@@ -2862,218 +2855,267 @@ function CropProgressPage({ ready }) {
 
 
 function EthanolPage({ ready }) {
-  const [hProd, tProd] = useToggle();
-  const [hStk, tStk] = useToggle();
-  const [hExp, tExp] = useToggle();
-  const [unit, setUnit] = useState("bbl");
-  const [chartMode, setChartMode] = useState("seasonal"); // "bbl" or "gal"
+  var ref = useLiveEthanol();
+  var ethData = ref.ethData;
+  var ethLoaded = ref.ethLoaded;
+  var _mode = useState("seasonal");
+  var mode = _mode[0], setMode = _mode[1];
+  var _range = useState("1");
+  var range = _range[0], setRange = _range[1];
+  var _unit = useState("bbl");
+  var unit = _unit[0], setUnit = _unit[1];
+  var _hy = useState(new Set());
+  var hiddenYrs = _hy[0], setHiddenYrs = _hy[1];
 
-  const GAL_PER_BBL = 42;
-  const isGal = unit === "gal";
-  // Barrels: raw values in thousands. Gallons: convert to millions (×42 / 1000)
-  const conv = (v) => v != null ? (isGal ? Math.round(v * GAL_PER_BBL / 1000 * 100) / 100 : v) : null;
-  const convSeries = (series) => ({
-    weeks: series.weeks,
-    "2025": series["2025"].map(conv),
-    "2024": series["2024"].map(conv),
-    "5yr":  series["5yr"].map(conv),
-  });
+  useEffect(function(){ setHiddenYrs(new Set()); }, [mode, range, unit]);
+  var toggleYr = function(label) { setHiddenYrs(function(prev){ var next = new Set(prev); if(next.has(label))next.delete(label);else next.add(label); return next; }); };
 
-  const prodData = convSeries(ETHANOL_DATA.production);
-  const stkData = convSeries(ETHANOL_DATA.stocks);
-  const expData = convSeries(ETHANOL_DATA.exports);
+  var GAL_PER_BBL = 42;
+  var isGal = unit === "gal";
+  var convProd = function(v) { return v == null ? null : isGal ? Math.round(v * GAL_PER_BBL * 10) / 10 : v; };
+  var convStk = function(v) { return v == null ? null : isGal ? Math.round(v * GAL_PER_BBL) : v; };
+  var prodUnit = isGal ? "k gal/day" : "kbd";
+  var stkUnit = isGal ? "k gallons" : "k barrels";
 
-  const flowUnit = isGal ? "M gal/day" : "kbd";
-  const flowLabel = isGal ? "million gallons/day" : "thousand barrels/day";
-  const stockUnit = isGal ? "M gal" : "kb";
-  const stockLabel = isGal ? "million gallons" : "thousand barrels";
-  const stockCardUnit = isGal ? "M gal" : "kb";
+  // Marketing year: Sep 1 - Aug 31
+  var mktN = ["Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug"];
+  var mktB = [0,30,61,91,122,153,181,212,242,273,303,334];
+  var mktM = [15,45,76,106,137,167,196,227,257,288,318,349];
 
-  const ethLegend = [
-    { label: "2025", color: "#1D9E75", key: "2025" },
-    { label: "2024", color: "#378ADD", key: "2024", dash: "dashed" },
-    { label: "5-yr avg", color: "#333", key: "5yr", dash: "dotted" },
-  ];
-  const ethDS = {
-    "2025": { borderColor: "#1D9E75", borderWidth: 2.5, pointRadius: 0, tension: 0.3 },
-    "2024": { borderColor: "#378ADD", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [5,3] },
-    "5yr":  { borderColor: "#333", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [2,3] },
+  var dateToMktDay = function(ds) {
+    var p = ds.split("-"); var y = parseInt(p[0]), m = parseInt(p[1]) - 1, d = parseInt(p[2]);
+    var dt = new Date(y, m, d);
+    var sep1 = m >= 8 ? new Date(y, 8, 1) : new Date(y - 1, 8, 1);
+    return Math.round((dt - sep1) / 86400000);
   };
+  var dateToMY = function(ds) {
+    var m = parseInt(ds.split("-")[1]); var y = parseInt(ds.split("-")[0]);
+    return m >= 9 ? y : y - 1;
+  };
+  var myLabel = function(yr) { return yr + "/" + String(yr + 1).slice(2); };
 
-  const mkEthChart = useCallback((seriesData, hidden, yLbl, uLbl) => (canvas) => {
-    if (chartMode === "contiguous") {
-      const labels24 = seriesData.weeks.map(w => { const parts = w.split(" "); return parts[0].substring(0,3) + "-24"; });
-      const labels25 = seriesData.weeks.map(w => { const parts = w.split(" "); return parts[0].substring(0,3) + "-25"; });
-      const allLabels = [...labels24, ...labels25];
-      const allData = [...seriesData["2024"], ...seriesData["2025"]];
-      const allVals = allData.filter(v => v != null);
-      let yMin = 0, yMax = 100;
-      if (allVals.length > 0) {
-        const dataMin = Math.min(...allVals); const dataMax = Math.max(...allVals);
-        const range = dataMax - dataMin; const pad = Math.max(range * 0.15, dataMax * 0.02);
-        const rawStep = (range + pad * 2) / 6;
-        const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
-        const norm = rawStep / mag;
-        const niceNorm = norm <= 1.5 ? 1 : norm <= 3.5 ? 2 : norm <= 7.5 ? 5 : 10;
-        const step = niceNorm * mag;
-        yMin = Math.floor((dataMin - pad) / step) * step;
-        yMax = Math.ceil((dataMax + pad) / step) * step;
-      }
-      new Chart(canvas, {
-        type: "line", data: { labels: allLabels, datasets: [{
-          label: yLbl, data: allData, borderColor: "#1D9E75", backgroundColor: "rgba(29,158,117,0.06)",
-          fill: true, borderWidth: 2, pointRadius: 0, tension: 0.3, spanGaps: true,
-        }]},
-        options: { responsive: true, maintainAspectRatio: false,
-          interaction: { mode: "index", intersect: false },
-          plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.parsed.y != null ? c.parsed.y.toLocaleString() + " " + uLbl : "n/a"}` } } },
-          scales: {
-            x: { ticks: { autoSkip: true, maxTicksLimit: 12, maxRotation: 45, font: { size: 10 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
-            y: { min: yMin, max: yMax, title: { display: true, text: yLbl, font: { size: 11 } }, ticks: { font: { size: 11 }, callback: v => v.toLocaleString() }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
-          },
-        },
-      });
-      return;
-    }
-    const visibleKeys = ["2025","2024","5yr"].filter(k => !hidden.has(k));
-    const ds = visibleKeys.map(k => ({
-      label: k === "5yr" ? "5-yr avg" : k,
-      data: seriesData[k],
-      ...ethDS[k],
-      spanGaps: true,
-    }));
-    const allVals = visibleKeys.flatMap(k => seriesData[k].filter(v => v != null));
-    let yMin, yMax;
-    if (allVals.length > 0) {
-      const dataMin = Math.min(...allVals);
-      const dataMax = Math.max(...allVals);
-      const range = dataMax - dataMin;
-      const pad = Math.max(range * 0.15, dataMax * 0.02);
-      // Pick a "nice" step: 1, 2, 5 × power of 10
-      const rawStep = (range + pad * 2) / 6;
-      const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
-      const norm = rawStep / mag;
-      const niceNorm = norm <= 1.5 ? 1 : norm <= 3.5 ? 2 : norm <= 7.5 ? 5 : 10;
-      const step = niceNorm * mag;
-      yMin = Math.floor((dataMin - pad) / step) * step;
-      yMax = Math.ceil((dataMax + pad) / step) * step;
-    } else { yMin = 0; yMax = 100; }
-    new Chart(canvas, {
-      type: "line",
-      data: { labels: seriesData.weeks, datasets: ds },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        interaction: { mode: "index", intersect: false }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.parsed.y != null ? c.parsed.y.toLocaleString() + " " + uLbl : "n/a"}` } } },
-        scales: {
-          x: { ticks: { autoSkip: true, maxTicksLimit: 14, font: { size: 11 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
-          y: { min: yMin, max: yMax, title: { display: true, text: yLbl, font: { size: 11 } }, ticks: { font: { size: 11 }, callback: v => v.toLocaleString() }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
-        },
-      },
+  var processRaw = function(rawPts, convFn) {
+    if (!rawPts || !rawPts.length) return {};
+    var byMY = {};
+    rawPts.forEach(function(pt) {
+      var my = dateToMY(pt.d); var day = dateToMktDay(pt.d);
+      if (day < -5 || day > 370) return;
+      day = Math.max(0, Math.min(365, day));
+      if (!byMY[my]) byMY[my] = [];
+      byMY[my].push({ x: day, y: convFn(pt.v) });
     });
-  }, [chartMode]);
+    return byMY;
+  };
 
-  const lastNN = (arr) => { for (let i = arr.length - 1; i >= 0; i--) { if (arr[i] != null) return { val: arr[i], idx: i }; } return { val: null, idx: -1 }; };
-  const prodL = lastNN(prodData["2025"]);
-  const stkL = lastNN(stkData["2025"]);
-  const expL = lastNN(expData["2025"]);
+  // Compute offtake: prev_stocks + production*7 - cur_stocks
+  var computeOfftake = function() {
+    if (!ethData || !ethData.production || !ethData.stocks) return [];
+    var prodMap = {}, stkMap = {};
+    ethData.production.forEach(function(pt) { prodMap[pt.d] = pt.v; });
+    ethData.stocks.forEach(function(pt) { stkMap[pt.d] = pt.v; });
+    var dates = ethData.stocks.map(function(pt) { return pt.d; }).sort();
+    var out = [];
+    for (var i = 1; i < dates.length; i++) {
+      var cur = dates[i], prev = dates[i - 1];
+      if (stkMap[cur] != null && stkMap[prev] != null && prodMap[cur] != null) {
+        out.push({ d: cur, v: Math.round((stkMap[prev] + prodMap[cur] * 7 - stkMap[cur]) * 10) / 10 });
+      }
+    }
+    return out;
+  };
 
-  const prodYA = prodL.idx >= 0 ? prodData["2024"][prodL.idx] : null;
-  const prod5Y = prodL.idx >= 0 ? prodData["5yr"][prodL.idx] : null;
-  const stkYA = stkL.idx >= 0 ? stkData["2024"][stkL.idx] : null;
-  const stk5Y = stkL.idx >= 0 ? stkData["5yr"][stkL.idx] : null;
-  const expYA = expL.idx >= 0 ? expData["2024"][expL.idx] : null;
-  const asOfWeek = prodL.idx >= 0 ? ETHANOL_DATA.production.weeks[prodL.idx] : null;
+  var prod = ethData ? processRaw(ethData.production, convProd) : {};
+  var stk = ethData ? processRaw(ethData.stocks, convStk) : {};
+  var exp = ethData ? processRaw(ethData.exports, convProd) : {};
+  var oft = processRaw(computeOfftake(), convStk);
 
-  const pctChg = (a, b) => b != null && b !== 0 ? ((a - b) / b * 100).toFixed(1) : null;
+  var now = new Date();
+  var curMY = now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1;
+  var rangeN = parseInt(range);
+  var startMY = curMY - rangeN;
 
-  const EthDiffLine = ({ label, absVal, cur, inverted }) => {
-    if (absVal == null || cur == null) return null;
-    const d = Number(pctChg(cur, absVal));
-    if (isNaN(d)) return null;
-    const positive = inverted ? d < 0 : d > 0;
-    const negative = inverted ? d > 0 : d < 0;
-    const col = positive ? "#639922" : negative ? "#A32D2D" : "var(--color-text-tertiary)";
-    return (
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, padding: "2px 0" }}>
-        <span style={{ color: "var(--color-text-tertiary)" }}>{label} ({absVal.toLocaleString()})</span>
-        <span style={{ color: col, fontWeight: 500, fontFamily: "var(--font-mono)" }}>{d > 0 ? "+" : ""}{d}%</span>
+  var yrColors = ["#A32D2D","#D85A30","#E8A735","#639922","#1D9E75","#378ADD","#534AB7","#8B5CF6","#EC4899","#6B7280"];
+  var getColor = function(my) { return my === curMY ? "#333" : yrColors[(curMY - my - 1) % yrColors.length]; };
+
+  // Build legend items
+  var buildItems = function(byMY) {
+    var items = [];
+    for (var y = startMY + 1; y <= curMY; y++) {
+      if (byMY[y]) items.push({ label: myLabel(y), my: y, color: getColor(y) });
+    }
+    return items;
+  };
+  var allItems = buildItems(prod);
+  var hk = Array.from(hiddenYrs).sort().join(",");
+
+  // Get latest values for header cards
+  var getCardInfo = function(rawPts, convFn) {
+    if (!rawPts || !rawPts.length) return { cur: null, prevWk: null, date: null };
+    var sorted = rawPts.slice().sort(function(a, b) { return a.d < b.d ? 1 : -1; });
+    var latest = sorted[0]; var prev = sorted.length > 1 ? sorted[1] : null;
+    return {
+      cur: convFn(latest.v),
+      prevWk: prev ? convFn(prev.v) : null,
+      date: latest.d,
+    };
+  };
+
+  var prodInfo = ethData ? getCardInfo(ethData.production, convProd) : {};
+  var stkInfo = ethData ? getCardInfo(ethData.stocks, convStk) : {};
+  var expInfo = ethData ? getCardInfo(ethData.exports, convProd) : {};
+  var oftRaw = computeOfftake();
+  var oftInfo = getCardInfo(oftRaw, convStk);
+
+  var statCard = function(label, info, unitLabel, color) {
+    var diffLine = function(lbl, comp) {
+      if (info.cur == null || comp == null) return null;
+      var d2 = Math.round((info.cur - comp) * 10) / 10;
+      var col = d2 > 0 ? "#639922" : d2 < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
+      return (<div style={{display:"flex",justifyContent:"space-between",fontSize:10.5,padding:"1px 0"}}>
+        <span style={{color:"var(--color-text-tertiary)"}}>{lbl}</span>
+        <span style={{color:col,fontWeight:500}}>({d2 > 0 ? "+" : ""}{d2})</span>
+      </div>);
+    };
+    return (<div style={{background:"var(--color-background-secondary)",borderRadius:"var(--border-radius-md)",padding:"12px 14px",minWidth:0,borderLeft:"3px solid "+(color||"#333")}}>
+      <div style={{fontSize:11,color:"var(--color-text-secondary)",marginBottom:3,textTransform:"uppercase",letterSpacing:"0.4px"}}>{label}</div>
+      <div style={{fontSize:22,fontWeight:500,color:"var(--color-text-primary)",marginBottom:2}}>{info.cur != null ? info.cur.toLocaleString() : "—"}<span style={{fontSize:12,fontWeight:400,color:"var(--color-text-secondary)",marginLeft:4}}>{unitLabel}</span></div>
+      {info.date && <div style={{fontSize:10,color:"var(--color-text-tertiary)",marginBottom:6}}>as of {info.date}</div>}
+      <div style={{borderTop:"0.5px solid var(--color-border-tertiary)",paddingTop:5}}>
+        {diffLine("vs. last week", info.prevWk)}
       </div>
-    );
+    </div>);
   };
 
-  const dlEth = (series, fn, uLbl) => () => {
-    const headers = ["Week", "2025", "2024", "5-yr avg"];
-    const rows = series.weeks.map((w, i) => [w, series["2025"][i] ?? "", series["2024"][i] ?? "", series["5yr"][i] ?? ""]);
-    downloadCSV(fn, headers, rows);
+  // Chart builder
+  var mkChart = function(byMY, yLabel) { return function(canvas) {
+    if (!byMY || Object.keys(byMY).length === 0) return;
+    var isSeasonal = mode === "seasonal";
+    var ds = [];
+
+    if (isSeasonal) {
+      for (var y = startMY + 1; y <= curMY; y++) {
+        var pts = byMY[y];
+        if (!pts || !pts.length) continue;
+        var label = myLabel(y);
+        ds.push({ label: label, data: pts.slice(), borderColor: getColor(y), borderWidth: y === curMY ? 2.5 : 1.5, pointRadius: 0, pointHitRadius: 6, tension: 0.3, fill: false, showLine: true, hidden: hiddenYrs.has(label) });
+      }
+      if (ds.length === 0) return;
+      var vis = ds.filter(function(d) { return !d.hidden; }).flatMap(function(d) { return d.data.map(function(p) { return p.y; }); });
+      if (vis.length === 0) return;
+      var yMax = Math.ceil(Math.max.apply(null, vis) * 1.05);
+      var yMin = Math.floor(Math.min.apply(null, vis) * 0.95);
+      var tks = []; for (var k = 0; k < 12; k++) { tks.push({ value: mktB[k] }); tks.push({ value: mktM[k] }); }
+      new Chart(canvas, { type: "scatter", data: { datasets: ds }, options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: "x", intersect: false },
+        plugins: { legend: { display: false }, tooltip: { mode: "x", intersect: false, backgroundColor: "rgba(0,0,0,0.6)", titleFont: { size: 11 }, bodyFont: { size: 11 },
+          callbacks: { title: function(items) { if (!items.length) return ""; var doy = items[0].parsed.x; var mi = 11; for (var m = 0; m < 11; m++) { if (doy < mktB[m + 1]) { mi = m; break; } } return mktN[mi] + " " + (Math.floor(doy - mktB[mi]) + 1); },
+            label: function(c2) { return c2.parsed.y == null ? null : c2.dataset.label + ": " + c2.parsed.y.toLocaleString(); } } } },
+        scales: { x: { type: "linear", min: 0, max: 365, ticks: { callback: function(v) { var idx = mktM.indexOf(v); return idx >= 0 ? mktN[idx] : ""; }, autoSkip: false, maxRotation: 0, font: { size: 10 } }, afterBuildTicks: function(ax) { ax.ticks = tks; }, grid: { color: function(ctx) { var v = ctx.tick.value; if (v > 0 && mktB.indexOf(v) >= 0) return "rgba(0,0,0,0.12)"; return "transparent"; }, lineWidth: 0.75 } },
+          y: { min: yMin, max: yMax, ticks: { font: { size: 10 } }, grid: { color: "rgba(0,0,0,0.08)", lineWidth: 0.75 } } }
+      } });
+    } else {
+      // Contiguous mode
+      var allPts = [];
+      var years = [];
+      for (var y2 = startMY + 1; y2 <= curMY; y2++) { if (byMY[y2]) years.push(y2); }
+      years.forEach(function(yr, idx) {
+        var pts2 = byMY[yr];
+        if (!pts2) return;
+        pts2.forEach(function(p) { allPts.push({ x: idx * 365 + p.x, y: p.y }); });
+      });
+      if (allPts.length === 0) return;
+      ds.push({ label: "Ethanol", data: allPts, borderColor: "#333", borderWidth: 1.5, pointRadius: 0, tension: 0.3, fill: false, showLine: true });
+      var allY = allPts.map(function(p) { return p.y; });
+      var yMax2 = Math.ceil(Math.max.apply(null, allY) * 1.05);
+      var yMin2 = Math.floor(Math.min.apply(null, allY) * 0.95);
+      var gridLines = [];
+      years.forEach(function(yr, idx) { if (idx > 0) gridLines.push(idx * 365); });
+      new Chart(canvas, { type: "scatter", data: { datasets: ds }, options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: "nearest", intersect: false },
+        plugins: { legend: { display: false }, tooltip: { backgroundColor: "rgba(0,0,0,0.6)" } },
+        scales: { x: { type: "linear", min: 0, max: years.length * 365,
+          ticks: { callback: function(v) { var yrIdx = Math.floor(v / 365); if (yrIdx < years.length) { var dayInYr = v - yrIdx * 365; if (Math.abs(dayInYr - 182) < 10) return myLabel(years[yrIdx]); } return ""; }, autoSkip: false, maxRotation: 0, font: { size: 10 } },
+          grid: { color: function(ctx) { var v = ctx.tick.value; return gridLines.indexOf(v) >= 0 ? "rgba(0,0,0,0.2)" : "transparent"; } } },
+          y: { min: yMin2, max: yMax2, ticks: { font: { size: 10 } }, grid: { color: "rgba(0,0,0,0.08)" } } }
+      } });
+    }
+  }; };
+
+  // CSV download
+  var dlCSV = function() {
+    var hdrs = ["Date", "Production (" + prodUnit + ")", "Stocks (" + stkUnit + ")", "Exports (" + prodUnit + ")", "Implied Offtake (" + stkUnit + ")"];
+    var rows = [];
+    var allDates = {};
+    if (ethData) {
+      (ethData.production || []).forEach(function(p) { allDates[p.d] = allDates[p.d] || {}; allDates[p.d].prod = convProd(p.v); });
+      (ethData.stocks || []).forEach(function(p) { allDates[p.d] = allDates[p.d] || {}; allDates[p.d].stk = convStk(p.v); });
+      (ethData.exports || []).forEach(function(p) { allDates[p.d] = allDates[p.d] || {}; allDates[p.d].exp = convProd(p.v); });
+    }
+    computeOfftake().forEach(function(p) { allDates[p.d] = allDates[p.d] || {}; allDates[p.d].oft = convStk(p.v); });
+    Object.keys(allDates).sort().forEach(function(d) {
+      var r = allDates[d];
+      rows.push([d, r.prod || "", r.stk || "", r.exp || "", r.oft || ""]);
+    });
+    downloadCSV("ethanol_" + unit + ".csv", hdrs, rows);
   };
+
+  var chevSvg = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%23666' stroke-width='1.5'/%3E%3C/svg%3E\")";
+  var selSt = {padding:"6px 24px 6px 10px",fontSize:13,fontWeight:500,border:"1px solid var(--color-border-secondary)",borderRadius:6,background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontFamily:"inherit",cursor:"pointer",appearance:"none",backgroundImage:chevSvg,backgroundRepeat:"no-repeat",backgroundPosition:"right 6px center"};
+  var modeSt = function(a) { return {padding:"6px 14px",fontSize:12,fontWeight:a?600:400,border:"1px solid "+(a?"#2563EB":"var(--color-border-secondary)"),borderRadius:5,cursor:"pointer",background:a?"#2563EB":"transparent",color:a?"#fff":"var(--color-text-secondary)",transition:"all 0.15s"}; };
+  var unitSt = function(a) { return {padding:"5px 12px",fontSize:12,fontWeight:a?600:400,border:"1px solid var(--color-border-secondary)",borderRadius:5,cursor:"pointer",background:a?"var(--color-background-secondary)":"transparent",color:a?"var(--color-text-primary)":"var(--color-text-secondary)"}; };
+
+  var CHARTS = [
+    { key: "prod", label: "Weekly Production", data: prod, yLabel: prodUnit },
+    { key: "stk", label: "Weekly Stocks", data: stk, yLabel: stkUnit },
+    { key: "oft", label: "Implied Offtake", data: oft, yLabel: stkUnit },
+    { key: "exp", label: "Weekly Exports", data: exp, yLabel: prodUnit },
+  ];
 
   return (<div>
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-      {asOfWeek && <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>EIA Weekly Petroleum Status Report — as of {asOfWeek}, 2025</span>}
-      <div style={{ display: "flex", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-secondary)", overflow: "hidden" }}>
-        {[{ id: "bbl", label: "Barrels" }, { id: "gal", label: "Gallons" }].map(u => (
-          <button key={u.id} onClick={() => setUnit(u.id)} style={{
-            padding: "5px 14px", fontSize: 12, cursor: "pointer",
-            border: "none", borderRight: u.id === "bbl" ? "0.5px solid var(--color-border-secondary)" : "none",
-            background: unit === u.id ? "#333" : "transparent",
-            color: unit === u.id ? "#fff" : "var(--color-text-tertiary)",
-            fontWeight: 500, transition: "all 0.15s",
-          }}>
-            {u.label}
-          </button>
-        ))}
+    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,flexWrap:"wrap"}}>
+      <div style={{display:"flex",gap:3}}>
+        <button onClick={function(){setMode("seasonal");}} style={modeSt(mode==="seasonal")}>Seasonal</button>
+        <button onClick={function(){setMode("contiguous");}} style={modeSt(mode==="contiguous")}>Contiguous</button>
       </div>
+      <select value={range} onChange={function(e){setRange(e.target.value);}} style={selSt}>
+        <option value="1">1 Year</option>
+        <option value="5">5 Years</option>
+        <option value="10">10 Years</option>
+      </select>
+      <div style={{display:"flex",gap:3}}>
+        <button onClick={function(){setUnit("bbl");}} style={unitSt(unit==="bbl")}>Barrels</button>
+        <button onClick={function(){setUnit("gal");}} style={unitSt(unit==="gal")}>Gallons</button>
+      </div>
+      <div style={{marginLeft:"auto"}}><DownloadBtn onClick={dlCSV} /></div>
     </div>
 
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10, marginBottom: 8 }}>
-      <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px", minWidth: 0 }}>
-        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.4px" }}>Production</div>
-        <div style={{ fontSize: 22, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 6 }}>{prodL.val != null ? (isGal ? prodL.val.toFixed(1) : prodL.val.toLocaleString()) : "—"} <span style={{ fontSize: 12, fontWeight: 400, color: "var(--color-text-secondary)" }}>{flowUnit}</span></div>
-        {prodL.val != null && <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 6, display: "flex", flexDirection: "column", gap: 1 }}>
-          <EthDiffLine label="vs. last year" absVal={prodYA != null ? (isGal ? Number(prodYA.toFixed(1)) : prodYA) : null} cur={isGal ? Number(prodL.val.toFixed(1)) : prodL.val} />
-          <EthDiffLine label="vs. 5-yr avg" absVal={prod5Y != null ? (isGal ? Number(prod5Y.toFixed(1)) : prod5Y) : null} cur={isGal ? Number(prodL.val.toFixed(1)) : prodL.val} />
-        </div>}
-      </div>
-      <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px", minWidth: 0 }}>
-        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.4px" }}>Stocks</div>
-        <div style={{ fontSize: 22, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 6 }}>{stkL.val != null ? (isGal ? Math.round(stkL.val).toLocaleString() : stkL.val.toLocaleString()) : "—"} <span style={{ fontSize: 12, fontWeight: 400, color: "var(--color-text-secondary)" }}>{stockCardUnit}</span></div>
-        {stkL.val != null && <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 6, display: "flex", flexDirection: "column", gap: 1 }}>
-          <EthDiffLine label="vs. last year" absVal={stkYA != null ? (isGal ? Math.round(stkYA) : stkYA) : null} cur={isGal ? Math.round(stkL.val) : stkL.val} inverted />
-          <EthDiffLine label="vs. 5-yr avg" absVal={stk5Y != null ? (isGal ? Math.round(stk5Y) : stk5Y) : null} cur={isGal ? Math.round(stkL.val) : stkL.val} inverted />
-        </div>}
-      </div>
-      <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px", minWidth: 0 }}>
-        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.4px" }}>Exports</div>
-        <div style={{ fontSize: 22, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 6 }}>{expL.val != null ? (isGal ? expL.val.toFixed(1) : expL.val.toLocaleString()) : "—"} <span style={{ fontSize: 12, fontWeight: 400, color: "var(--color-text-secondary)" }}>{flowUnit}</span></div>
-        {expL.val != null && <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 6, display: "flex", flexDirection: "column", gap: 1 }}>
-          <EthDiffLine label="vs. last year" absVal={expYA != null ? (isGal ? Number(expYA.toFixed(1)) : expYA) : null} cur={isGal ? Number(expL.val.toFixed(1)) : expL.val} />
-        </div>}
-      </div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:10,marginBottom:16}}>
+      {statCard("Production", prodInfo, prodUnit, "#639922")}
+      {statCard("Stocks", stkInfo, stkUnit, "#378ADD")}
+      {statCard("Implied Offtake", oftInfo, stkUnit, "#D85A30")}
+      {statCard("Exports", expInfo, prodUnit, "#534AB7")}
     </div>
 
-    <SectionTitle right={<div style={{ display: "flex", gap: 8, alignItems: "center" }}><ChartModeToggle mode={chartMode} setMode={setChartMode} /><DownloadBtn onClick={dlEth(prodData, "ethanol_production.csv", flowUnit)} /></div>}>
-      Weekly ethanol production
-    </SectionTitle>
-    {chartMode === "seasonal" && <InteractiveLegend items={ethLegend} hidden={hProd} onToggle={tProd} />}
-    {ready && <ChartBox id={`eth_prod_${unit}_${chartMode}`} renderChart={mkEthChart(prodData, hProd, flowLabel, flowUnit)} deps={`${unit}_${chartMode}_${[...hProd].join()}`} />}
+    {mode === "seasonal" && <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:16,alignItems:"center"}}>
+      {allItems.map(function(item) { var isH = hiddenYrs.has(item.label); return (
+        <button key={item.label} onClick={function(){toggleYr(item.label);}} style={{display:"flex",alignItems:"center",gap:5,padding:"4px 10px",border:"1px solid var(--color-border-secondary)",borderRadius:5,background:isH?"var(--color-background-secondary)":"transparent",cursor:"pointer",opacity:isH?0.3:1,transition:"all 0.15s"}}>
+          <span style={{width:18,height:0,borderTop:"2.5px solid "+item.color,display:"inline-block"}}></span>
+          <span style={{fontSize:12,fontWeight:500,color:"var(--color-text-primary)"}}>{item.label}</span>
+        </button>); })}
+    </div>}
 
-    <SectionTitle right={<div style={{ display: "flex", gap: 8, alignItems: "center" }}><ChartModeToggle mode={chartMode} setMode={setChartMode} /><DownloadBtn onClick={dlEth(stkData, "ethanol_stocks.csv", stockUnit)} /></div>}>
-      Weekly ethanol stocks
-    </SectionTitle>
-    {chartMode === "seasonal" && <InteractiveLegend items={ethLegend} hidden={hStk} onToggle={tStk} />}
-    {ready && <ChartBox id={`eth_stk_${unit}_${chartMode}`} renderChart={mkEthChart(stkData, hStk, stockLabel, stockUnit)} deps={`${unit}_${chartMode}_${[...hStk].join()}`} />}
-
-    <SectionTitle right={<div style={{ display: "flex", gap: 8, alignItems: "center" }}><ChartModeToggle mode={chartMode} setMode={setChartMode} /><DownloadBtn onClick={dlEth(expData, "ethanol_exports.csv", flowUnit)} /></div>}>
-      Weekly ethanol exports
-    </SectionTitle>
-    {chartMode === "seasonal" && <InteractiveLegend items={ethLegend} hidden={hExp} onToggle={tExp} />}
-    {ready && <ChartBox id={`eth_exp_${unit}_${chartMode}`} renderChart={mkEthChart(expData, hExp, flowLabel, flowUnit)} deps={`${unit}_${chartMode}_${[...hExp].join()}`} />}
-
-    <div style={{ marginTop: 12, fontSize: 10, color: "var(--color-text-tertiary)" }}>
-      Source: EIA Weekly Petroleum Status Report. 1 barrel = 42 gallons. {isGal ? "Displaying in gallons." : "Displaying in barrels."}
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+      {CHARTS.map(function(ch) { return (<div key={ch.key}>
+        <div style={{fontSize:14,fontWeight:600,color:"var(--color-text-primary)",marginBottom:6}}>{ch.label} <span style={{fontSize:11,fontWeight:400,color:"var(--color-text-tertiary)"}}>({ch.yLabel})</span></div>
+        {ready && <ChartBox id={"eth_"+ch.key+"_"+mode+"_"+range+"_"+unit} height={240} renderChart={mkChart(ch.data, ch.yLabel)} deps={"eth_"+ch.key+"_"+mode+"_"+range+"_"+unit+"_"+ethLoaded+"_"+hk} />}
+      </div>); })}
     </div>
+    <div style={{marginTop:14,fontSize:11,color:"var(--color-text-tertiary)"}}>Source: EIA Weekly Petroleum Status Report. Corn marketing year (Sep–Aug). Implied offtake = prior week stocks + production×7 − current stocks.</div>
   </div>);
 }
+
 
 function FatsOilsPage({ ready }) {
   const [chartMode, setChartMode] = useState("seasonal");
@@ -3946,7 +3988,7 @@ function COTChartsPage({ ready }) {
   var chevronSvg = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%23666' stroke-width='1.5'/%3E%3C/svg%3E\")";
   var selectStyle = {padding: "7px 28px 7px 12px", fontSize: 14, fontWeight: 500, border: "1px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-primary)", color: "var(--color-text-primary)", fontFamily: "inherit", cursor: "pointer", appearance: "none", backgroundImage: chevronSvg, backgroundRepeat: "no-repeat", backgroundPosition: "right 8px center"};
   var labelStyle2 = {fontSize: 12, fontWeight: 600, color: "#fff", background: "#333", padding: "4px 10px", borderRadius: 4, textTransform: "uppercase", letterSpacing: "0.4px"};
-  var toggleBtnStyle = function(active) { return {padding: "6px 14px", fontSize: 12, fontWeight: 500, border: "1px solid var(--color-border-secondary)", borderRadius: 5, cursor: "pointer", background: active ? "#333" : "transparent", color: active ? "#fff" : "var(--color-text-secondary)", transition: "all 0.15s"}; };
+  var toggleBtnStyle = function(active) { return {padding: "6px 14px", fontSize: 12, fontWeight: 500, border: "1px solid " + (active ? "#2563EB" : "var(--color-border-secondary)"), borderRadius: 5, cursor: "pointer", background: active ? "#2563EB" : "transparent", color: active ? "#fff" : "var(--color-text-secondary)", transition: "all 0.15s"}; };
 
   var categories = [
     {title: "Managed Money", fields: ["mm_net","mm_long","mm_short"]},

@@ -2504,8 +2504,22 @@ function CropProgressPage({ ready }) {
       var feat = topoFeature(us, us.objects.states);
 
       // Collect state values and changes
-      var vals={}, chgs={}, latestWk=null;
-      if(sd){Object.keys(sd).forEach(function(st){if(st==="US")return;var s2=sd[st];var pts=s2[String(curYear)]||[];if(pts.length>0){vals[st]=pts[pts.length-1].v;if(!latestWk)latestWk=pts[pts.length-1].w;if(pts.length>1)chgs[st]=pts[pts.length-1].v-pts[pts.length-2].v;}});}
+      var vals={}, chgs={}, latestWk=null, usWk=null;
+      // First find the US-level latest week to determine what's "current"
+      if(sd && sd["US"]){var uPts=sd["US"][String(curYear)]||[];if(uPts.length>0)usWk=uPts[uPts.length-1].w;}
+      // If no US-level data for current year, this stage isn't active yet
+      if(!usWk && sd) {
+        // Check if ANY state has curYear data — if not, show message
+        var anyData = Object.keys(sd).some(function(st){return st!=="US" && (sd[st][String(curYear)]||[]).length > 0;});
+        if (!anyData) { el.innerHTML="<p style='color:#999;text-align:center;padding:40px'>No "+curYear+" data available yet for this selection.</p>"; el.style.display="flex"; el.style.alignItems="center"; el.style.justifyContent="center"; return; }
+      }
+      // Current approx week number (1-52)
+      var nowDoy = Math.floor((Date.now() - new Date(curYear,0,1).getTime()) / 86400000);
+      var nowWk = Math.max(1, Math.min(52, Math.ceil(nowDoy / 7)));
+      if(sd){Object.keys(sd).forEach(function(st){if(st==="US")return;var s2=sd[st];var pts=s2[String(curYear)]||[];if(pts.length>0){var lastPt=pts[pts.length-1];
+        // Skip stale data: if latest report is >8 weeks behind today, it is carryover
+        if(nowWk - lastPt.w > 8) return;
+        vals[st]=lastPt.v;if(!latestWk)latestWk=lastPt.w;if(pts.length>1)chgs[st]=lastPt.v-pts[pts.length-2].v;}});}
       var vArr=Object.values(vals);
       if (vArr.length === 0) { el.innerHTML="<p style='color:#999;text-align:center;padding:40px'>No state-level data for this selection.</p>"; return; }
       var cMax=Math.max.apply(null,vArr);
@@ -2538,7 +2552,7 @@ function CropProgressPage({ ready }) {
 
       // Legend above map
       var legendEl = document.createElement("div");
-      legendEl.style.cssText = "display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:10px;padding:4px 0;";
+      legendEl.style.cssText = "display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:10px;padding:4px 0;width:100%;";
       if (isCondition) {
         // Red-to-green change legend
         legendEl.innerHTML = "<span style='font-size:10px;color:#A32D2D;font-weight:500'>Decline</span>";

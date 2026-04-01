@@ -2573,7 +2573,7 @@ function CropProgressPage({ ready }) {
       el.appendChild(legendEl);
 
       // SVG map
-      var svg = d3.select(el).append("svg").attr("viewBox","0 0 960 600").style("width","100%").style("max-height","570px").style("height","auto");
+      var svg = d3.select(el).append("svg").attr("viewBox","0 0 960 600").style("width","100%").style("max-height","575px").style("height","auto");
       var proj = d3.geoAlbersUsa().scale(1200).translate([480,300]);
       var geoPath = d3.geoPath().projection(proj);
 
@@ -2581,17 +2581,29 @@ function CropProgressPage({ ready }) {
         .attr("fill",function(d){var ab=FIPS[String(d.id).padStart(2,"0")];return ab?getColor(ab):"#f0f0f0";})
         .attr("stroke","#fff").attr("stroke-width",1);
 
+      // Centroid nudges for small/awkward states
+      var nudge = {"MI":[12,0],"FL":[10,8],"LA":[-2,6],"NJ":[4,0],"MD":[0,4],"DE":[6,0],"CT":[6,0],"RI":[8,0],"MA":[8,0],"VT":[0,-2],"NH":[0,2],"HI":[0,0]};
+
+      // State abbreviation (line 1)
       svg.selectAll(".sl").data(feat.features).enter().append("text").attr("class","sl")
-        .attr("transform",function(d){var ct=geoPath.centroid(d);return isNaN(ct[0])?"translate(-999,-999)":"translate("+ct[0]+","+(ct[1]-3)+")";})
+        .attr("transform",function(d){var ct=geoPath.centroid(d);if(isNaN(ct[0]))return"translate(-999,-999)";var ab=FIPS[String(d.id).padStart(2,"0")];var n2=nudge[ab]||[0,0];return"translate("+(ct[0]+n2[0])+","+(ct[1]+n2[1]-5)+")";})
         .attr("text-anchor","middle").attr("font-size","11").attr("font-weight","700")
         .attr("fill",function(d){var ab=FIPS[String(d.id).padStart(2,"0")];if(!ab||vals[ab]==null)return"#ccc";return isDark(getColor(ab))?"#fff":"#222";})
         .text(function(d){var ab=FIPS[String(d.id).padStart(2,"0")];return ab&&vals[ab]!=null?ab:"";});
 
+      // Value (line 2)
       svg.selectAll(".vl").data(feat.features).enter().append("text").attr("class","vl")
-        .attr("transform",function(d){var ct=geoPath.centroid(d);return isNaN(ct[0])?"translate(-999,-999)":"translate("+ct[0]+","+(ct[1]+9)+")";})
-        .attr("text-anchor","middle").attr("font-size","9.5")
+        .attr("transform",function(d){var ct=geoPath.centroid(d);if(isNaN(ct[0]))return"translate(-999,-999)";var ab=FIPS[String(d.id).padStart(2,"0")];var n2=nudge[ab]||[0,0];return"translate("+(ct[0]+n2[0])+","+(ct[1]+n2[1]+6)+")";})
+        .attr("text-anchor","middle").attr("font-size","9").attr("font-weight","500")
         .attr("fill",function(d){var ab=FIPS[String(d.id).padStart(2,"0")];if(!ab||vals[ab]==null)return"#ccc";return isDark(getColor(ab))?"#eee":"#333";})
-        .text(function(d){var ab=FIPS[String(d.id).padStart(2,"0")];if(!ab||vals[ab]==null)return"";var s3=vals[ab]+"%";var cg=chgs[ab];if(cg!=null&&cg!==0)s3+=" ("+(cg>0?"+":"")+cg+")";return s3;});
+        .text(function(d){var ab=FIPS[String(d.id).padStart(2,"0")];if(!ab||vals[ab]==null)return"";return vals[ab]+"%";});
+
+      // Change (line 3) — only if there is a change
+      svg.selectAll(".cl").data(feat.features).enter().append("text").attr("class","cl")
+        .attr("transform",function(d){var ct=geoPath.centroid(d);if(isNaN(ct[0]))return"translate(-999,-999)";var ab=FIPS[String(d.id).padStart(2,"0")];var n2=nudge[ab]||[0,0];return"translate("+(ct[0]+n2[0])+","+(ct[1]+n2[1]+16)+")";})
+        .attr("text-anchor","middle").attr("font-size","8")
+        .attr("fill",function(d){var ab=FIPS[String(d.id).padStart(2,"0")];if(!ab||vals[ab]==null||chgs[ab]==null||chgs[ab]===0)return"transparent";return isDark(getColor(ab))?"#ddd":"#555";})
+        .text(function(d){var ab=FIPS[String(d.id).padStart(2,"0")];if(!ab||chgs[ab]==null||chgs[ab]===0)return"";return"("+(chgs[ab]>0?"+":"")+chgs[ab]+")";});
 
       // Store latest week for date display
       if (latestWk && mapRef.current) mapRef.current.setAttribute("data-week", latestWk);

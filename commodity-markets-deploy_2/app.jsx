@@ -2573,7 +2573,7 @@ function CropProgressPage({ ready }) {
       el.appendChild(legendEl);
 
       // SVG map
-      var svg = d3.select(el).append("svg").attr("viewBox","0 0 960 600").style("width","100%").style("max-height","580px").style("height","auto");
+      var svg = d3.select(el).append("svg").attr("viewBox","0 0 960 600").style("width","100%").style("max-height","590px").style("height","auto");
       var proj = d3.geoAlbersUsa().scale(1200).translate([480,300]);
       var geoPath = d3.geoPath().projection(proj);
 
@@ -2581,30 +2581,52 @@ function CropProgressPage({ ready }) {
         .attr("fill",function(d){var ab=FIPS[String(d.id).padStart(2,"0")];return ab?getColor(ab):"#f0f0f0";})
         .attr("stroke","#fff").attr("stroke-width",1);
 
-      // Small/narrow states that need stacked layout (change below value instead of inline)
-      var stackSet = {"MI":1,"FL":1,"LA":1,"NJ":1,"MD":1,"DE":1,"CT":1,"RI":1,"MA":1,"NH":1,"VT":1,"WV":1,"SC":1,"HI":1,"ID":1};
-      var nudge = {"MI":[10,0],"FL":[8,6],"LA":[-2,4],"NJ":[4,0],"MD":[0,4],"DE":[6,0],"CT":[6,0],"RI":[8,0],"MA":[8,0],"NH":[0,2],"VT":[0,-2]};
+      // Tiny states: labels removed from map, shown in sidebar list instead
+      var sidebarSet = {"NJ":1,"MD":1,"DE":1,"CT":1,"RI":1,"MA":1,"NH":1,"VT":1};
+      // Stacked states: change goes below value
+      var stackSet = {"MI":1,"FL":1,"LA":1,"WV":1,"SC":1,"HI":1,"ID":1};
+      var nudge = {"MI":[10,0],"FL":[8,6],"LA":[-2,4],"WV":[0,2]};
 
-      // State abbreviation
+      // State abbreviation (skip sidebar states)
       svg.selectAll(".sl").data(feat.features).enter().append("text").attr("class","sl")
-        .attr("transform",function(d){var ct=geoPath.centroid(d);if(isNaN(ct[0]))return"translate(-999,-999)";var ab=FIPS[String(d.id).padStart(2,"0")];var n2=nudge[ab]||[0,0];return"translate("+(ct[0]+n2[0])+","+(ct[1]+n2[1]-3)+")";})
+        .attr("transform",function(d){var ct=geoPath.centroid(d);if(isNaN(ct[0]))return"translate(-999,-999)";var ab=FIPS[String(d.id).padStart(2,"0")];if(sidebarSet[ab])return"translate(-999,-999)";var n2=nudge[ab]||[0,0];return"translate("+(ct[0]+n2[0])+","+(ct[1]+n2[1]-3)+")";})
         .attr("text-anchor","middle").attr("font-size","11").attr("font-weight","700")
         .attr("fill",function(d){var ab=FIPS[String(d.id).padStart(2,"0")];if(!ab||vals[ab]==null)return"#ccc";return isDark(getColor(ab))?"#fff":"#222";})
         .text(function(d){var ab=FIPS[String(d.id).padStart(2,"0")];return ab&&vals[ab]!=null?ab:"";});
 
-      // Value + change (inline for normal states, value-only for stacked states)
+      // Value + change inline (skip sidebar and stacked states show value only)
       svg.selectAll(".vl").data(feat.features).enter().append("text").attr("class","vl")
-        .attr("transform",function(d){var ct=geoPath.centroid(d);if(isNaN(ct[0]))return"translate(-999,-999)";var ab=FIPS[String(d.id).padStart(2,"0")];var n2=nudge[ab]||[0,0];return"translate("+(ct[0]+n2[0])+","+(ct[1]+n2[1]+9)+")";})
+        .attr("transform",function(d){var ct=geoPath.centroid(d);if(isNaN(ct[0]))return"translate(-999,-999)";var ab=FIPS[String(d.id).padStart(2,"0")];if(sidebarSet[ab])return"translate(-999,-999)";var n2=nudge[ab]||[0,0];return"translate("+(ct[0]+n2[0])+","+(ct[1]+n2[1]+9)+")";})
         .attr("text-anchor","middle").attr("font-size","9.5")
         .attr("fill",function(d){var ab=FIPS[String(d.id).padStart(2,"0")];if(!ab||vals[ab]==null)return"#ccc";return isDark(getColor(ab))?"#eee":"#333";})
         .text(function(d){var ab=FIPS[String(d.id).padStart(2,"0")];if(!ab||vals[ab]==null)return"";var s3=vals[ab]+"%";var cg=chgs[ab];if(!stackSet[ab]&&cg!=null&&cg!==0)s3+=" ("+(cg>0?"+":"")+cg+")";return s3;});
 
-      // Stacked change line (only for small states that need it)
+      // Stacked change line (only for stacked states)
       svg.selectAll(".cl").data(feat.features).enter().append("text").attr("class","cl")
-        .attr("transform",function(d){var ct=geoPath.centroid(d);if(isNaN(ct[0]))return"translate(-999,-999)";var ab=FIPS[String(d.id).padStart(2,"0")];var n2=nudge[ab]||[0,0];return"translate("+(ct[0]+n2[0])+","+(ct[1]+n2[1]+19)+")";})
+        .attr("transform",function(d){var ct=geoPath.centroid(d);if(isNaN(ct[0]))return"translate(-999,-999)";var ab=FIPS[String(d.id).padStart(2,"0")];if(!stackSet[ab])return"translate(-999,-999)";var n2=nudge[ab]||[0,0];return"translate("+(ct[0]+n2[0])+","+(ct[1]+n2[1]+19)+")";})
         .attr("text-anchor","middle").attr("font-size","8")
         .attr("fill",function(d){var ab=FIPS[String(d.id).padStart(2,"0")];if(!ab||!stackSet[ab]||chgs[ab]==null||chgs[ab]===0)return"transparent";return isDark(getColor(ab))?"#ddd":"#555";})
         .text(function(d){var ab=FIPS[String(d.id).padStart(2,"0")];if(!ab||!stackSet[ab]||chgs[ab]==null||chgs[ab]===0)return"";return"("+(chgs[ab]>0?"+":"")+chgs[ab]+")";});
+
+      // Sidebar list for tiny states (rendered as HTML below the SVG)
+      var sidebarStates = Object.keys(sidebarSet).filter(function(ab){return vals[ab]!=null;}).sort();
+      if (sidebarStates.length > 0) {
+        var listDiv = document.createElement("div");
+        listDiv.style.cssText = "display:flex;flex-wrap:wrap;gap:4px 16px;padding:6px 0;justify-content:center;";
+        sidebarStates.forEach(function(ab) {
+          var sp = document.createElement("span");
+          sp.style.cssText = "font-size:11px;color:#333;white-space:nowrap;";
+          var dot = document.createElement("span");
+          dot.style.cssText = "display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:middle;background:"+getColor(ab)+";border:1px solid #ccc;";
+          sp.appendChild(dot);
+          var txt = ab + " " + vals[ab] + "%";
+          var cg = chgs[ab];
+          if (cg != null && cg !== 0) txt += " (" + (cg > 0 ? "+" : "") + cg + ")";
+          sp.appendChild(document.createTextNode(txt));
+          listDiv.appendChild(sp);
+        });
+        el.appendChild(listDiv);
+      }
 
       // Store latest week for date display
       if (latestWk && mapRef.current) mapRef.current.setAttribute("data-week", latestWk);

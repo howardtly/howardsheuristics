@@ -2483,6 +2483,7 @@ function CropProgressPage({ ready }) {
 
   // Map rendering
   useEffect(function() {
+    console.log("MAP EFFECT:", "tab="+tab, "ref="+!!mapRef.current, "d3="+!!window.d3, "topo="+!!window.topojson, "loaded="+cpLoaded);
     if (tab !== "summary" || !mapRef.current || !window.d3 || !window.topojson || !cpLoaded) return;
     var cr = allCrops[mapCrop];
     var sd = cr && cr.stages ? cr.stages[mapStage] : null;

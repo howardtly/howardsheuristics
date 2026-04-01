@@ -2938,7 +2938,7 @@ function EthanolPage({ ready }) {
   var startMY = curMY - rangeN;
 
   var yrColors = ["#A32D2D","#D85A30","#E8A735","#639922","#1D9E75","#378ADD","#534AB7","#8B5CF6","#EC4899","#6B7280"];
-  var getColor = function(my) { return my === curMY ? "#333" : yrColors[(curMY - my - 1) % yrColors.length]; };
+  var getColor = function(my) { return my === curMY ? "#333" : yrColors[(my - startMY) % yrColors.length]; };
 
   // Build legend items (chronological, oldest first)
   var buildItems = function(byMY) {

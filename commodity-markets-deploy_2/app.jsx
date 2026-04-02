@@ -1091,6 +1091,19 @@ function useLiveOilseedCrushing() {
 }
 
 
+function useLiveExportInspections() {
+  var _s = useState(null); var data = _s[0], setData = _s[1];
+  var _l = useState(false); var loaded = _l[0], setLoaded = _l[1];
+  useEffect(function() {
+    fetch("data/export_inspections.json?t=" + Date.now())
+      .then(function(r) { if (!r.ok) throw new Error("not found"); return r.json(); })
+      .then(function(d) { setData(d); setLoaded(true); })
+      .catch(function() { setLoaded(true); });
+  }, []);
+  return { eiData: data, eiLoaded: loaded };
+}
+
+
 // ─── Crop progress — live data from NASS API ────
 function useLiveCropProgress() {
   const [data, setData] = useState(null);
@@ -4978,288 +4991,305 @@ const EXPORT_INSPECTIONS = {
 const EI_COMMODITIES = Object.keys(EXPORT_INSPECTIONS);
 
 function ExportInspectionsPage({ ready }) {
-  const [tab, setTab] = useState("corn");
-  const [chartMode, setChartMode] = useState("seasonal");
-  const [eiUnit, setEiUnit] = useState("mt");
-  const [hWeekly, tWeekly] = useToggle();
-  const [hCumul, tCumul] = useToggle();
+  var ref = useLiveExportInspections();
+  var eiData = ref.eiData;
+  var eiLoaded = ref.eiLoaded;
+  var _comm = useState("corn");
+  var comm = _comm[0], setComm = _comm[1];
+  var _mode = useState("seasonal");
+  var mode = _mode[0], setMode = _mode[1];
+  var _range = useState("1");
+  var range = _range[0], setRange = _range[1];
+  var _unit = useState("mt");
+  var unit = _unit[0], setUnit = _unit[1];
+  var _hy = useState(new Set());
+  var hiddenYrs = _hy[0], setHiddenYrs = _hy[1];
 
-  // Conversion: 1 MT = 2204.62 lbs. Corn = 56 lbs/bu, Soybeans/Wheat/Sorghum = 60 lbs/bu (sorghum is 56 but USDA reports at ~56)
-  const lbsPerBu = { corn: 56, soybeans: 60, wheat: 60, sorghum: 56 };
-  const mtToBu = (val, commodity) => val != null ? Math.round(val * 2204.62 / lbsPerBu[commodity] / 1000 * 10) / 10 : null;
-  const isBu = eiUnit === "bu";
-  const convVal = (val) => isBu ? mtToBu(val, tab) : val;
-  const convArr = (arr) => isBu ? arr.map(v => mtToBu(v, tab)) : arr;
-  const unitLabel = isBu ? "million bushels" : "thousand MT";
-  const unitShort = isBu ? "M bu" : "k MT";
+  useEffect(function(){ setHiddenYrs(new Set()); }, [comm, mode, range, unit]);
+  var toggleYr = function(label) { setHiddenYrs(function(prev){ var next = new Set(prev); if(next.has(label))next.delete(label);else next.add(label); return next; }); };
 
-  const seasonLegend = [
-    { label: "2024/25", color: "#A32D2D", key: "2024/25" },
-    { label: "2023/24", color: "#378ADD", key: "2023/24", dash: "dashed" },
-    { label: "5-yr avg", color: "#333", key: "5yr", dash: "dotted" },
-  ];
-  const seasonDS = {
-    "2024/25": { borderColor: "#A32D2D", borderWidth: 2.5, pointRadius: 0, tension: 0.3 },
-    "2023/24": { borderColor: "#378ADD", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [5,3] },
-    "5yr":     { borderColor: "#333", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [2,3] },
+  // Bushels per metric ton by commodity
+  var BU_PER_MT = { corn: 39.368, soybeans: 36.744, wheat: 36.744, sorghum: 39.368 };
+  var isBu = unit === "bu";
+  // MT -> display: thousand MT (default) or million bushels
+  var conv = function(mt) {
+    if (mt == null) return null;
+    if (isBu) return Math.round(mt * BU_PER_MT[comm] / 1000000 * 1000) / 1000; // M bu
+    return Math.round(mt / 1000 * 10) / 10; // thousand MT
+  };
+  var weeklyUnit = isBu ? "M bushels" : "1,000 MT";
+  var cumulUnit = isBu ? "M bushels" : "1,000 MT";
+
+  var COMM_TABS = [{id:"corn",label:"Corn"},{id:"soybeans",label:"Soybeans"},{id:"wheat",label:"Wheat"},{id:"sorghum",label:"Sorghum"}];
+
+  // Marketing year config per commodity
+  var myConfig = {
+    corn: { startMonth: 9, mktN: ["Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug"] },
+    soybeans: { startMonth: 9, mktN: ["Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug"] },
+    sorghum: { startMonth: 9, mktN: ["Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug"] },
+    wheat: { startMonth: 6, mktN: ["Jun","Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May"] },
+  };
+  var cfg = myConfig[comm];
+
+  var dateToMY = function(ds) {
+    var m = parseInt(ds.split("-")[1]); var y = parseInt(ds.split("-")[0]);
+    return m >= cfg.startMonth ? y : y - 1;
+  };
+  var dateToMktDay = function(ds) {
+    var p = ds.split("-"); var y = parseInt(p[0]), m = parseInt(p[1]) - 1, d = parseInt(p[2]);
+    var dt = new Date(y, m, d);
+    var myStart = m >= (cfg.startMonth - 1) ? new Date(y, cfg.startMonth - 1, 1) : new Date(y - 1, cfg.startMonth - 1, 1);
+    return Math.max(0, Math.min(365, Math.round((dt - myStart) / 86400000)));
+  };
+  var myLabel = function(yr) { return yr + "/" + String(yr + 1).slice(2); };
+
+  // Process into marketing year buckets
+  var processWeekly = function(rawPts) {
+    if (!rawPts || !rawPts.length) return {};
+    var byMY = {};
+    rawPts.forEach(function(pt) {
+      var my = dateToMY(pt.d);
+      var day = dateToMktDay(pt.d);
+      if (!byMY[my]) byMY[my] = [];
+      byMY[my].push({ x: day, y: conv(pt.v) });
+    });
+    // Sort within each MY
+    Object.keys(byMY).forEach(function(my) { byMY[my].sort(function(a, b) { return a.x - b.x; }); });
+    return byMY;
   };
 
-  // Month-label x-axis logic
-  const { displayLabels, gridColors } = buildMonthAxis(EI_WEEKS);
-  const xAxisConfig = { ticks: { autoSkip: false, maxRotation: 0, font: { size: 11 } }, grid: { color: (ctx) => gridColors[ctx.index] || "transparent", lineWidth: 0.75 } };
+  // Build cumulative from weekly
+  var buildCumul = function(weeklyByMY) {
+    var cumul = {};
+    Object.keys(weeklyByMY).forEach(function(my) {
+      var pts = weeklyByMY[my];
+      var running = 0;
+      cumul[my] = pts.map(function(p) { running += p.y; return { x: p.x, y: Math.round(running * 1000) / 1000 }; });
+    });
+    return cumul;
+  };
 
-  function niceAxis(allVals) {
-    if (allVals.length === 0) return { yMin: 0, yMax: 100 };
-    const dataMin = Math.min(...allVals); const dataMax = Math.max(...allVals);
-    const range = dataMax - dataMin; const pad = Math.max(range * 0.2, 10);
-    const rawStep = (range + pad * 2) / 5;
-    const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
-    const norm = rawStep / mag;
-    const niceNorm = norm <= 1.5 ? 1 : norm <= 3.5 ? 2 : norm <= 7.5 ? 5 : 10;
-    const step = niceNorm * mag;
-    return { yMin: Math.max(0, Math.floor((dataMin - pad) / step) * step), yMax: Math.ceil((dataMax + pad) / step) * step };
-  }
+  var rawPts = eiData ? eiData[comm] || [] : [];
+  var weeklyByMY = processWeekly(rawPts);
+  var cumulByMY = buildCumul(weeklyByMY);
 
-  const d = EXPORT_INSPECTIONS[tab];
+  var now = new Date();
+  var curMY = now.getMonth() >= (cfg.startMonth - 1) ? now.getFullYear() : now.getFullYear() - 1;
+  var rangeN = parseInt(range);
+  var startMY = curMY - rangeN;
 
-  // Convert series based on unit selection
-  const s2425 = convArr(d["2024/25"]);
-  const s2324 = convArr(d["2023/24"]);
-  const s5yr = convArr(d["5yr"]);
+  var yrColors = ["#A32D2D","#D85A30","#E8A735","#639922","#1D9E75","#378ADD","#534AB7","#8B5CF6","#EC4899","#6B7280"];
+  var getColor = function(my) { if (my === curMY) return "#333"; var dist = curMY - my; if (dist === 1) return "#1D9E75"; if (dist === 2) return "#639922"; if (dist === 3) return "#E8A735"; if (dist === 4) return "#D85A30"; if (dist === 5) return "#A32D2D"; return yrColors[(dist - 1) % yrColors.length]; };
 
-  // Cumulative series
-  const cumulate = (arr) => { let sum = 0; return arr.map(v => { sum += (v || 0); return Math.round(sum * 10) / 10; }); };
-  const cum2425 = cumulate(s2425);
-  const cum2324 = cumulate(s2324);
-  const cum5yr = cumulate(s5yr);
+  var buildItems = function(byMY) {
+    var items = [];
+    for (var y = startMY; y <= curMY; y++) { if (byMY[y]) items.push({ label: myLabel(y), my: y, color: getColor(y) }); }
+    return items;
+  };
+  var allItems = buildItems(weeklyByMY);
+  var hk = Array.from(hiddenYrs).sort().join(",");
 
-  const lastNN = (arr) => { for (let i = arr.length - 1; i >= 0; i--) { if (arr[i] != null) return { val: arr[i], idx: i }; } return { val: null, idx: 0 }; };
-  const latest = lastNN(s2425);
-  const latestCum = cum2425[latest.idx];
-  const yaCum = cum2324[latest.idx];
-  const avg5Cum = cum5yr[latest.idx];
-  const yaWeekly = s2324[latest.idx];
-  const avg5Weekly = s5yr[latest.idx];
-  const prevWeekly = latest.idx > 0 ? s2425[latest.idx - 1] : null;
-  const prevCum = latest.idx > 0 ? cum2425[latest.idx - 1] : null;
+  // Header card info
+  var getCardInfo = function() {
+    if (!rawPts || !rawPts.length) return { curWk: null, prevWk: null, lastYrWk: null, curCumul: null, date: null };
+    var sorted = rawPts.slice().sort(function(a, b) { return a.d < b.d ? 1 : -1; });
+    var latest = sorted[0]; var prev = sorted.length > 1 ? sorted[1] : null;
+    // Find same week last year
+    var latestDate = new Date(latest.d);
+    var targetDate = new Date(latestDate); targetDate.setFullYear(targetDate.getFullYear() - 1);
+    var targetMs = targetDate.getTime();
+    var lastYrPt = null; var bestDiff = 10 * 86400000;
+    rawPts.forEach(function(p) { var diff = Math.abs(new Date(p.d).getTime() - targetMs); if (diff < bestDiff) { bestDiff = diff; lastYrPt = p; } });
+    // Cumulative for current MY
+    var latestMY = dateToMY(latest.d);
+    var myPts = rawPts.filter(function(p) { return dateToMY(p.d) === latestMY && p.d <= latest.d; });
+    var cumulVal = myPts.reduce(function(s, p) { return s + p.v; }, 0);
+    return {
+      curWk: conv(latest.v), prevWk: prev ? conv(prev.v) : null, lastYrWk: lastYrPt ? conv(lastYrPt.v) : null,
+      curCumul: conv(cumulVal), date: latest.d, my: myLabel(latestMY),
+    };
+  };
+  var cardInfo = getCardInfo();
 
-  const EIDiff = ({ label, absVal, cur }) => {
-    if (absVal == null || cur == null) return null;
-    const diff = cur - absVal;
-    const pct = absVal !== 0 ? ((diff / absVal) * 100).toFixed(1) : null;
-    const col = diff > 0 ? "#639922" : diff < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
-    return (
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, padding: "2px 0" }}>
-        <span style={{ color: "var(--color-text-tertiary)" }}>{label} ({absVal.toLocaleString()})</span>
-        <span style={{ color: col, fontWeight: 500, fontFamily: "var(--font-mono)" }}>{diff > 0 ? "+" : ""}{diff.toLocaleString()} ({pct}%)</span>
+  var statCard = function(label, curVal, comparisons, unitLabel) {
+    return (<div style={{background:"var(--color-background-secondary)",borderRadius:"var(--border-radius-md)",padding:"12px 14px",minWidth:0}}>
+      <div style={{fontSize:11,color:"var(--color-text-secondary)",marginBottom:3,textTransform:"uppercase",letterSpacing:"0.4px"}}>{label}</div>
+      <div style={{fontSize:22,fontWeight:500,color:"var(--color-text-primary)",marginBottom:2}}>{curVal != null ? curVal.toLocaleString() : "—"}<span style={{fontSize:12,fontWeight:400,color:"var(--color-text-secondary)",marginLeft:4}}>{unitLabel}</span></div>
+      {cardInfo.date && <div style={{fontSize:10,color:"var(--color-text-tertiary)",marginBottom:6}}>as of {cardInfo.date}</div>}
+      <div style={{borderTop:"0.5px solid var(--color-border-tertiary)",paddingTop:5}}>
+        {comparisons.map(function(c2, i) {
+          if (curVal == null || c2.val == null) return null;
+          var diff = Math.round((curVal - c2.val) * 100) / 100;
+          var pctChg = Math.round((curVal - c2.val) / Math.abs(c2.val) * 1000) / 10;
+          var col = diff > 0 ? "#639922" : diff < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
+          return (<div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:10.5,padding:"1px 0"}}>
+            <span style={{color:"var(--color-text-tertiary)"}}>{c2.label}</span>
+            <span><span style={{color:"var(--color-text-secondary)"}}>{c2.val.toLocaleString()} </span><span style={{color:col,fontWeight:500}}>({diff > 0 ? "+" : ""}{diff.toLocaleString()} / {pctChg > 0 ? "+" : ""}{pctChg.toFixed(1)}%)</span></span>
+          </div>);
+        })}
       </div>
-    );
+    </div>);
   };
 
-  const rcWeekly = useCallback(canvas => {
-    if (chartMode === "contiguous") {
-      const myYears = EI_WEEKS.map(w => { const m = w.split(" ")[0]; return ["Sep","Oct","Nov","Dec"].includes(m) ? "24" : "25"; });
-      const labels23 = EI_WEEKS.map((w,i) => { const m = w.split(" ")[0]; const y = ["Sep","Oct","Nov","Dec"].includes(m) ? "23" : "24"; return m + "-" + y; });
-      const labels24 = EI_WEEKS.map((w,i) => { const m = w.split(" ")[0]; return m + "-" + myYears[i]; });
-      const allLabels = [...labels23, ...labels24];
-      const allData = [...s2324, ...s2425];
-      const allVals = allData.filter(v => v != null);
-      const { yMin, yMax } = niceAxis(allVals);
-      new Chart(canvas, {
-        type: "line", data: { labels: allLabels, datasets: [{ label: d.label, data: allData, borderColor: "#A32D2D", backgroundColor: "rgba(163,45,45,0.06)", fill: true, borderWidth: 2, pointRadius: 0, tension: 0.3, spanGaps: true }] },
-        options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
-          plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.parsed.y.toLocaleString()} ${unitShort}` } } },
-          scales: { x: { ticks: { autoSkip: true, maxTicksLimit: 12, maxRotation: 45, font: { size: 10 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } }, y: { min: yMin, max: yMax, title: { display: true, text: unitLabel, font: { size: 11 } }, ticks: { font: { size: 11 }, callback: v => v.toLocaleString() }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } } },
-        },
-      });
-      return;
+  // Mkt day boundaries for x-axis (approximate: 30 days per month)
+  var mktBounds = [0,30,61,91,122,153,181,212,242,273,303,334];
+  var mktMids = [15,45,76,106,137,167,196,227,257,288,318,349];
+
+  // Chart builder
+  var mkChart = function(byMY, yLabel) { return function(canvas) {
+    if (!byMY || Object.keys(byMY).length === 0) return;
+    var isSeasonal = mode === "seasonal";
+    var ds = [];
+    if (isSeasonal) {
+      for (var y = startMY; y <= curMY; y++) {
+        var pts = byMY[y]; if (!pts || !pts.length) continue;
+        ds.push({ label: myLabel(y), data: pts.slice(), borderColor: getColor(y), borderWidth: y === curMY ? 2.5 : 1.5, pointRadius: 0, pointHitRadius: 6, tension: 0.3, fill: false, showLine: true, hidden: hiddenYrs.has(myLabel(y)) });
+      }
+      if (ds.length === 0) return;
+      var vis = ds.filter(function(d) { return !d.hidden; }).flatMap(function(d) { return d.data.map(function(p) { return p.y; }); });
+      if (vis.length === 0) return;
+      var rawMax = Math.max.apply(null, vis), rawMin = Math.min.apply(null, vis);
+      var span = rawMax - rawMin || 1;
+      var step = Math.pow(10, Math.floor(Math.log10(span / 4)));
+      if (span / step < 4) step = step / 2;
+      if (span / step > 8) step = step * 2;
+      var yMin = Math.max(0, Math.floor(rawMin / step) * step);
+      var yMax = Math.ceil(rawMax / step) * step;
+      if (yMax === rawMax) yMax += step;
+      var tks = []; for (var k = 0; k < 12; k++) { tks.push({value: mktBounds[k]}); tks.push({value: mktMids[k]}); }
+      new Chart(canvas, { type: "scatter", data: { datasets: ds }, options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: "x", intersect: false },
+        plugins: { legend: { display: false }, tooltip: { mode: "x", intersect: false, backgroundColor: "rgba(0,0,0,0.6)", titleFont: { size: 11 }, bodyFont: { size: 11 },
+          callbacks: { title: function(items) { if (!items.length) return ""; var doy = items[0].parsed.x; var mi = 11; for (var m = 0; m < 11; m++) { if (doy < mktBounds[m+1]) { mi = m; break; } } return cfg.mktN[mi] + " " + (Math.floor(doy - mktBounds[mi]) + 1); },
+            label: function(c2) { return c2.parsed.y == null ? null : c2.dataset.label + ": " + c2.parsed.y.toLocaleString(); } } } },
+        scales: { x: { type: "linear", min: 0, max: 365, afterBuildTicks: function(ax) { ax.ticks = tks; }, ticks: { callback: function(v) { var idx = mktMids.indexOf(v); return idx >= 0 ? cfg.mktN[idx] : ""; }, autoSkip: false, maxRotation: 0, font: { size: 10 } }, grid: { color: function(ctx) { var v = ctx.tick.value; if (v > 0 && mktBounds.indexOf(v) >= 0) return "rgba(0,0,0,0.12)"; return "transparent"; }, lineWidth: 0.75 } },
+          y: { min: yMin, max: yMax, ticks: { stepSize: step, font: { size: 10 }, callback: function(v) { return v.toLocaleString(); } }, grid: { color: "rgba(0,0,0,0.08)", lineWidth: 0.75 } } }
+      } });
+    } else {
+      var allPts = [];
+      var years = [];
+      for (var y2 = startMY; y2 <= curMY; y2++) { if (byMY[y2]) years.push(y2); }
+      years.forEach(function(yr, idx) { var pts2 = byMY[yr]; if (!pts2) return; pts2.forEach(function(p) { allPts.push({ x: idx * 365 + p.x, y: p.y }); }); });
+      if (allPts.length === 0) return;
+      ds.push({ label: "Data", data: allPts, borderColor: "#333", borderWidth: 1.5, pointRadius: 0, tension: 0.3, fill: false, showLine: true });
+      var allY = allPts.map(function(p) { return p.y; });
+      var rMax = Math.max.apply(null, allY), rMin = Math.min.apply(null, allY);
+      var sp2 = rMax - rMin || 1;
+      var st2 = Math.pow(10, Math.floor(Math.log10(sp2 / 4)));
+      if (sp2 / st2 < 4) st2 = st2 / 2;
+      if (sp2 / st2 > 8) st2 = st2 * 2;
+      var yMin2 = Math.max(0, Math.floor(rMin / st2) * st2);
+      var yMax2 = Math.ceil(rMax / st2) * st2;
+      var isShort = years.length <= 2;
+      var xTicks = [];
+      if (isShort) {
+        var tickIdx = 0;
+        var totalMonths = years.length * 12;
+        var interval = totalMonths > 18 ? 3 : totalMonths > 12 ? 2 : 1;
+        years.forEach(function(yr, idx) {
+          for (var mi = 0; mi < 12; mi++) {
+            var calYr = mi >= (12 - cfg.startMonth + 1) ? yr + 1 : yr;
+            if (cfg.startMonth === 6) calYr = mi >= 7 ? yr + 1 : yr;
+            if (tickIdx % interval === 0) {
+              xTicks.push({value: idx*365+mktBounds[mi], label: cfg.mktN[mi] + "-" + String(calYr).slice(2)});
+            } else {
+              xTicks.push({value: idx*365+mktBounds[mi], label: ""});
+            }
+            tickIdx++;
+          }
+        });
+      } else {
+        years.forEach(function(yr, idx) {
+          xTicks.push({value: idx*365, label: "", grid: true});
+          xTicks.push({value: idx*365+182, label: myLabel(yr), grid: false});
+        });
+      }
+      new Chart(canvas, { type: "scatter", data: { datasets: ds }, options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: "nearest", intersect: false },
+        plugins: { legend: { display: false }, tooltip: { backgroundColor: "rgba(0,0,0,0.6)", callbacks: { title: function(items) { if (!items.length) return ""; var v = items[0].parsed.x; var yrIdx = Math.floor(v / 365); var dayInYr = v - yrIdx * 365; if (yrIdx >= years.length) return ""; var mi = 11; for (var m = 0; m < 11; m++) { if (dayInYr < mktBounds[m+1]) { mi = m; break; } } return cfg.mktN[mi] + " " + years[yrIdx]; }, label: function(c2) { return c2.parsed.y == null ? null : c2.parsed.y.toLocaleString(); } } } },
+        scales: { x: { type: "linear", min: 0, max: years.length * 365,
+          afterBuildTicks: function(ax) { ax.ticks = xTicks.map(function(t) { return {value: t.value}; }); },
+          ticks: { callback: function(v) { var found = xTicks.find(function(t) { return Math.abs(t.value - v) < 5; }); return found ? found.label : ""; }, autoSkip: false, maxRotation: 0, font: { size: 10 } },
+          grid: { color: function(ctx) { var v = ctx.tick.value; if (v > 0 && v % 365 < 5) return "rgba(0,0,0,0.15)"; return "transparent"; } } },
+          y: { min: yMin2, max: yMax2, ticks: { stepSize: st2, font: { size: 10 }, callback: function(v) { return v.toLocaleString(); } }, grid: { color: "rgba(0,0,0,0.08)" } } }
+      } });
     }
-    const sMap = { "2024/25": s2425, "2023/24": s2324, "5yr": s5yr };
-    const keys = ["2024/25","2023/24","5yr"].filter(k => !hWeekly.has(k));
-    const datasets = keys.map(k => ({ label: k === "5yr" ? "5-yr avg" : k, data: sMap[k], ...seasonDS[k], spanGaps: true }));
-    const allVals = keys.flatMap(k => sMap[k].filter(v => v != null));
-    const { yMin, yMax } = niceAxis(allVals);
-    new Chart(canvas, {
-      type: "line", data: { labels: displayLabels, datasets },
-      options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
-        plugins: { legend: { display: false }, tooltip: { callbacks: { title: (items) => items.length > 0 ? EI_WEEKS[items[0].dataIndex] : "", label: c => `${c.dataset.label}: ${c.parsed.y.toLocaleString()} ${unitShort}` } } },
-        scales: { x: xAxisConfig, y: { min: yMin, max: yMax, title: { display: true, text: unitLabel, font: { size: 11 } }, ticks: { font: { size: 11 }, callback: v => v.toLocaleString() }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } } },
-      },
-    });
-  }, [tab, chartMode, hWeekly, eiUnit]);
+  }; };
 
-  const rcCumul = useCallback(canvas => {
-    if (chartMode === "contiguous") {
-      const myYears = EI_WEEKS.map(w => { const m = w.split(" ")[0]; return ["Sep","Oct","Nov","Dec"].includes(m) ? "24" : "25"; });
-      const labels23 = EI_WEEKS.map((w,i) => { const m = w.split(" ")[0]; const y = ["Sep","Oct","Nov","Dec"].includes(m) ? "23" : "24"; return m + "-" + y; });
-      const labels24 = EI_WEEKS.map((w,i) => { const m = w.split(" ")[0]; return m + "-" + myYears[i]; });
-      const allLabels = [...labels23, ...labels24];
-      const allData = [...cum2324, ...cum2425];
-      const allVals = allData.filter(v => v != null);
-      const { yMin, yMax } = niceAxis(allVals);
-      new Chart(canvas, {
-        type: "line", data: { labels: allLabels, datasets: [{ label: d.label, data: allData, borderColor: "#A32D2D", backgroundColor: "rgba(163,45,45,0.06)", fill: true, borderWidth: 2, pointRadius: 0, tension: 0.3, spanGaps: true }] },
-        options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
-          plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.parsed.y.toLocaleString()} ${unitShort}` } } },
-          scales: { x: { ticks: { autoSkip: true, maxTicksLimit: 12, maxRotation: 45, font: { size: 10 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } }, y: { min: yMin, max: yMax, title: { display: true, text: unitLabel + " (cumul.)", font: { size: 11 } }, ticks: { font: { size: 11 }, callback: v => (v / 1000).toFixed(0) + "M" }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } } },
-        },
-      });
-      return;
-    }
-    const keys = ["2024/25","2023/24","5yr"].filter(k => !hCumul.has(k));
-    const cumData = { "2024/25": cum2425, "2023/24": cum2324, "5yr": cum5yr };
-    const datasets = keys.map(k => ({ label: k === "5yr" ? "5-yr avg" : k, data: cumData[k], ...seasonDS[k], spanGaps: true }));
-    const allVals = keys.flatMap(k => cumData[k].filter(v => v != null));
-    const { yMin, yMax } = niceAxis(allVals);
-    new Chart(canvas, {
-      type: "line", data: { labels: displayLabels, datasets },
-      options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
-        plugins: { legend: { display: false }, tooltip: { callbacks: { title: (items) => items.length > 0 ? EI_WEEKS[items[0].dataIndex] : "", label: c => `${c.dataset.label}: ${c.parsed.y.toLocaleString()} ${unitShort}` } } },
-        scales: { x: xAxisConfig, y: { min: yMin, max: yMax, title: { display: true, text: unitLabel + " (cumulative)", font: { size: 11 } }, ticks: { font: { size: 11 }, callback: v => (v / 1000).toFixed(0) + "M" }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } } },
-      },
+  // CSV
+  var dlCSV = function() {
+    var hdrs = ["Date", "MY", "Weekly Volume (" + weeklyUnit + ")", "Cumulative MY (" + cumulUnit + ")"];
+    var rows = [];
+    rawPts.slice().sort(function(a, b) { return a.d < b.d ? -1 : 1; }).forEach(function(pt) {
+      var my = dateToMY(pt.d);
+      var myPts2 = rawPts.filter(function(p) { return dateToMY(p.d) === my && p.d <= pt.d; });
+      var cumul = myPts2.reduce(function(s, p) { return s + p.v; }, 0);
+      rows.push([pt.d, myLabel(my), conv(pt.v), conv(cumul)]);
     });
-  }, [tab, chartMode, hCumul, eiUnit]);
-
-  const dlWeekly = () => {
-    const headers = ["Week","2024/25","2023/24","5-yr avg"];
-    const rows = EI_WEEKS.map((w,i) => [w, d["2024/25"][i], d["2023/24"][i], d["5yr"][i]]);
-    downloadCSV(`export_inspections_${tab}_weekly.csv`, headers, rows);
-  };
-  const dlCumul = () => {
-    const headers = ["Week","2024/25","2023/24","5-yr avg"];
-    const rows = EI_WEEKS.map((w,i) => [w, cum2425[i], cum2324[i], cum5yr[i]]);
-    downloadCSV(`export_inspections_${tab}_cumulative.csv`, headers, rows);
+    downloadCSV("export_inspections_" + comm + "_" + unit + ".csv", hdrs, rows);
   };
 
-  const tabs = [
-    { id: "corn", label: "Corn" }, { id: "soybeans", label: "Soybeans" },
-    { id: "wheat", label: "Wheat" }, { id: "sorghum", label: "Sorghum" },
-  ];
+  var chevSvg = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%23666' stroke-width='1.5'/%3E%3C/svg%3E\")";
+  var selSt = {padding:"6px 24px 6px 10px",fontSize:13,fontWeight:500,border:"1px solid var(--color-border-secondary)",borderRadius:6,background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontFamily:"inherit",cursor:"pointer",appearance:"none",backgroundImage:chevSvg,backgroundRepeat:"no-repeat",backgroundPosition:"right 6px center"};
+  var modeSt = function(a) { return {padding:"6px 14px",fontSize:12,fontWeight:a?600:400,border:"1px solid "+(a?"#2563EB":"var(--color-border-secondary)"),borderRadius:5,cursor:"pointer",background:a?"#2563EB":"transparent",color:a?"#fff":"var(--color-text-secondary)",transition:"all 0.15s"}; };
+  var tabSt = function(a) { return {padding:"6px 14px",fontSize:12,fontWeight:a?600:400,border:"1px solid var(--color-border-secondary)",borderRadius:5,cursor:"pointer",background:a?"#333":"transparent",color:a?"#fff":"var(--color-text-secondary)",transition:"all 0.15s"}; };
 
   return (<div>
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
-        {tabs.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)} style={{ padding: "6px 16px", fontSize: 13, cursor: "pointer", background: tab === t.id ? "#333" : "transparent", border: "none", borderRadius: 6, color: tab === t.id ? "#fff" : "var(--color-text-tertiary)", fontWeight: 500, transition: "all 0.15s" }}>
-            {t.label}
-          </button>
-        ))}
+    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,flexWrap:"wrap"}}>
+      <div style={{display:"flex",gap:3}}>
+        {COMM_TABS.map(function(t) { return <button key={t.id} onClick={function(){setComm(t.id);}} style={tabSt(comm===t.id)}>{t.label}</button>; })}
       </div>
-      <div style={{ display: "inline-flex", borderRadius: 6, overflow: "hidden", border: "1px solid var(--color-border-secondary)" }}>
-        {[{ id: "mt", label: "Metric tons" }, { id: "bu", label: "Bushels" }].map(u => (
-          <button key={u.id} onClick={() => setEiUnit(u.id)} style={{
-            padding: "5px 14px", fontSize: 11, cursor: "pointer", border: "none",
-            borderRight: u.id === "mt" ? "1px solid var(--color-border-secondary)" : "none",
-            background: eiUnit === u.id ? "#333" : "transparent",
-            color: eiUnit === u.id ? "#fff" : "var(--color-text-tertiary)",
-            fontWeight: 500, transition: "all 0.15s",
-          }}>{u.label}</button>
-        ))}
+      <div style={{display:"flex",gap:3}}>
+        <button onClick={function(){setUnit("mt");}} style={modeSt(unit==="mt")}>Metric Tons</button>
+        <button onClick={function(){setUnit("bu");}} style={modeSt(unit==="bu")}>Bushels</button>
       </div>
+      <div style={{display:"flex",alignItems:"center",gap:6}}>
+        <span style={{fontSize:11,fontWeight:600,color:"var(--color-text-secondary)",textTransform:"uppercase"}}>Range</span>
+        <select value={range} onChange={function(e){setRange(e.target.value);}} style={selSt}>
+          <option value="1">1 Year</option>
+          <option value="5">5 Years</option>
+          <option value="10">10 Years</option>
+        </select>
+      </div>
+      <div style={{display:"flex",gap:3}}>
+        <button onClick={function(){setMode("seasonal");}} style={modeSt(mode==="seasonal")}>Seasonal</button>
+        <button onClick={function(){setMode("contiguous");}} style={modeSt(mode==="contiguous")}>Contiguous</button>
+      </div>
+      <div style={{marginLeft:"auto"}}><DownloadBtn onClick={dlCSV} /></div>
     </div>
 
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10, marginBottom: 8 }}>
-      <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px" }}>
-        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.4px" }}>Weekly inspections</div>
-        <div style={{ fontSize: 22, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 6 }}>{latest.val != null ? latest.val.toLocaleString() : "—"} <span style={{ fontSize: 12, fontWeight: 400, color: "var(--color-text-secondary)" }}>{unitShort}</span></div>
-        <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 6, display: "flex", flexDirection: "column", gap: 1 }}>
-          <EIDiff label="vs. last week" absVal={prevWeekly} cur={latest.val} />
-          <EIDiff label="vs. last year" absVal={yaWeekly} cur={latest.val} />
-          <EIDiff label="vs. 5-yr avg" absVal={avg5Weekly} cur={latest.val} />
-        </div>
-      </div>
-      <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px" }}>
-        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.4px" }}>MY cumulative</div>
-        <div style={{ fontSize: 22, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 6 }}>{latestCum != null ? (latestCum / 1000).toFixed(1) + "M" : "—"} <span style={{ fontSize: 12, fontWeight: 400, color: "var(--color-text-secondary)" }}>{unitShort}</span></div>
-        <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 6, display: "flex", flexDirection: "column", gap: 1 }}>
-          <EIDiff label="vs. last week" absVal={prevCum} cur={latestCum} />
-          <EIDiff label="vs. last year" absVal={yaCum} cur={latestCum} />
-          <EIDiff label="vs. 5-yr avg" absVal={avg5Cum} cur={latestCum} />
-        </div>
-      </div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
+      {statCard("Weekly Volume", cardInfo.curWk, [
+        {label: "vs. last week", val: cardInfo.prevWk},
+        {label: "vs. last year", val: cardInfo.lastYrWk},
+      ], weeklyUnit)}
+      {statCard("Cumulative MY (" + (cardInfo.my || "") + ")", cardInfo.curCumul, [], cumulUnit)}
     </div>
 
-    <SectionTitle right={<div style={{ display: "flex", gap: 8, alignItems: "center" }}><ChartModeToggle mode={chartMode} setMode={setChartMode} /><DownloadBtn onClick={dlWeekly} /></div>}>Weekly export inspections</SectionTitle>
-    {chartMode === "seasonal" && <InteractiveLegend items={seasonLegend} hidden={hWeekly} onToggle={tWeekly} />}
-    {ready && <ChartBox id={`ei_weekly_${tab}_${chartMode}_${eiUnit}`} renderChart={rcWeekly} deps={`${tab}_${chartMode}_${eiUnit}_${[...hWeekly].join()}`} />}
+    {mode === "seasonal" && <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:16,alignItems:"center"}}>
+      {allItems.map(function(item) { var isH = hiddenYrs.has(item.label); return (
+        <button key={item.label} onClick={function(){toggleYr(item.label);}} style={{display:"flex",alignItems:"center",gap:5,padding:"4px 10px",border:"1px solid var(--color-border-secondary)",borderRadius:5,background:isH?"var(--color-background-secondary)":"transparent",cursor:"pointer",opacity:isH?0.3:1,transition:"all 0.15s"}}>
+          <span style={{width:18,height:0,borderTop:"2.5px solid "+item.color,display:"inline-block"}}></span>
+          <span style={{fontSize:12,fontWeight:500,color:"var(--color-text-primary)"}}>{item.label}</span>
+        </button>); })}
+    </div>}
 
-    <SectionTitle right={<div style={{ display: "flex", gap: 8, alignItems: "center" }}><ChartModeToggle mode={chartMode} setMode={setChartMode} /><DownloadBtn onClick={dlCumul} /></div>}>Cumulative export inspections</SectionTitle>
-    {chartMode === "seasonal" && <InteractiveLegend items={seasonLegend} hidden={hCumul} onToggle={tCumul} />}
-    {ready && <ChartBox id={`ei_cumul_${tab}_${chartMode}_${eiUnit}`} renderChart={rcCumul} deps={`${tab}_${chartMode}_${eiUnit}_${[...hCumul].join()}`} />}
-
-    <div style={{ marginTop: 12, fontSize: 10, color: "var(--color-text-tertiary)" }}>Source: USDA/GIPSA Weekly Export Inspections report. Marketing year: Sep–Aug (corn, soybeans, sorghum), Jun–May (wheat). {isBu ? "Converted to bushels: corn & sorghum at 56 lbs/bu, soybeans & wheat at 60 lbs/bu." : "Volumes in thousand metric tons."}</div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+      <div>
+        <div style={{fontSize:14,fontWeight:600,color:"var(--color-text-primary)",marginBottom:6}}>Weekly Inspections <span style={{fontSize:11,fontWeight:400,color:"var(--color-text-tertiary)"}}>({weeklyUnit})</span></div>
+        {ready && <ChartBox id={"ei_wk_"+comm+"_"+mode+"_"+range+"_"+unit} height={280} renderChart={mkChart(weeklyByMY, weeklyUnit)} deps={"ei_wk_"+comm+"_"+mode+"_"+range+"_"+unit+"_"+eiLoaded+"_"+hk} />}
+      </div>
+      <div>
+        <div style={{fontSize:14,fontWeight:600,color:"var(--color-text-primary)",marginBottom:6}}>Cumulative MY Total <span style={{fontSize:11,fontWeight:400,color:"var(--color-text-tertiary)"}}>({cumulUnit})</span></div>
+        {ready && <ChartBox id={"ei_cu_"+comm+"_"+mode+"_"+range+"_"+unit} height={280} renderChart={mkChart(cumulByMY, cumulUnit)} deps={"ei_cu_"+comm+"_"+mode+"_"+range+"_"+unit+"_"+eiLoaded+"_"+hk} />}
+      </div>
+    </div>
+    <div style={{marginTop:14,fontSize:11,color:"var(--color-text-tertiary)"}}>Source: USDA FGIS Export Grain Inspection Report. Marketing years: Corn/Soybeans/Sorghum (Sep–Aug), Wheat (Jun–May).</div>
   </div>);
 }
 
-// ════════════════════════════════════════════════════════════════════════
-// GRAINS — EXPORT SALES (USDA/FAS Weekly Export Sales Report)
-// ════════════════════════════════════════════════════════════════════════
-
-const ES_COMMODITIES = ["Corn", "Soybeans", "Wheat", "Soybean Meal", "Soybean Oil", "Sorghum"];
-
-const ES_COUNTRIES = ["GRAND TOTAL", "MEXICO", "JAPAN", "CHINA", "KOREA, REPUBLIC OF", "COLOMBIA", "EU-27", "TAIWAN", "EGYPT", "CANADA", "VIETNAM", "GUATEMALA", "ALGERIA", "MOROCCO", "HONDURAS", "BRAZIL", "UNKNOWN"];
-
-// Weekly report dates (Thursdays, marketing year)
-const ES_WEEKS = ["Sep 11","Sep 18","Sep 25","Oct 2","Oct 9","Oct 16","Oct 23","Oct 30","Nov 6","Nov 13","Nov 20","Nov 27","Dec 4","Dec 11","Dec 18","Dec 25","Jan 1","Jan 8","Jan 15","Jan 22","Jan 29","Feb 5","Feb 12","Feb 19","Feb 26","Mar 5","Mar 12"];
-
-function mkESSeries(base, scale, trend) {
-  return ES_WEEKS.map((_, i) => Math.max(0, Math.round(base + Math.sin((i / 27) * Math.PI * 2 + 1) * scale + i * trend + (Math.cos(i * 0.8) - 0.5) * scale * 0.4)));
-}
-
-function mkESData() {
-  const data = {};
-  ES_COMMODITIES.forEach(comm => {
-    data[comm] = {};
-    const baseScale = comm === "Corn" ? 1 : comm === "Soybeans" ? 0.8 : comm === "Wheat" ? 0.5 : 0.3;
-    ES_COUNTRIES.forEach(country => {
-      const isTotal = country === "GRAND TOTAL";
-      const isUnknown = country === "UNKNOWN";
-      const cScale = isTotal ? 15 : isUnknown ? 2 : (["MEXICO","JAPAN","CHINA","KOREA, REPUBLIC OF","COLOMBIA","EU-27"].includes(country) ? 3 : 1);
-      // Current marketing year
-      const wkExp = mkESSeries(isTotal ? 1800000 * baseScale : 120000 * cScale * baseScale, isTotal ? 400000 * baseScale : 35000 * cScale * baseScale, isTotal ? 5000 : 500 * cScale);
-      const netSales = mkESSeries(isTotal ? 1200000 * baseScale : 80000 * cScale * baseScale, isTotal ? 600000 * baseScale : 50000 * cScale * baseScale, isTotal ? 3000 : 300 * cScale);
-      let cumExp = 0;
-      const accumExp = wkExp.map(v => { cumExp += v; return cumExp; });
-      const outSales = mkESSeries(isTotal ? 24000000 * baseScale : 1500000 * cScale * baseScale, isTotal ? 5000000 * baseScale : 500000 * cScale * baseScale, isTotal ? -200000 : -15000 * cScale);
-      const totalComm = accumExp.map((a, i) => a + outSales[i]);
-      // Prior marketing year
-      const netSalesPY = mkESSeries(isTotal ? 1100000 * baseScale : 72000 * cScale * baseScale, isTotal ? 550000 * baseScale : 45000 * cScale * baseScale, isTotal ? 2800 : 280 * cScale);
-      const totalCommPY = mkESSeries(isTotal ? 58000000 * baseScale : 3800000 * cScale * baseScale, isTotal ? 8000000 * baseScale : 600000 * cScale * baseScale, isTotal ? 300000 : 20000 * cScale);
-      let cumNS = 0; let cumNSPY = 0;
-      const accumNetSales = netSales.map(v => { cumNS += v; return cumNS; });
-      const accumNetSalesPY = netSalesPY.map(v => { cumNSPY += v; return cumNSPY; });
-      // Next marketing year
-      const nmyNetSales = mkESSeries(isTotal ? 400000 * baseScale : 25000 * cScale * baseScale, isTotal ? 300000 * baseScale : 20000 * cScale * baseScale, isTotal ? 2000 : 200 * cScale);
-      const nmyNetSalesPY = mkESSeries(isTotal ? 350000 * baseScale : 22000 * cScale * baseScale, isTotal ? 250000 * baseScale : 18000 * cScale * baseScale, isTotal ? 1800 : 180 * cScale);
-      let nmyCumNS = 0; let nmyCumNSPY = 0;
-      const nmyAccumNetSales = nmyNetSales.map(v => { nmyCumNS += v; return nmyCumNS; });
-      const nmyAccumNetSalesPY = nmyNetSalesPY.map(v => { nmyCumNSPY += v; return nmyCumNSPY; });
-      data[comm][country] = { weeklyExports: wkExp, accumExports: accumExp, netSales, netSalesPY, outstandingSales: outSales, totalCommitments: totalComm, totalCommitmentsPY: totalCommPY, accumNetSales, accumNetSalesPY, nmyNetSales, nmyNetSalesPY, nmyAccumNetSales, nmyAccumNetSalesPY };
-    });
-  });
-  return data;
-}
-
-const EXPORT_SALES = mkESData();
-
-// Unit conversion config per commodity
-const ES_UNIT_OPTIONS = {
-  "Corn": [{ id: "mt", label: "Metric tons" }, { id: "bu", label: "Bushels" }],
-  "Soybeans": [{ id: "mt", label: "Metric tons" }, { id: "bu", label: "Bushels" }],
-  "Wheat": [{ id: "mt", label: "Metric tons" }, { id: "bu", label: "Bushels" }],
-  "Soybean Meal": [{ id: "mt", label: "Metric tons" }, { id: "st", label: "Short tons" }],
-  "Soybean Oil": [{ id: "mt", label: "Metric tons" }, { id: "lbs", label: "Pounds" }],
-  "Sorghum": [{ id: "mt", label: "Metric tons" }, { id: "bu", label: "Bushels" }],
-};
-const ES_CONV = {
-  "Corn_bu": v => v * 2204.62 / 56,
-  "Soybeans_bu": v => v * 2204.62 / 60,
-  "Wheat_bu": v => v * 2204.62 / 60,
-  "Sorghum_bu": v => v * 2204.62 / 56,
-  "Soybean Meal_st": v => v * 1.10231,
-  "Soybean Oil_lbs": v => v * 2204.62,
-};
-const ES_UNIT_LABELS = { mt: "MT", bu: "bushels", st: "short tons", lbs: "lbs" };
 
 function ExportSalesPage({ ready }) {
   const [commodity, setCommodity] = useState("Corn");
@@ -5444,7 +5474,7 @@ function ExportSalesPage({ ready }) {
 
 const PAGES = {
   "export-sales": { title: "Export sales", component: ExportSalesPage },
-  "export-inspections": { title: "Export inspections", component: ExportInspectionsPage },
+  "export-inspections": { title: "USDA Export Inspections (Weekly)", component: ExportInspectionsPage },
   "drought": { title: "Commodities in drought", component: DroughtPage },
   "on-feed": { title: "Cattle on feed", component: CattleOnFeedPage },
   "cutout": { title: "Boxed beef & pork prices", component: CutoutPage },

@@ -5014,10 +5014,14 @@ function ExportInspectionsPage({ ready }) {
     if (isBu) return Math.round(mt * BU_PER_MT[comm] / 1000000 * 10) / 10; // M bu, 1 decimal
     return Math.round(mt / 1000 * 10) / 10; // thousand MT
   };
-  // Card display: always metric tons
-  var cardConv = function(mt) { return mt == null ? null : Math.round(mt / 1000 * 10) / 10; };
+  // Card display: MT view = metric tons (whole number), Bu view = M bushels (1 decimal)
+  var cardConv = function(mt) {
+    if (mt == null) return null;
+    if (isBu) return Math.round(mt * BU_PER_MT[comm] / 1000000 * 10) / 10;
+    return Math.round(mt);
+  };
   var weeklyUnit = isBu ? "M bushels" : "1,000 MT";
-  var cardUnit = "1,000 MT";
+  var cardUnit = isBu ? "M bushels" : "MT";
 
   var COMM_OPTS = [{id:"corn",label:"Corn"},{id:"soybeans",label:"Soybeans"},{id:"wheat",label:"Wheat"},{id:"sorghum",label:"Sorghum"}];
 

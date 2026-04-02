@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """
 Fetch monthly oilseed crushing data from USDA NASS QuickStats API.
-Outputs oilseed_crushing.json with crush, meal/oil production, meal/oil stocks.
+Outputs oilseed_crushing.json.
 
-Data source: NASS "Fats and Oils: Oilseed Crushings" monthly report.
-Marketing year: Oct 1 - Sep 30 (soybean marketing year).
+NASS parameter names (discovered):
+  Crush:        commodity=SOYBEANS, stat=CRUSHED, unit=TONS
+  Meal produced: commodity=CAKE & MEAL, class=SOYBEAN, stat=PRODUCTION, unit=TONS
+  Oil produced:  commodity=OIL, class=SOYBEAN, stat=PRODUCTION, unit=LB
+  Meal stocks:   commodity=CAKE & MEAL, class=SOYBEAN, stat=STOCKS, unit=TONS
+  Oil stocks:    commodity=OIL, class=SOYBEAN, stat=STOCKS, unit=LB
 """
 import json
 import os
@@ -17,8 +21,6 @@ from urllib.parse import urlencode
 API_KEY = os.environ.get("NASS_API_KEY", "")
 OUTPUT_DIR = "commodity-markets-deploy_2/data"
 BASE_URL = "https://quickstats.nass.usda.gov/api/api_GET/"
-
-# Fetch 12 years of data
 START_YEAR = 2014
 
 
@@ -37,7 +39,7 @@ def parse_value(val):
     if val is None:
         return None
     val = str(val).strip().replace(",", "")
-    if val in ("", "(D)", "(NA)", "(S)", "(Z)", "(X)"):
+    if val in ("", "(D)", "(NA)", "(S)", "(Z)", "(X)") or val.strip() == "":
         return None
     try:
         return float(val)
@@ -45,48 +47,35 @@ def parse_value(val):
         return None
 
 
-def fetch_series(label, params, unit_filter=None):
-    """Fetch a NASS series and return list of {d: "YYYY-MM", v: value}."""
+MONTH_MAP = {"JAN": "01", "FEB": "02", "MAR": "03", "APR": "04",
+             "MAY": "05", "JUN": "06", "JUL": "07", "AUG": "08",
+             "SEP": "09", "OCT": "10", "NOV": "11", "DEC": "12"}
+
+
+def fetch_series(label, params):
+    """Fetch a NASS monthly series."""
     print(f"  {label}...", end=" ", flush=True)
     try:
         rows = api_get(params)
-        points = []
+        seen = {}
         for row in rows:
             year = row.get("year", "")
-            # reference_period_desc is like "JAN", "FEB", etc. for monthly
             period = row.get("reference_period_desc", "").strip().upper()
-            unit = row.get("unit_desc", "")
             val = parse_value(row.get("Value"))
-
-            if unit_filter and unit_filter.upper() not in unit.upper():
-                continue
-
-            # Map period to month number
-            month_map = {"JAN": "01", "FEB": "02", "MAR": "03", "APR": "04",
-                         "MAY": "05", "JUN": "06", "JUL": "07", "AUG": "08",
-                         "SEP": "09", "OCT": "10", "NOV": "11", "DEC": "12"}
-            mm = month_map.get(period[:3], "")
+            mm = MONTH_MAP.get(period[:3], "")
             if not mm or not year or val is None:
                 continue
-            points.append({"d": f"{year}-{mm}", "v": round(val, 1)})
-
-        # Deduplicate and sort
-        seen = {}
-        for p in points:
-            seen[p["d"]] = p["v"]
-        result = [{"d": k, "v": v} for k, v in sorted(seen.items())]
-        print(f"{len(result)} points ({result[0]['d']} to {result[-1]['d']})" if result else "0 points")
-        if not result:
-            # Debug: show what we got
-            units_found = set()
-            periods_found = set()
-            for row in rows[:20]:
-                units_found.add(row.get("unit_desc", ""))
-                periods_found.add(row.get("reference_period_desc", ""))
-            if units_found:
-                print(f"    Units found: {units_found}")
-            if periods_found:
-                print(f"    Periods found: {periods_found}")
+            key = f"{year}-{mm}"
+            seen[key] = val
+        result = [{"d": k, "v": round(v, 1)} for k, v in sorted(seen.items())]
+        print(f"{len(result)} points", end="")
+        if result:
+            print(f" ({result[0]['d']} to {result[-1]['d']})")
+        else:
+            print()
+            # Debug
+            units = set(r.get("unit_desc", "") for r in rows[:10])
+            print(f"    DEBUG: {len(rows)} raw rows, units={units}")
         return result
     except Exception as e:
         print(f"ERROR: {e}")
@@ -107,54 +96,47 @@ def main():
     print(f"Start year: {START_YEAR}")
     print("=" * 60)
 
-    result = {"updated": datetime.now(timezone.utc).isoformat()}
-
-    base_params = {
+    base = {
         "source_desc": "SURVEY",
         "agg_level_desc": "NATIONAL",
         "freq_desc": "MONTHLY",
         "year__GE": str(START_YEAR),
     }
 
-    # 1. Soybeans crushed (1,000 bushels)
+    result = {"updated": datetime.now(timezone.utc).isoformat()}
+
+    # 1. Soybeans crushed (tons)
     result["crush"] = fetch_series("Soybeans crushed", {
-        **base_params,
-        "commodity_desc": "SOYBEANS",
-        "statisticcat_desc": "CRUSHED",
+        **base, "commodity_desc": "SOYBEANS", "statisticcat_desc": "CRUSHED",
     })
     time.sleep(0.5)
 
-    # 2. Soybean meal produced (1,000 short tons)
+    # 2. Soybean meal produced (tons)
     result["meal_produced"] = fetch_series("Soybean meal produced", {
-        **base_params,
-        "commodity_desc": "MEAL, SOYBEAN",
+        **base, "commodity_desc": "CAKE & MEAL", "class_desc": "SOYBEAN",
         "statisticcat_desc": "PRODUCTION",
     })
     time.sleep(0.5)
 
-    # 3. Soybean oil produced (million lbs)
+    # 3. Soybean oil produced (lbs)
     result["oil_produced"] = fetch_series("Soybean oil produced", {
-        **base_params,
-        "commodity_desc": "OIL, SOYBEAN",
+        **base, "commodity_desc": "OIL", "class_desc": "SOYBEAN",
         "statisticcat_desc": "PRODUCTION",
-    }, unit_filter="LB")
+    })
     time.sleep(0.5)
 
-    # 4. Soybean meal stocks (1,000 short tons)
+    # 4. Soybean meal stocks (tons)
     result["meal_stocks"] = fetch_series("Soybean meal stocks", {
-        **base_params,
-        "commodity_desc": "MEAL, SOYBEAN",
+        **base, "commodity_desc": "CAKE & MEAL", "class_desc": "SOYBEAN",
         "statisticcat_desc": "STOCKS",
     })
     time.sleep(0.5)
 
-    # 5. Soybean oil stocks (million lbs)
+    # 5. Soybean oil stocks (lbs)
     result["oil_stocks"] = fetch_series("Soybean oil stocks", {
-        **base_params,
-        "commodity_desc": "OIL, SOYBEAN",
+        **base, "commodity_desc": "OIL", "class_desc": "SOYBEAN",
         "statisticcat_desc": "STOCKS",
-    }, unit_filter="LB")
-    time.sleep(0.5)
+    })
 
     # Write output
     with open(output_file, "w") as f:

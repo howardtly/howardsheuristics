@@ -1,13 +1,6 @@
 #!/usr/bin/env python3
 """
 Fetch monthly oilseed crushing data from USDA NASS QuickStats API.
-
-Target series (Feb 2026 verification values):
-  Crush:         SOYBEANS - CRUSHED (NATIONAL, TOTAL)                        = 6,426,352 tons
-  Meal produced: CAKE & MEAL, SOYBEAN - PRODUCTION (TOTAL)                   = 4,752,577 tons
-  Oil produced:  OIL, SOYBEAN, CRUDE - PRODUCTION (CRUSHER)                  = 2,478,751,000 lbs
-  Meal stocks:   CAKE & MEAL, SOYBEAN - STOCKS (TOTAL)                       = 418,594 tons
-  Oil stocks:    OIL, SOYBEAN, ONSITE & OFFSITE, CRUDE - STOCKS (ALL LOCS)   = 2,106,781,000 lbs
 """
 import json
 import os
@@ -51,26 +44,22 @@ def parse_value(val):
 
 
 def fetch_series(label, params, domain_filter=None, domaincat_filter=None):
-    """Fetch a NASS monthly series with optional domain filtering."""
     print(f"  {label}...", end=" ", flush=True)
     try:
         rows = api_get(params)
         seen = {}
         for row in rows:
-            # Apply domain filters
             if domain_filter and row.get("domain_desc", "") != domain_filter:
                 continue
             if domaincat_filter and domaincat_filter not in row.get("domaincat_desc", ""):
                 continue
-
             year = row.get("year", "")
             period = row.get("reference_period_desc", "").strip().upper()
             val = parse_value(row.get("Value"))
             mm = MONTH_MAP.get(period[:3], "")
             if not mm or not year or val is None:
                 continue
-            key = f"{year}-{mm}"
-            seen[key] = val
+            seen[f"{year}-{mm}"] = val
 
         result = [{"d": k, "v": round(v, 1)} for k, v in sorted(seen.items())]
         print(f"{len(result)} points", end="")
@@ -80,14 +69,12 @@ def fetch_series(label, params, domain_filter=None, domaincat_filter=None):
                 print(f"    {pt['d']}: {pt['v']:,.0f}")
         else:
             print()
-            # Debug: show domains found
-            domains = set()
-            domcats = set()
-            for row in rows[:30]:
-                domains.add(row.get("domain_desc", ""))
-                domcats.add(row.get("domaincat_desc", ""))
+            domains = set(r.get("domain_desc", "") for r in rows[:20])
+            domcats = set(r.get("domaincat_desc", "") for r in rows[:20])
+            aggs = set(r.get("agg_level_desc", "") for r in rows[:20])
             print(f"    Domains: {domains}")
             print(f"    DomainCats: {domcats}")
+            print(f"    AggLevels: {aggs}")
         return result
     except Exception as e:
         print(f"ERROR: {e}")
@@ -105,58 +92,52 @@ def main():
     print("=" * 60)
     print("NASS Oilseed Crushing Fetch")
     print(f"Time: {datetime.now(timezone.utc).isoformat()}")
-    print(f"Start year: {START_YEAR}")
     print("=" * 60)
 
     result = {"updated": datetime.now(timezone.utc).isoformat()}
 
-    # 1. Soybeans crushed (tons)
-    result["crush"] = fetch_series("Soybeans crushed", {
+    # All queries use NATIONAL + short_desc for precision
+    base = {
         "source_desc": "SURVEY",
-        "commodity_desc": "SOYBEANS",
-        "statisticcat_desc": "CRUSHED",
         "agg_level_desc": "NATIONAL",
         "freq_desc": "MONTHLY",
         "year__GE": str(START_YEAR),
+    }
+
+    # 1. Crush (tons) — domain=TOTAL
+    result["crush"] = fetch_series("Soybeans crushed", {
+        **base,
+        "short_desc": "SOYBEANS - CRUSHED, MEASURED IN TONS",
     }, domain_filter="TOTAL")
     time.sleep(0.5)
 
-    # 2. Soybean meal produced (tons) — domain=TOTAL
+    # 2. Meal produced (tons) — domain=TOTAL
     result["meal_produced"] = fetch_series("Soybean meal produced", {
-        "source_desc": "SURVEY",
+        **base,
         "short_desc": "CAKE & MEAL, SOYBEAN - PRODUCTION, MEASURED IN TONS",
-        "freq_desc": "MONTHLY",
-        "year__GE": str(START_YEAR),
     }, domain_filter="TOTAL")
     time.sleep(0.5)
 
-    # 3. Soybean oil produced at crushers (lbs) — crude, crusher operation
-    result["oil_produced"] = fetch_series("Soybean oil produced (crusher)", {
-        "source_desc": "SURVEY",
+    # 3. Oil produced at crushers (lbs) — domaincat=(CRUSHER)
+    result["oil_produced"] = fetch_series("Soybean oil produced", {
+        **base,
         "short_desc": "OIL, SOYBEAN, CRUDE - PRODUCTION, MEASURED IN LB",
-        "freq_desc": "MONTHLY",
-        "year__GE": str(START_YEAR),
     }, domaincat_filter="(CRUSHER)")
     time.sleep(0.5)
 
-    # 4. Soybean meal stocks (tons) — domain=TOTAL
+    # 4. Meal stocks (tons) — domain=TOTAL
     result["meal_stocks"] = fetch_series("Soybean meal stocks", {
-        "source_desc": "SURVEY",
+        **base,
         "short_desc": "CAKE & MEAL, SOYBEAN - STOCKS, MEASURED IN TONS",
-        "freq_desc": "MONTHLY",
-        "year__GE": str(START_YEAR),
     }, domain_filter="TOTAL")
     time.sleep(0.5)
 
-    # 5. Soybean oil stocks — crude, ALL locations (crusher+refiner+warehouse)
-    result["oil_stocks"] = fetch_series("Soybean oil stocks (all locations)", {
-        "source_desc": "SURVEY",
+    # 5. Oil stocks all locations (lbs) — domaincat=(CRUSHER OR REFINER OR WAREHOUSE)
+    result["oil_stocks"] = fetch_series("Soybean oil stocks", {
+        **base,
         "short_desc": "OIL, SOYBEAN, ONSITE & OFFSITE, CRUDE - STOCKS, MEASURED IN LB",
-        "freq_desc": "MONTHLY",
-        "year__GE": str(START_YEAR),
     }, domaincat_filter="CRUSHER OR REFINER OR WAREHOUSE")
 
-    # Write output
     with open(output_file, "w") as f:
         json.dump(result, f, separators=(",", ":"))
 
@@ -168,16 +149,15 @@ def main():
     expected = {"crush": 6426352, "meal_produced": 4752577,
                 "oil_produced": 2478751000, "meal_stocks": 418594,
                 "oil_stocks": 2106781000}
-    for key in ["crush", "meal_produced", "oil_produced", "meal_stocks", "oil_stocks"]:
+    for key, exp in expected.items():
         pts = result.get(key, [])
         feb = [p for p in pts if p["d"] == "2026-02"]
         if feb:
             val = feb[0]["v"]
-            exp = expected.get(key, 0)
-            match = "✓" if abs(val - exp) < 100 else "✗"
+            match = "PASS" if abs(val - exp) < 100 else "FAIL"
             print(f"  {match} {key}: {val:,.0f} (expected {exp:,.0f})")
         else:
-            print(f"  ? {key}: no Feb 2026 data")
+            print(f"  MISS {key}: no Feb 2026 data")
 
 
 if __name__ == "__main__":

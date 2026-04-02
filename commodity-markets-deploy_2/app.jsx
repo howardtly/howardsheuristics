@@ -1439,7 +1439,7 @@ function GlobalWASDEMiniTable({ title, rows, years, fcIdx, formatVal }) {
             <tr style={{ background: "#e8e8e8" }}>
               <th style={{ position: "sticky", left: 0, zIndex: 2, background: "#e8e8e8", padding: "7px 12px", textAlign: "left", fontWeight: 600, fontSize: 12.5, color: "var(--color-text-primary)", borderBottom: "1.5px solid var(--color-border-primary)", borderRight: "0.5px solid var(--color-border-tertiary)", minWidth: 180, letterSpacing: "0.3px" }}>{title}</th>
               {years.map((y, i) => (
-                <th key={y} style={{ background: "#e8e8e8", padding: "7px 10px", textAlign: "right", fontWeight: i === fcIdx ? 600 : 400, fontSize: 12, color: i === fcIdx ? "var(--color-text-primary)" : "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)", whiteSpace: "nowrap" }}>{i === fcIdx ? y + " F" : y}</th>
+                <th key={y} style={{ background: i === fcIdx ? "var(--color-background-info)" : "#e8e8e8", padding: "7px 10px", textAlign: "right", fontWeight: i === fcIdx ? 600 : 400, fontSize: 12, color: i === fcIdx ? "var(--color-text-info)" : "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)", whiteSpace: "nowrap", minWidth: 72 }}>{i === fcIdx ? y + " F" : y}</th>
               ))}
             </tr>
           </thead>
@@ -1448,7 +1448,7 @@ function GlobalWASDEMiniTable({ title, rows, years, fcIdx, formatVal }) {
               <tr key={ri} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
                 <td style={{ position: "sticky", left: 0, zIndex: 1, background: "#ffffff", padding: "6px 12px", fontWeight: row.bold ? 600 : 400, fontSize: 13, color: "var(--color-text-primary)", borderRight: "0.5px solid var(--color-border-tertiary)", paddingLeft: row.indent ? 24 : 12 }}>{row.label}</td>
                 {row.values.map((v, vi) => (
-                  <td key={vi} style={{ padding: "6px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12.5, fontWeight: row.bold ? 600 : 400, color: vi === fcIdx ? "var(--color-text-primary)" : "var(--color-text-secondary)" }}>{formatVal(v, row)}</td>
+                  <td key={vi} style={{ padding: "6px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12.5, fontWeight: row.bold ? 600 : 400, color: vi === fcIdx ? "var(--color-text-info)" : "var(--color-text-secondary)", background: vi === fcIdx ? "rgba(59,130,246,0.04)" : "transparent" }}>{formatVal(v, row)}</td>
                 ))}
               </tr>
             ))}
@@ -1565,9 +1565,9 @@ function WASDEPage() {
         {WASDE_COMMODITIES.map(c => (
           <button key={c.id} onClick={() => setSel(c.id)} style={{
             padding: "6px 16px", fontSize: 13, cursor: "pointer",
-            background: sel === c.id ? "#333" : "transparent", border: "none", borderRadius: 6,
-            color: sel === c.id ? "#fff" : "var(--color-text-tertiary)",
-            fontWeight: 500,
+            background: sel === c.id ? "#2563EB" : "transparent", border: "1px solid " + (sel === c.id ? "#2563EB" : "var(--color-border-secondary)"), borderRadius: 5,
+            color: sel === c.id ? "#fff" : "var(--color-text-secondary)",
+            fontWeight: sel === c.id ? 600 : 400,
             transition: "all 0.15s",
           }}>
             {c.label}
@@ -2710,7 +2710,7 @@ function CropProgressPage({ ready }) {
 
   var chevSvg = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%23666' stroke-width='1.5'/%3E%3C/svg%3E\")";
   var selSt = {padding:"6px 24px 6px 10px",fontSize:13,fontWeight:500,border:"1px solid var(--color-border-secondary)",borderRadius:6,background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontFamily:"inherit",cursor:"pointer",appearance:"none",backgroundImage:chevSvg,backgroundRepeat:"no-repeat",backgroundPosition:"right 6px center"};
-  var tabSt = function(a){return{padding:"6px 14px",fontSize:12,fontWeight:a?600:400,border:"1px solid var(--color-border-secondary)",borderRadius:5,cursor:"pointer",background:a?"#333":"transparent",color:a?"#fff":"var(--color-text-secondary)",transition:"all 0.15s"};};
+  var tabSt = function(a){return{padding:"6px 14px",fontSize:12,fontWeight:a?600:400,border:"1px solid "+(a?"#2563EB":"var(--color-border-secondary)"),borderRadius:5,cursor:"pointer",background:a?"#2563EB":"transparent",color:a?"#fff":"var(--color-text-secondary)",transition:"all 0.15s"};};
   var hk = Array.from(hiddenYrs).sort().join(",");
 
   // Build clickable legend
@@ -2799,12 +2799,18 @@ function CropProgressPage({ ready }) {
 
     {tab === "summary" && <div>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12,flexWrap:"wrap"}}>
-        <select value={mapCrop} onChange={function(e){setMapCrop(e.target.value);}} style={selSt}>
-          {Object.keys(allCrops).map(function(cid){return <option key={cid} value={cid}>{allCrops[cid].label}</option>;})}
-        </select>
-        <select value={mapStage} onChange={function(e){setMapStage(e.target.value);}} style={selSt}>
-          {mapStageOpts(mapCrop).map(function(o){return <option key={o.id} value={o.id}>{o.label}</option>;})}
-        </select>
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <span style={{fontSize:11,fontWeight:600,color:"var(--color-text-secondary)",textTransform:"uppercase"}}>Commodity</span>
+          <select value={mapCrop} onChange={function(e){setMapCrop(e.target.value);}} style={selSt}>
+            {Object.keys(allCrops).map(function(cid){return <option key={cid} value={cid}>{allCrops[cid].label}</option>;})}
+          </select>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <span style={{fontSize:11,fontWeight:600,color:"var(--color-text-secondary)",textTransform:"uppercase"}}>Data</span>
+          <select value={mapStage} onChange={function(e){setMapStage(e.target.value);}} style={selSt}>
+            {mapStageOpts(mapCrop).map(function(o){return <option key={o.id} value={o.id}>{o.label}</option>;})}
+          </select>
+        </div>
         {(function(){var cr=allCrops[mapCrop];var sd2=cr&&cr.stages?cr.stages[mapStage]:null;var us=sd2?sd2["US"]:null;var pts=us?us[String(curYear)]||[]:[];if(pts.length===0)return null;var last=pts[pts.length-1];var chg=pts.length>1?last.v-pts[pts.length-2].v:null;var wk=last.w;var doy2=weekToDoy(wk);var mi2=11;for(var m2=0;m2<11;m2++){if(doy2<mB[m2+1]){mi2=m2;break;}}var dateStr2=mN[mi2]+" "+(Math.floor(doy2-mB[mi2])+1)+", "+curYear;return <span style={{fontSize:13,fontWeight:500,color:"var(--color-text-primary)"}}>U.S.: {last.v}%{chg!=null&&<span style={{color:chg>0?"#639922":chg<0?"#A32D2D":"#666",marginLeft:6,fontSize:12}}>({chg>0?"+":""}{chg} vs prev wk)</span>}<span style={{color:"var(--color-text-tertiary)",marginLeft:10,fontSize:12,fontWeight:400}}>as of {dateStr2}</span></span>;})()}
       </div>
       <div ref={mapRef} style={{width:"100%",minHeight:100,background:"var(--color-background-primary)",borderRadius:8,border:"0.5px solid var(--color-border-tertiary)",marginBottom:24,display:"flex",alignItems:"center",justifyContent:"center"}}>
@@ -3088,13 +3094,14 @@ function EthanolPage({ ready }) {
   var dlCSV = function() {
     var hdrs = ["Date", "MY", "Production (" + prodUnit + ")", "Stocks (" + stkUnit + ")", "Implied Offtake (" + stkUnit + ")", "Exports (" + prodUnit + ")"];
     var rows = [];
+    var inRange = function(d) { var my = dateToMY(d); return my >= startMY && my <= curMY; };
     var allDates = {};
     if (ethData) {
-      (ethData.production || []).forEach(function(p) { allDates[p.d] = allDates[p.d] || {}; allDates[p.d].prod = convProd(p.v); });
-      (ethData.stocks || []).forEach(function(p) { allDates[p.d] = allDates[p.d] || {}; allDates[p.d].stk = convStk(p.v); });
-      (ethData.exports || []).forEach(function(p) { allDates[p.d] = allDates[p.d] || {}; allDates[p.d].exp = convProd(p.v); });
+      (ethData.production || []).filter(function(p){return inRange(p.d);}).forEach(function(p) { allDates[p.d] = allDates[p.d] || {}; allDates[p.d].prod = convProd(p.v); });
+      (ethData.stocks || []).filter(function(p){return inRange(p.d);}).forEach(function(p) { allDates[p.d] = allDates[p.d] || {}; allDates[p.d].stk = convStk(p.v); });
+      (ethData.exports || []).filter(function(p){return inRange(p.d);}).forEach(function(p) { allDates[p.d] = allDates[p.d] || {}; allDates[p.d].exp = convProd(p.v); });
     }
-    computeOfftake().forEach(function(p) { allDates[p.d] = allDates[p.d] || {}; allDates[p.d].oft = convStk(p.v); });
+    computeOfftake().filter(function(p){return inRange(p.d);}).forEach(function(p) { allDates[p.d] = allDates[p.d] || {}; allDates[p.d].oft = convStk(p.v); });
     Object.keys(allDates).sort().forEach(function(d) {
       var r = allDates[d];
       rows.push([d, myLabel(dateToMY(d)), r.prod || "", r.stk || "", r.oft || "", r.exp || ""]);
@@ -3384,15 +3391,16 @@ function FatsOilsPage({ ready }) {
 
   var dlCSV = function() {
     var hdrs = ["Date", "MY", "Crush (tons)", "Meal Production (short tons)", "Oil Production (1000 lbs)", "Oil Yield (lbs/bu)", "Meal Stocks (short tons)", "Oil Stocks (1000 lbs)"];
+    var inRange = function(d) { var my = dateToMY(d); return my >= startMY && my <= curMY; };
     var allDates = {};
     if (oilData) {
-      (oilData.crush || []).forEach(function(p) { allDates[p.d] = allDates[p.d] || {}; allDates[p.d].crush = p.v; });
-      (oilData.meal_produced || []).forEach(function(p) { allDates[p.d] = allDates[p.d] || {}; allDates[p.d].mealP = p.v; });
-      (oilData.oil_produced || []).forEach(function(p) { allDates[p.d] = allDates[p.d] || {}; allDates[p.d].oilP = Math.round(p.v / 1000); });
-      (oilData.meal_stocks || []).forEach(function(p) { allDates[p.d] = allDates[p.d] || {}; allDates[p.d].mealS = p.v; });
-      (oilData.oil_stocks || []).forEach(function(p) { allDates[p.d] = allDates[p.d] || {}; allDates[p.d].oilS = Math.round(p.v / 1000); });
+      (oilData.crush || []).filter(function(p){return inRange(p.d);}).forEach(function(p) { allDates[p.d] = allDates[p.d] || {}; allDates[p.d].crush = p.v; });
+      (oilData.meal_produced || []).filter(function(p){return inRange(p.d);}).forEach(function(p) { allDates[p.d] = allDates[p.d] || {}; allDates[p.d].mealP = p.v; });
+      (oilData.oil_produced || []).filter(function(p){return inRange(p.d);}).forEach(function(p) { allDates[p.d] = allDates[p.d] || {}; allDates[p.d].oilP = Math.round(p.v / 1000); });
+      (oilData.meal_stocks || []).filter(function(p){return inRange(p.d);}).forEach(function(p) { allDates[p.d] = allDates[p.d] || {}; allDates[p.d].mealS = p.v; });
+      (oilData.oil_stocks || []).filter(function(p){return inRange(p.d);}).forEach(function(p) { allDates[p.d] = allDates[p.d] || {}; allDates[p.d].oilS = Math.round(p.v / 1000); });
     }
-    computeYield().forEach(function(p) { allDates[p.d] = allDates[p.d] || {}; allDates[p.d].yield = p.v; });
+    computeYield().filter(function(p){return inRange(p.d);}).forEach(function(p) { allDates[p.d] = allDates[p.d] || {}; allDates[p.d].yield = p.v; });
     var rows = [];
     Object.keys(allDates).sort().forEach(function(d) {
       var r = allDates[d];
@@ -5179,7 +5187,7 @@ function ExportInspectionsPage({ ready }) {
   var dlCSV = function() {
     var hdrs = ["Date", "MY", "Weekly Volume (" + weeklyUnit + ")", "Cumulative MY (" + weeklyUnit + ")"];
     var rows = [];
-    rawPts.slice().sort(function(a, b) { return a.d < b.d ? -1 : 1; }).forEach(function(pt) {
+    rawPts.filter(function(p) { var my = dateToMY(p.d); return my >= startMY && my <= curMY; }).sort(function(a, b) { return a.d < b.d ? -1 : 1; }).forEach(function(pt) {
       var my = dateToMY(pt.d);
       var myPts2 = rawPts.filter(function(p) { return dateToMY(p.d) === my && p.d <= pt.d; });
       var cumul = myPts2.reduce(function(s, p) { return s + p.v; }, 0);

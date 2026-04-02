@@ -3175,8 +3175,9 @@ function FatsOilsPage({ ready }) {
   };
   var myLabel = function(yr) { return yr + "/" + String(yr + 1).slice(2); };
 
-  var processRaw = function(rawPts) {
+  var processRaw = function(rawPts, convFactor) {
     if (!rawPts || !rawPts.length) return {};
+    var cf = convFactor || 1;
     var byMY = {};
     rawPts.forEach(function(pt) {
       var my = dateToMY(pt.d);
@@ -3184,10 +3185,10 @@ function FatsOilsPage({ ready }) {
       var idx = monthToMktIdx[mm];
       if (idx == null) return;
       if (!byMY[my]) byMY[my] = [];
-      byMY[my].push({ x: idx, y: pt.v });
+      byMY[my].push({ x: idx, y: Math.round(pt.v * cf * 100) / 100 });
     });
     return byMY;
-  };
+  }
 
   // Compute oil yield: oil produced (M lbs) / crush (1000 bu) * 1000 = lbs/bu
   var computeYield = function() {
@@ -3196,21 +3197,27 @@ function FatsOilsPage({ ready }) {
     oilData.crush.forEach(function(pt) { crushMap[pt.d] = pt.v; });
     var out = [];
     oilData.oil_produced.forEach(function(pt) {
-      var crush = crushMap[pt.d];
-      if (crush && crush > 0 && pt.v != null) {
-        // oil is in M lbs, crush is in 1000 bu
-        // yield = (M lbs * 1000000) / (1000 bu * 1000) = M lbs / 1000 bu * 1000 = pt.v / crush * 1000
-        out.push({ d: pt.d, v: Math.round(pt.v / crush * 1000 * 100) / 100 });
+      var crushTons = crushMap[pt.d];
+      if (crushTons && crushTons > 0 && pt.v != null) {
+        // oil in lbs, crush in tons → yield = lbs / (tons * 2000 / 60) = lbs * 60 / (tons * 2000) = lbs / tons * 0.03
+        var crushBu = crushTons * 2000 / 60;
+        var yieldLbsPerBu = pt.v / crushBu;
+        out.push({ d: pt.d, v: Math.round(yieldLbsPerBu * 100) / 100 });
       }
     });
     return out;
   };
 
-  var crush = oilData ? processRaw(oilData.crush) : {};
-  var mealProd = oilData ? processRaw(oilData.meal_produced) : {};
-  var oilProd = oilData ? processRaw(oilData.oil_produced) : {};
-  var mealStk = oilData ? processRaw(oilData.meal_stocks) : {};
-  var oilStk = oilData ? processRaw(oilData.oil_stocks) : {};
+  // NASS units: crush=tons, meal=tons, oil=lbs
+  // Convert to: crush=M bu, meal=1000 short tons, oil=M lbs
+  var CRUSH_CONV = 2000 / 60 / 1000000; // tons → M bushels
+  var MEAL_CONV = 1 / 1000;             // tons → 1,000 short tons
+  var OIL_CONV = 1 / 1000000;           // lbs → M lbs
+  var crush = oilData ? processRaw(oilData.crush, CRUSH_CONV) : {};
+  var mealProd = oilData ? processRaw(oilData.meal_produced, MEAL_CONV) : {};
+  var oilProd = oilData ? processRaw(oilData.oil_produced, OIL_CONV) : {};
+  var mealStk = oilData ? processRaw(oilData.meal_stocks, MEAL_CONV) : {};
+  var oilStk = oilData ? processRaw(oilData.oil_stocks, OIL_CONV) : {};
   var oilYield = processRaw(computeYield());
 
   var now = new Date();
@@ -3241,13 +3248,17 @@ function FatsOilsPage({ ready }) {
     return { cur: latest.v, prevMo: prev ? prev.v : null, lastYr: lastYrPt ? lastYrPt.v : null, date: latest.d };
   };
 
-  var crushInfo = oilData ? getCardInfo(oilData.crush) : {};
-  var mealProdInfo = oilData ? getCardInfo(oilData.meal_produced) : {};
-  var oilProdInfo = oilData ? getCardInfo(oilData.oil_produced) : {};
+  var applyConv = function(info, cf) {
+    if (!info || info.cur == null) return info;
+    return { cur: Math.round(info.cur * cf * 100) / 100, prevMo: info.prevMo != null ? Math.round(info.prevMo * cf * 100) / 100 : null, lastYr: info.lastYr != null ? Math.round(info.lastYr * cf * 100) / 100 : null, date: info.date };
+  };
+  var crushInfo = applyConv(oilData ? getCardInfo(oilData.crush) : {}, CRUSH_CONV);
+  var mealProdInfo = applyConv(oilData ? getCardInfo(oilData.meal_produced) : {}, MEAL_CONV);
+  var oilProdInfo = applyConv(oilData ? getCardInfo(oilData.oil_produced) : {}, OIL_CONV);
   var yieldRaw = computeYield();
   var yieldInfo = getCardInfo(yieldRaw);
-  var mealStkInfo = oilData ? getCardInfo(oilData.meal_stocks) : {};
-  var oilStkInfo = oilData ? getCardInfo(oilData.oil_stocks) : {};
+  var mealStkInfo = applyConv(oilData ? getCardInfo(oilData.meal_stocks) : {}, MEAL_CONV);
+  var oilStkInfo = applyConv(oilData ? getCardInfo(oilData.oil_stocks) : {}, OIL_CONV);
 
   var statCard = function(label, info, unitLabel) {
     var diffLine = function(lbl, comp) {

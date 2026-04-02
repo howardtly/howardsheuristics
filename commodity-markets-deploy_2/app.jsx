@@ -3200,19 +3200,19 @@ function FatsOilsPage({ ready }) {
       var crushTons = crushMap[pt.d];
       if (crushTons && crushTons > 0 && pt.v != null) {
         // oil in lbs, crush in tons → yield = lbs / (tons * 2000 / 60) = lbs * 60 / (tons * 2000) = lbs / tons * 0.03
-        var crushBu = crushTons * 2000 / 60;
-        var yieldLbsPerBu = pt.v / crushBu;
+        var crushBu = crushTons * 2000 / 60; // tons → bushels
+        var yieldLbsPerBu = pt.v / crushBu; // lbs / bushels
         out.push({ d: pt.d, v: Math.round(yieldLbsPerBu * 100) / 100 });
       }
     });
     return out;
   };
 
-  // NASS units: crush=tons, meal=tons, oil=lbs
-  // Convert to: crush=M bu, meal=1000 short tons, oil=M lbs
-  var CRUSH_CONV = 2000 / 60 / 1000000; // tons → M bushels
-  var MEAL_CONV = 1 / 1000;             // tons → 1,000 short tons
-  var OIL_CONV = 1 / 1000000;           // lbs → M lbs
+  // NASS units: crush=tons, meal=short tons, oil=lbs
+  // Industry standard: crush=1,000 bu, meal=short tons, oil=1,000 lbs
+  var CRUSH_CONV = 2000 / 60 / 1000; // tons → 1,000 bushels
+  var MEAL_CONV = 1;                  // tons = short tons (no conversion)
+  var OIL_CONV = 1 / 1000;           // lbs → 1,000 lbs
   var crush = oilData ? processRaw(oilData.crush, CRUSH_CONV) : {};
   var mealProd = oilData ? processRaw(oilData.meal_produced, MEAL_CONV) : {};
   var oilProd = oilData ? processRaw(oilData.oil_produced, OIL_CONV) : {};
@@ -3263,11 +3263,11 @@ function FatsOilsPage({ ready }) {
   var statCard = function(label, info, unitLabel) {
     var diffLine = function(lbl, comp) {
       if (info.cur == null || comp == null) return null;
-      var d2 = Math.round((info.cur - comp) * 100) / 100;
-      var col = d2 > 0 ? "#639922" : d2 < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
+      var pctChg = Math.round((info.cur - comp) / Math.abs(comp) * 10000) / 100;
+      var col = pctChg > 0 ? "#639922" : pctChg < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
       return (<div style={{display:"flex",justifyContent:"space-between",fontSize:10.5,padding:"1px 0"}}>
         <span style={{color:"var(--color-text-tertiary)"}}>{lbl}</span>
-        <span><span style={{color:"var(--color-text-secondary)"}}>{comp.toLocaleString()} </span><span style={{color:col,fontWeight:500}}>({d2 > 0 ? "+" : ""}{d2.toLocaleString()})</span></span>
+        <span><span style={{color:"var(--color-text-secondary)"}}>{comp.toLocaleString()} </span><span style={{color:col,fontWeight:500}}>({pctChg > 0 ? "+" : ""}{pctChg}%)</span></span>
       </div>);
     };
     return (<div style={{background:"var(--color-background-secondary)",borderRadius:"var(--border-radius-md)",padding:"12px 14px",minWidth:0}}>
@@ -3309,7 +3309,7 @@ function FatsOilsPage({ ready }) {
         plugins: { legend: { display: false }, tooltip: { mode: "x", intersect: false, backgroundColor: "rgba(0,0,0,0.6)", titleFont: { size: 11 }, bodyFont: { size: 11 },
           callbacks: { title: function(items) { if (!items.length) return ""; return mktN[Math.round(items[0].parsed.x)] || ""; },
             label: function(c2) { return c2.parsed.y == null ? null : c2.dataset.label + ": " + c2.parsed.y.toLocaleString(); } } } },
-        scales: { x: { type: "linear", min: -0.5, max: 11.5, ticks: { callback: function(v) { return mktN[v] || ""; }, stepSize: 1, font: { size: 10 } }, grid: { color: "rgba(0,0,0,0.06)" } },
+        scales: { x: { type: "linear", min: -0.5, max: 11.5, ticks: { callback: function(v) { return Number.isInteger(v) && v >= 0 && v < 12 ? mktN[v] : ""; }, stepSize: 1, autoSkip: false, maxRotation: 0, font: { size: 10 } }, grid: { color: function(ctx) { var v = ctx.tick.value; return Number.isInteger(v) ? "rgba(0,0,0,0.06)" : "transparent"; } } },
           y: { min: yMin, max: yMax, ticks: { stepSize: step, font: { size: 10 }, callback: function(v) { return v.toLocaleString(); } }, grid: { color: "rgba(0,0,0,0.08)", lineWidth: 0.75 } } }
       } });
     } else {
@@ -3333,7 +3333,7 @@ function FatsOilsPage({ ready }) {
         interaction: { mode: "nearest", intersect: false },
         plugins: { legend: { display: false }, tooltip: { backgroundColor: "rgba(0,0,0,0.6)", callbacks: { title: function(items) { if (!items.length) return ""; var v = items[0].parsed.x; var yrIdx = Math.floor(v / 12); var moIdx = Math.round(v - yrIdx * 12); if (yrIdx >= years.length) return ""; var calYr = moIdx >= 3 ? years[yrIdx] + 1 : years[yrIdx]; return mktN[moIdx] + " " + calYr; }, label: function(c2) { return c2.parsed.y == null ? null : c2.parsed.y.toLocaleString(); } } } },
         scales: { x: { type: "linear", min: -0.5, max: years.length * 12 - 0.5,
-          ticks: { callback: function(v) { var yrIdx = Math.floor(v / 12); var moIdx = Math.round(v - yrIdx * 12); if (yrIdx >= years.length) return ""; if (isShort) { if (moIdx % 2 === 0) return mktN[moIdx] + "-" + String(moIdx >= 3 ? years[yrIdx] + 1 : years[yrIdx]).slice(2); return ""; } else { if (moIdx === 3) return String(years[yrIdx] + 1); return ""; } }, autoSkip: false, maxRotation: 0, font: { size: 10 } },
+          ticks: { callback: function(v) { var yrIdx = Math.floor(v / 12); var moIdx = Math.round(v - yrIdx * 12); if (yrIdx >= years.length) return ""; if (isShort) { return Number.isInteger(v) && v >= 0 ? mktN[moIdx] : ""; } else { if (moIdx === 3) return String(years[yrIdx] + 1); return ""; } }, autoSkip: false, maxRotation: 0, font: { size: 10 } },
           grid: { color: function(ctx) { var v = ctx.tick.value; if (Number.isInteger(v / 12) && v > 0) return "rgba(0,0,0,0.15)"; return "rgba(0,0,0,0.04)"; } } },
           y: { min: yMin2, max: yMax2, ticks: { stepSize: st2, font: { size: 10 }, callback: function(v) { return v.toLocaleString(); } }, grid: { color: "rgba(0,0,0,0.08)" } } }
       } });
@@ -3341,7 +3341,7 @@ function FatsOilsPage({ ready }) {
   }; };
 
   var dlCSV = function() {
-    var hdrs = ["Date", "MY", "Crush (1000 bu)", "Meal Prod (1000 st)", "Oil Prod (M lbs)", "Oil Yield (lbs/bu)", "Meal Stocks (1000 st)", "Oil Stocks (M lbs)"];
+    var hdrs = ["Date", "MY", "Crush (1000 bu)", "Meal Prod (short tons)", "Oil Prod (1000 lbs)", "Oil Yield (lbs/bu)", "Meal Stocks (short tons)", "Oil Stocks (1000 lbs)"];
     var allDates = {};
     if (oilData) {
       (oilData.crush || []).forEach(function(p) { allDates[p.d] = allDates[p.d] || {}; allDates[p.d].crush = p.v; });
@@ -3364,12 +3364,12 @@ function FatsOilsPage({ ready }) {
   var modeSt = function(a) { return {padding:"6px 14px",fontSize:12,fontWeight:a?600:400,border:"1px solid "+(a?"#2563EB":"var(--color-border-secondary)"),borderRadius:5,cursor:"pointer",background:a?"#2563EB":"transparent",color:a?"#fff":"var(--color-text-secondary)",transition:"all 0.15s"}; };
 
   var CHARTS = [
-    { key: "crush", label: "Monthly Soybean Crush", data: crush, unit: "1,000 bu" },
+    { key: "crush", label: "Monthly Soybean Crush", data: crush, unit: "1,000 bushels" },
     { key: "yield", label: "Soybean Oil Yield", data: oilYield, unit: "lbs/bu" },
-    { key: "mealProd", label: "Monthly Soybean Meal Produced", data: mealProd, unit: "1,000 short tons" },
-    { key: "oilProd", label: "Monthly Soybean Oil Produced", data: oilProd, unit: "M lbs" },
-    { key: "mealStk", label: "Soybean Meal Stocks", data: mealStk, unit: "1,000 short tons" },
-    { key: "oilStk", label: "Soybean Oil Stocks", data: oilStk, unit: "M lbs" },
+    { key: "mealProd", label: "Monthly Soybean Meal Produced", data: mealProd, unit: "short tons" },
+    { key: "oilProd", label: "Monthly Soybean Oil Produced", data: oilProd, unit: "1,000 lbs" },
+    { key: "mealStk", label: "Soybean Meal Stocks", data: mealStk, unit: "short tons" },
+    { key: "oilStk", label: "Soybean Oil Stocks", data: oilStk, unit: "1,000 lbs" },
   ];
 
   return (<div>
@@ -3392,10 +3392,10 @@ function FatsOilsPage({ ready }) {
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:16}}>
       {statCard("Soybean Crush", crushInfo, "1,000 bu")}
       {statCard("Oil Yield", yieldInfo, "lbs/bu")}
-      {statCard("Meal Produced", mealProdInfo, "1,000 st")}
-      {statCard("Oil Produced", oilProdInfo, "M lbs")}
-      {statCard("Meal Stocks", mealStkInfo, "1,000 st")}
-      {statCard("Oil Stocks", oilStkInfo, "M lbs")}
+      {statCard("Meal Produced", mealProdInfo, "short tons")}
+      {statCard("Oil Produced", oilProdInfo, "1,000 lbs")}
+      {statCard("Meal Stocks", mealStkInfo, "short tons")}
+      {statCard("Oil Stocks", oilStkInfo, "1,000 lbs")}
     </div>
 
     {mode === "seasonal" && <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:16,alignItems:"center"}}>

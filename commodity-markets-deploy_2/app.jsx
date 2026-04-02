@@ -3334,8 +3334,21 @@ function FatsOilsPage({ ready }) {
       // Ticks: Oct boundaries as gridlines, MY labels centered between Oct marks
       var xTicks = [];
       if (isShort) {
-        // Monthly labels
-        years.forEach(function(yr, idx) { for (var mi = 0; mi < 12; mi++) xTicks.push({value: idx*12+mi, label: axisN[mi]}); });
+        // mmm-yy labels with dynamic interval
+        var totalMonths = years.length * 12;
+        var interval = totalMonths > 18 ? 3 : totalMonths > 12 ? 2 : 1;
+        var tickIdx = 0;
+        years.forEach(function(yr, idx) {
+          for (var mi = 0; mi < 12; mi++) {
+            var calYr = (useSepAxis ? (mi >= 4 ? yr + 1 : yr) : (mi >= 3 ? yr + 1 : yr));
+            if (tickIdx % interval === 0) {
+              xTicks.push({value: idx*12+mi, label: axisN[mi] + "-" + String(calYr).slice(2)});
+            } else {
+              xTicks.push({value: idx*12+mi, label: ""});
+            }
+            tickIdx++;
+          }
+        });
       } else {
         // MY labels centered at month index 5.5 (between Apr and May)
         years.forEach(function(yr, idx) {
@@ -3380,7 +3393,7 @@ function FatsOilsPage({ ready }) {
   var modeSt = function(a) { return {padding:"6px 14px",fontSize:12,fontWeight:a?600:400,border:"1px solid "+(a?"#2563EB":"var(--color-border-secondary)"),borderRadius:5,cursor:"pointer",background:a?"#2563EB":"transparent",color:a?"#fff":"var(--color-text-secondary)",transition:"all 0.15s"}; };
 
   var CHARTS = [
-    { key: "crush", label: "Soybean Crush", data: crush, unit: "M bushels", yd: 1, sepAxis: true },
+    { key: "crush", label: "Soybean Crush", data: crush, unit: "M bushels", yd: 0, sepAxis: true },
     { key: "yield", label: "Soybean Oil Yield", data: oilYield, unit: "lbs/bu", yd: 1, sepAxis: false },
     { key: "mealProd", label: "Soybean Meal Production", data: mealProd, unit: "M short tons", yd: 1, sepAxis: false },
     { key: "oilProd", label: "Soybean Oil Production", data: oilProd, unit: "M lbs", yd: 0, sepAxis: false },

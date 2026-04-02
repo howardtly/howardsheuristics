@@ -3263,7 +3263,7 @@ function FatsOilsPage({ ready }) {
   var statCard = function(label, info, unitLabel) {
     var diffLine = function(lbl, comp) {
       if (info.cur == null || comp == null) return null;
-      var pctChg = Math.round((info.cur - comp) / Math.abs(comp) * 10000) / 100;
+      var pctChg = Math.round((info.cur - comp) / Math.abs(comp) * 1000) / 10;
       var col = pctChg > 0 ? "#639922" : pctChg < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
       return (<div style={{display:"flex",justifyContent:"space-between",fontSize:10.5,padding:"1px 0"}}>
         <span style={{color:"var(--color-text-tertiary)"}}>{lbl}</span>
@@ -3309,7 +3309,7 @@ function FatsOilsPage({ ready }) {
         plugins: { legend: { display: false }, tooltip: { mode: "x", intersect: false, backgroundColor: "rgba(0,0,0,0.6)", titleFont: { size: 11 }, bodyFont: { size: 11 },
           callbacks: { title: function(items) { if (!items.length) return ""; return mktN[Math.round(items[0].parsed.x)] || ""; },
             label: function(c2) { return c2.parsed.y == null ? null : c2.dataset.label + ": " + c2.parsed.y.toLocaleString(); } } } },
-        scales: { x: { type: "linear", min: -0.5, max: 11.5, ticks: { callback: function(v) { return Number.isInteger(v) && v >= 0 && v < 12 ? mktN[v] : ""; }, stepSize: 1, autoSkip: false, maxRotation: 0, font: { size: 10 } }, grid: { color: function(ctx) { var v = ctx.tick.value; return Number.isInteger(v) ? "rgba(0,0,0,0.06)" : "transparent"; } } },
+        scales: { x: { type: "linear", min: -0.5, max: 11.5, afterBuildTicks: function(ax) { var t = []; for (var i = 0; i < 12; i++) t.push({value: i}); ax.ticks = t; }, ticks: { callback: function(v) { return v >= 0 && v < 12 ? mktN[Math.round(v)] : ""; }, autoSkip: false, maxRotation: 0, font: { size: 10 } }, grid: { color: "rgba(0,0,0,0.06)" } },
           y: { min: yMin, max: yMax, ticks: { stepSize: step, font: { size: 10 }, callback: function(v) { return v.toLocaleString(); } }, grid: { color: "rgba(0,0,0,0.08)", lineWidth: 0.75 } } }
       } });
     } else {
@@ -3333,8 +3333,9 @@ function FatsOilsPage({ ready }) {
         interaction: { mode: "nearest", intersect: false },
         plugins: { legend: { display: false }, tooltip: { backgroundColor: "rgba(0,0,0,0.6)", callbacks: { title: function(items) { if (!items.length) return ""; var v = items[0].parsed.x; var yrIdx = Math.floor(v / 12); var moIdx = Math.round(v - yrIdx * 12); if (yrIdx >= years.length) return ""; var calYr = moIdx >= 3 ? years[yrIdx] + 1 : years[yrIdx]; return mktN[moIdx] + " " + calYr; }, label: function(c2) { return c2.parsed.y == null ? null : c2.parsed.y.toLocaleString(); } } } },
         scales: { x: { type: "linear", min: -0.5, max: years.length * 12 - 0.5,
-          ticks: { callback: function(v) { var yrIdx = Math.floor(v / 12); var moIdx = Math.round(v - yrIdx * 12); if (yrIdx >= years.length) return ""; if (isShort) { return Number.isInteger(v) && v >= 0 ? mktN[moIdx] : ""; } else { if (moIdx === 3) return String(years[yrIdx] + 1); return ""; } }, autoSkip: false, maxRotation: 0, font: { size: 10 } },
-          grid: { color: function(ctx) { var v = ctx.tick.value; if (Number.isInteger(v / 12) && v > 0) return "rgba(0,0,0,0.15)"; return "rgba(0,0,0,0.04)"; } } },
+          afterBuildTicks: function(ax) { var t = []; if (isShort) { for (var i = 0; i < years.length * 12; i++) t.push({value:i}); } else { years.forEach(function(yr, idx) { t.push({value: idx*12}); t.push({value: idx*12+3}); }); } ax.ticks = t; },
+          ticks: { callback: function(v) { var yrIdx = Math.floor(v / 12); var moIdx = Math.round(v - yrIdx * 12); if (yrIdx >= years.length) return ""; if (isShort) { return mktN[moIdx] || ""; } else { if (moIdx === 3) return String(years[yrIdx] + 1); return ""; } }, autoSkip: false, maxRotation: 0, font: { size: 10 } },
+          grid: { color: function(ctx) { var v = ctx.tick.value; if (v > 0 && Math.abs(v - Math.round(v/12)*12) < 0.5) return "rgba(0,0,0,0.15)"; return "rgba(0,0,0,0.04)"; } } },
           y: { min: yMin2, max: yMax2, ticks: { stepSize: st2, font: { size: 10 }, callback: function(v) { return v.toLocaleString(); } }, grid: { color: "rgba(0,0,0,0.08)" } } }
       } });
     }

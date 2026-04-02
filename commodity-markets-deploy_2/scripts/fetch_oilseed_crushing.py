@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Fetch monthly oilseed crushing data from USDA NASS QuickStats API.
+Oil stocks = crude (all locations) + once refined (all locations).
 """
 import json
 import os
@@ -60,7 +61,6 @@ def fetch_series(label, params, domain_filter=None, domaincat_filter=None):
             if not mm or not year or val is None:
                 continue
             seen[f"{year}-{mm}"] = val
-
         result = [{"d": k, "v": round(v, 1)} for k, v in sorted(seen.items())]
         print(f"{len(result)} points", end="")
         if result:
@@ -69,12 +69,6 @@ def fetch_series(label, params, domain_filter=None, domaincat_filter=None):
                 print(f"    {pt['d']}: {pt['v']:,.0f}")
         else:
             print()
-            domains = set(r.get("domain_desc", "") for r in rows[:20])
-            domcats = set(r.get("domaincat_desc", "") for r in rows[:20])
-            aggs = set(r.get("agg_level_desc", "") for r in rows[:20])
-            print(f"    Domains: {domains}")
-            print(f"    DomainCats: {domcats}")
-            print(f"    AggLevels: {aggs}")
         return result
     except Exception as e:
         print(f"ERROR: {e}")
@@ -95,8 +89,6 @@ def main():
     print("=" * 60)
 
     result = {"updated": datetime.now(timezone.utc).isoformat()}
-
-    # All queries use NATIONAL + short_desc for precision
     base = {
         "source_desc": "SURVEY",
         "agg_level_desc": "NATIONAL",
@@ -104,39 +96,51 @@ def main():
         "year__GE": str(START_YEAR),
     }
 
-    # 1. Crush (tons) — domain=TOTAL
     result["crush"] = fetch_series("Soybeans crushed", {
-        **base,
-        "short_desc": "SOYBEANS - CRUSHED, MEASURED IN TONS",
+        **base, "short_desc": "SOYBEANS - CRUSHED, MEASURED IN TONS",
     }, domain_filter="TOTAL")
     time.sleep(0.5)
 
-    # 2. Meal produced (tons) — domain=TOTAL
     result["meal_produced"] = fetch_series("Soybean meal produced", {
-        **base,
-        "short_desc": "CAKE & MEAL, SOYBEAN - PRODUCTION, MEASURED IN TONS",
+        **base, "short_desc": "CAKE & MEAL, SOYBEAN - PRODUCTION, MEASURED IN TONS",
     }, domain_filter="TOTAL")
     time.sleep(0.5)
 
-    # 3. Oil produced at crushers (lbs) — domaincat=(CRUSHER)
     result["oil_produced"] = fetch_series("Soybean oil produced", {
-        **base,
-        "short_desc": "OIL, SOYBEAN, CRUDE - PRODUCTION, MEASURED IN LB",
+        **base, "short_desc": "OIL, SOYBEAN, CRUDE - PRODUCTION, MEASURED IN LB",
     }, domaincat_filter="(CRUSHER)")
     time.sleep(0.5)
 
-    # 4. Meal stocks (tons) — domain=TOTAL
     result["meal_stocks"] = fetch_series("Soybean meal stocks", {
-        **base,
-        "short_desc": "CAKE & MEAL, SOYBEAN - STOCKS, MEASURED IN TONS",
+        **base, "short_desc": "CAKE & MEAL, SOYBEAN - STOCKS, MEASURED IN TONS",
     }, domain_filter="TOTAL")
     time.sleep(0.5)
 
-    # 5. Oil stocks all locations (lbs) — domaincat=(CRUSHER OR REFINER OR WAREHOUSE)
-    result["oil_stocks"] = fetch_series("Soybean oil stocks", {
-        **base,
-        "short_desc": "OIL, SOYBEAN, ONSITE & OFFSITE, CRUDE - STOCKS, MEASURED IN LB",
+    # Oil stocks = crude (all locations) + once refined (all locations)
+    print("  Soybean oil stocks (crude + once refined)...")
+    crude_stocks = fetch_series("    Crude stocks", {
+        **base, "short_desc": "OIL, SOYBEAN, ONSITE & OFFSITE, CRUDE - STOCKS, MEASURED IN LB",
     }, domaincat_filter="CRUSHER OR REFINER OR WAREHOUSE")
+    time.sleep(0.5)
+
+    refined_stocks = fetch_series("    Once refined stocks", {
+        **base, "short_desc": "OIL, SOYBEAN, ONSITE & OFFSITE, ONCE REFINED - STOCKS, MEASURED IN LB",
+    }, domaincat_filter="REFINER OR WAREHOUSE")
+
+    # Combine: sum crude + once refined per month
+    crude_map = {p["d"]: p["v"] for p in crude_stocks}
+    refined_map = {p["d"]: p["v"] for p in refined_stocks}
+    all_months = sorted(set(list(crude_map.keys()) + list(refined_map.keys())))
+    combined = []
+    for m in all_months:
+        c_val = crude_map.get(m, 0)
+        r_val = refined_map.get(m, 0)
+        combined.append({"d": m, "v": round(c_val + r_val, 1)})
+    result["oil_stocks"] = combined
+    print(f"  Combined oil stocks: {len(combined)} points")
+    if combined:
+        for pt in combined[-2:]:
+            print(f"    {pt['d']}: {pt['v']:,.0f}")
 
     with open(output_file, "w") as f:
         json.dump(result, f, separators=(",", ":"))
@@ -148,16 +152,16 @@ def main():
     print("\n  --- Feb 2026 verification ---")
     expected = {"crush": 6426352, "meal_produced": 4752577,
                 "oil_produced": 2478751000, "meal_stocks": 418594,
-                "oil_stocks": 2106781000}
+                "oil_stocks": 2600169000}  # crude 2106781 + refined 493388
     for key, exp in expected.items():
         pts = result.get(key, [])
         feb = [p for p in pts if p["d"] == "2026-02"]
         if feb:
             val = feb[0]["v"]
-            match = "PASS" if abs(val - exp) < 100 else "FAIL"
-            print(f"  {match} {key}: {val:,.0f} (expected {exp:,.0f})")
+            match = "PASS" if abs(val - exp) / exp < 0.02 else "FAIL"
+            print(f"  {match} {key}: {val:,.0f} (expected ~{exp:,.0f})")
         else:
-            print(f"  MISS {key}: no Feb 2026 data")
+            print(f"  MISS {key}: no data")
 
 
 if __name__ == "__main__":

@@ -1328,6 +1328,12 @@ function MapBox({ id, height, renderMap, deps }) {
 // WASDE BALANCE SHEET TABLE — full-width scrollable
 // ════════════════════════════════════════════════════════════════════════
 
+
+var shortenLabel = function(lbl) {
+  var map = {"Food, feed, and other industrial": "Food, feed, other industrial",
+    "Food, feed & other industrial": "Food, feed, other industrial"};
+  return map[lbl] || lbl;
+};
 function WASDETable({ commodity }) {
   const scrollRef = useRef(null);
   const years = commodity.years || MY;
@@ -1401,7 +1407,7 @@ function WASDETable({ commodity }) {
                     fontSize: 13,
                     borderRight: "0.5px solid var(--color-border-tertiary)",
                   }}>
-                    {row.label}
+                    {shortenLabel(row.label)}
                   </td>
                   {row.values.map((v, vi) => (
                     <td key={vi} style={{
@@ -1446,7 +1452,7 @@ function GlobalWASDEMiniTable({ title, rows, years, fcIdx, formatVal }) {
           <tbody>
             {rows.map((row, ri) => (
               <tr key={ri} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
-                <td style={{ position: "sticky", left: 0, zIndex: 1, background: "#ffffff", padding: "6px 12px", fontWeight: row.bold ? 600 : 400, fontSize: 13, color: "var(--color-text-primary)", borderRight: "0.5px solid var(--color-border-tertiary)", paddingLeft: row.indent ? 24 : 12 }}>{row.label}</td>
+                <td style={{ position: "sticky", left: 0, zIndex: 1, background: "#ffffff", padding: "6px 12px", fontWeight: row.bold ? 600 : 400, fontSize: 13, color: "var(--color-text-primary)", borderRight: "0.5px solid var(--color-border-tertiary)", paddingLeft: row.indent ? 24 : 12 }}>{shortenLabel(row.label)}</td>
                 {row.values.map((v, vi) => (
                   <td key={vi} style={{ padding: "6px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12.5, fontWeight: row.bold ? 600 : 400, color: vi === fcIdx ? "var(--color-text-info)" : "var(--color-text-secondary)", background: vi === fcIdx ? "rgba(59,130,246,0.04)" : "transparent" }}>{formatVal(v, row)}</td>
                 ))}
@@ -2638,7 +2644,7 @@ function CropProgressPage({ ready }) {
       var col = d2 > 0 ? "#639922" : d2 < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
       return (<div style={{display:"flex",justifyContent:"space-between",fontSize:10.5,padding:"1px 0"}}>
         <span style={{color:"var(--color-text-tertiary)"}}>{lbl}</span>
-        <span><span style={{color:"var(--color-text-secondary)"}}>{comp}% </span><span style={{color:col,fontWeight:500}}>({d2>0?"+":""}{d2}%)</span></span>
+        <span style={{display:"flex",gap:4,alignItems:"baseline"}}><span style={{color:"var(--color-text-secondary)",textAlign:"right",minWidth:32}}>{comp}%</span><span style={{color:col,fontWeight:500,textAlign:"right",minWidth:38}}>({d2>0?"+":""}{d2}%)</span></span>
       </div>);
     };
     return (<div style={{background:"var(--color-background-secondary)",borderRadius:"var(--border-radius-md)",padding:"12px 14px",minWidth:0}}>
@@ -2978,7 +2984,7 @@ function EthanolPage({ ready }) {
       var col = d2 > 0 ? "#639922" : d2 < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
       return (<div style={{display:"flex",justifyContent:"space-between",fontSize:10.5,padding:"1px 0"}}>
         <span style={{color:"var(--color-text-tertiary)"}}>{lbl}</span>
-        <span><span style={{color:"var(--color-text-secondary)"}}>{comp.toLocaleString()} </span><span style={{color:col,fontWeight:500}}>({d2 > 0 ? "+" : ""}{d2.toLocaleString()})</span></span>
+        <span style={{display:"flex",gap:4,alignItems:"baseline"}}><span style={{color:"var(--color-text-secondary)",textAlign:"right",minWidth:60}}>{comp.toLocaleString()}</span><span style={{color:col,fontWeight:500,textAlign:"right",minWidth:52}}>({d2 > 0 ? "+" : ""}{d2.toLocaleString()})</span></span>
       </div>);
     };
     return (<div style={{background:"var(--color-background-secondary)",borderRadius:"var(--border-radius-md)",padding:"12px 14px",minWidth:0}}>
@@ -3286,7 +3292,7 @@ function FatsOilsPage({ ready }) {
       var col = pctChg > 0 ? "#639922" : pctChg < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
       return (<div style={{display:"flex",justifyContent:"space-between",fontSize:10.5,padding:"1px 0"}}>
         <span style={{color:"var(--color-text-tertiary)"}}>{lbl}</span>
-        <span><span style={{color:"var(--color-text-secondary)"}}>{comp.toLocaleString()} </span><span style={{color:col,fontWeight:500}}>({pctChg > 0 ? "+" : ""}{pctChg.toFixed(1)}%)</span></span>
+        <span style={{display:"flex",gap:4,alignItems:"baseline"}}><span style={{color:"var(--color-text-secondary)",textAlign:"right",minWidth:70}}>{comp.toLocaleString()}</span><span style={{color:col,fontWeight:500,textAlign:"right",minWidth:56}}>({pctChg > 0 ? "+" : ""}{pctChg.toFixed(1)}%)</span></span>
       </div>);
     };
     return (<div style={{background:"var(--color-background-secondary)",borderRadius:"var(--border-radius-md)",padding:"12px 14px",minWidth:0}}>
@@ -5144,7 +5150,7 @@ function ExportInspectionsPage({ ready }) {
           var col = diff > 0 ? "#639922" : diff < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
           return (<div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:10.5,padding:"1px 0"}}>
             <span style={{color:"var(--color-text-tertiary)"}}>{c2.label}</span>
-            <span><span style={{color:"var(--color-text-secondary)"}}>{isBu ? c2.val.toFixed(1) : c2.val.toLocaleString()} </span><span style={{color:col,fontWeight:500}}>({diff > 0 ? "+" : ""}{isBu ? diff.toFixed(1) : diff.toLocaleString()} / {pctChg > 0 ? "+" : ""}{pctChg.toFixed(1)}%)</span></span>
+            <span style={{display:"flex",gap:4,alignItems:"baseline"}}><span style={{color:"var(--color-text-secondary)",textAlign:"right",minWidth:70}}>{isBu ? c2.val.toFixed(1) : c2.val.toLocaleString()}</span><span style={{color:col,fontWeight:500,textAlign:"right",minWidth:80}}>({diff > 0 ? "+" : ""}{isBu ? diff.toFixed(1) : diff.toLocaleString()} / {pctChg > 0 ? "+" : ""}{pctChg.toFixed(1)}%)</span></span>
           </div>);
         })}
       </div>

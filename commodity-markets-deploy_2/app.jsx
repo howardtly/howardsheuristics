@@ -1070,7 +1070,7 @@ function useLiveEthanol() {
   var _s = useState(null); var data = _s[0], setData = _s[1];
   var _l = useState(false); var loaded = _l[0], setLoaded = _l[1];
   useEffect(function() {
-    fetch("data/ethanol.json")
+    fetch("data/ethanol.json?t=" + Date.now())
       .then(function(r) { if (!r.ok) throw new Error("not found"); return r.json(); })
       .then(function(d) { setData(d); setLoaded(true); })
       .catch(function() { setLoaded(true); });
@@ -1082,7 +1082,7 @@ function useLiveOilseedCrushing() {
   var _s = useState(null); var data = _s[0], setData = _s[1];
   var _l = useState(false); var loaded = _l[0], setLoaded = _l[1];
   useEffect(function() {
-    fetch("data/oilseed_crushing.json")
+    fetch("data/oilseed_crushing.json?t=" + Date.now())
       .then(function(r) { if (!r.ok) throw new Error("not found"); return r.json(); })
       .then(function(d) { setData(d); setLoaded(true); })
       .catch(function() { setLoaded(true); });

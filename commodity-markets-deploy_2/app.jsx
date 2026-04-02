@@ -1603,9 +1603,9 @@ const COF_LEGEND = [
   { label: "5-yr avg", color: "#333", key: "5yr", dash: "dotted" },
 ];
 const COF_DS = {
-  "2025": { borderColor: "#A32D2D", borderWidth: 2.5, pointRadius: 0, tension: 0.3 },
-  "2024": { borderColor: "#D85A30", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [5,3] },
-  "5yr":  { borderColor: "#333", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [2,3] },
+  "2025": { borderColor: "#A32D2D", borderWidth: 2.5, pointRadius: 0, tension: 0 },
+  "2024": { borderColor: "#D85A30", borderWidth: 1.5, pointRadius: 0, tension: 0, borderDash: [5,3] },
+  "5yr":  { borderColor: "#333", borderWidth: 1.5, pointRadius: 0, tension: 0, borderDash: [2,3] },
 };
 
 function CattleOnFeedPage({ ready }) {
@@ -1655,9 +1655,9 @@ function CutoutPage({ ready }) {
     { label: "5-yr avg", color: "#333", key: "5yr", dash: "dotted" },
   ];
   const seasonDS = {
-    "2025": { borderColor: "#A32D2D", borderWidth: 2.5, pointRadius: 0, tension: 0.3 },
-    "2024": { borderColor: "#378ADD", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [5,3] },
-    "5yr":  { borderColor: "#333", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [2,3] },
+    "2025": { borderColor: "#A32D2D", borderWidth: 2.5, pointRadius: 0, tension: 0 },
+    "2024": { borderColor: "#378ADD", borderWidth: 1.5, pointRadius: 0, tension: 0, borderDash: [5,3] },
+    "5yr":  { borderColor: "#333", borderWidth: 1.5, pointRadius: 0, tension: 0, borderDash: [2,3] },
   };
 
   const cutoutView = getSeasonalView(BOXED_BEEF_CHOICE_DAILY["2025"], BOXED_BEEF_CHOICE_DAILY["2024"], BOXED_BEEF_CHOICE_DAILY["5yr"], period);
@@ -1689,7 +1689,7 @@ function CutoutPage({ ready }) {
         new Chart(canvas, {
           type: "line", data: { labels: allLabels, datasets: [{
             label: "Price", data: allData, borderColor: "#A32D2D", backgroundColor: "rgba(163,45,45,0.06)",
-            fill: true, borderWidth: 2, pointRadius: 0, tension: 0.3, spanGaps: true,
+            fill: true, borderWidth: 2, pointRadius: 0, tension: 0, spanGaps: true,
           }]},
           options: { responsive: true, maintainAspectRatio: false,
             interaction: { mode: "index", intersect: false },
@@ -2127,9 +2127,9 @@ function SlaughterPage({ ready }) {
     { label: "5-yr avg", color: "#333", key: "5yr", dash: "dotted" },
   ];
   const seasonDS = {
-    "2025": { borderColor: "#A32D2D", borderWidth: 2.5, pointRadius: 0, tension: 0.3 },
-    "2024": { borderColor: "#378ADD", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [5,3] },
-    "5yr":  { borderColor: "#333", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [2,3] },
+    "2025": { borderColor: "#A32D2D", borderWidth: 2.5, pointRadius: 0, tension: 0 },
+    "2024": { borderColor: "#378ADD", borderWidth: 1.5, pointRadius: 0, tension: 0, borderDash: [5,3] },
+    "5yr":  { borderColor: "#333", borderWidth: 1.5, pointRadius: 0, tension: 0, borderDash: [2,3] },
   };
 
   const weekLabels = BEEF_WEEK_RANGES.map(w => w.label);
@@ -2165,7 +2165,7 @@ function SlaughterPage({ ready }) {
       new Chart(canvas, {
         type: "line", data: { labels: allLabels, datasets: [{
           label: unitLabel, data: allData, borderColor: "#A32D2D", backgroundColor: "rgba(163,45,45,0.06)",
-          fill: true, borderWidth: 2, pointRadius: 0, tension: 0.3, spanGaps: true,
+          fill: true, borderWidth: 2, pointRadius: 0, tension: 0, spanGaps: true,
         }]},
         options: { responsive: true, maintainAspectRatio: false,
           interaction: { mode: "index", intersect: false },
@@ -2665,12 +2665,12 @@ function CropProgressPage({ ready }) {
       if (forceXMin != null) pts = pts.filter(function(p){return p.x >= forceXMin;});
       if (forceXMax != null) pts = pts.filter(function(p){return p.x <= forceXMax;});
       if (pts.length === 0) return;
-      ds.push({label:String(yr),data:pts,borderColor:getYrColor(yr),borderWidth:yr===curYear?2.5:1.5,pointRadius:0,pointHitRadius:6,tension:0.3,fill:false,showLine:true,hidden:hiddenYrs.has(String(yr))});
+      ds.push({label:String(yr),data:pts,borderColor:getYrColor(yr),borderWidth:yr===curYear?2.5:1.5,pointRadius:0,pointHitRadius:6,tension:0,fill:false,showLine:true,hidden:hiddenYrs.has(String(yr))});
     });
     var avgPts = (sd["5yr_avg"] || []).map(function(p){return {x:weekToDoy(p.w),y:p.v};});
     if (forceXMin != null) avgPts = avgPts.filter(function(p){return p.x >= forceXMin;});
     if (forceXMax != null) avgPts = avgPts.filter(function(p){return p.x <= forceXMax;});
-    if (avgPts.length > 0) ds.push({label:"5-yr avg",data:avgPts,borderColor:"#999",borderWidth:1.5,borderDash:[2,4],pointRadius:0,tension:0.3,fill:false,showLine:true,hidden:hiddenYrs.has("5-yr avg")});
+    if (avgPts.length > 0) ds.push({label:"5-yr avg",data:avgPts,borderColor:"#999",borderWidth:1.5,borderDash:[2,4],pointRadius:0,tension:0,fill:false,showLine:true,hidden:hiddenYrs.has("5-yr avg")});
     if (ds.length === 0) return;
     var vis = ds.filter(function(d){return !d.hidden;}).flatMap(function(d){return d.data.map(function(p){return p.y;});});
     var visX = ds.filter(function(d){return !d.hidden;}).flatMap(function(d){return d.data.map(function(p){return p.x;});});
@@ -2997,7 +2997,7 @@ function EthanolPage({ ready }) {
         var pts = byMY[y];
         if (!pts || !pts.length) continue;
         var label = myLabel(y);
-        ds.push({ label: label, data: pts.slice(), borderColor: getColor(y), borderWidth: y === curMY ? 2.5 : 1.5, pointRadius: 0, pointHitRadius: 6, tension: 0.3, fill: false, showLine: true, hidden: hiddenYrs.has(label) });
+        ds.push({ label: label, data: pts.slice(), borderColor: getColor(y), borderWidth: y === curMY ? 2.5 : 1.5, pointRadius: 0, pointHitRadius: 6, tension: 0, fill: false, showLine: true, hidden: hiddenYrs.has(label) });
       }
       if (ds.length === 0) return;
       var vis = ds.filter(function(d) { return !d.hidden; }).flatMap(function(d) { return d.data.map(function(p) { return p.y; }); });
@@ -3031,7 +3031,7 @@ function EthanolPage({ ready }) {
         pts2.forEach(function(p) { allPts.push({ x: idx * 365 + p.x, y: p.y }); });
       });
       if (allPts.length === 0) return;
-      ds.push({ label: "Ethanol", data: allPts, borderColor: "#333", borderWidth: 1.5, pointRadius: 0, tension: 0.3, fill: false, showLine: true });
+      ds.push({ label: "Ethanol", data: allPts, borderColor: "#333", borderWidth: 1.5, pointRadius: 0, tension: 0, fill: false, showLine: true });
       var allY = allPts.map(function(p) { return p.y; });
       var rMax = Math.max.apply(null, allY), rMin = Math.min.apply(null, allY);
       var sp2 = rMax - rMin || 1;
@@ -3303,7 +3303,7 @@ function FatsOilsPage({ ready }) {
     if (isSeasonal) {
       for (var y = startMY; y <= curMY; y++) {
         var pts = byMY[y]; if (!pts || !pts.length) continue;
-        ds.push({ label: myLabel(y), data: pts.slice(), borderColor: getColor(y), borderWidth: y === curMY ? 2.5 : 1.5, pointRadius: 0, pointHitRadius: 8, tension: 0.3, fill: false, showLine: true, hidden: hiddenYrs.has(myLabel(y)) });
+        ds.push({ label: myLabel(y), data: pts.slice(), borderColor: getColor(y), borderWidth: y === curMY ? 2.5 : 1.5, pointRadius: 0, pointHitRadius: 8, tension: 0, fill: false, showLine: true, hidden: hiddenYrs.has(myLabel(y)) });
       }
       if (ds.length === 0) return;
       var vis = ds.filter(function(d) { return !d.hidden; }).flatMap(function(d) { return d.data.map(function(p) { return p.y; }); });
@@ -3333,7 +3333,7 @@ function FatsOilsPage({ ready }) {
       for (var y2 = startMY; y2 <= curMY; y2++) { if (byMY[y2]) years.push(y2); }
       years.forEach(function(yr, idx) { var pts2 = byMY[yr]; if (!pts2) return; pts2.forEach(function(p) { allPts.push({ x: idx * 12 + p.x, y: p.y }); }); });
       if (allPts.length === 0) return;
-      ds.push({ label: "Data", data: allPts, borderColor: "#333", borderWidth: 1.5, pointRadius: 0, tension: 0.3, fill: false, showLine: true });
+      ds.push({ label: "Data", data: allPts, borderColor: "#333", borderWidth: 1.5, pointRadius: 0, tension: 0, fill: false, showLine: true });
       var allY = allPts.map(function(p) { return p.y; });
       var rMax = Math.max.apply(null, allY), rMin = Math.min.apply(null, allY);
       var sp2 = rMax - rMin || 1;
@@ -3473,10 +3473,10 @@ function HogsPigsPage({ ready }) {
     { label: "5-yr avg", color: "#333", key: "5yr", dash: "dotted" },
   ];
   const seasonDS = {
-    "2025": { borderColor: "#D85A30", borderWidth: 2.5, pointRadius: 0, tension: 0.3 },
-    "2024": { borderColor: "#378ADD", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [5,3] },
-    "2023": { borderColor: "#1D9E75", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [4,4] },
-    "5yr":  { borderColor: "#333", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [2,3] },
+    "2025": { borderColor: "#D85A30", borderWidth: 2.5, pointRadius: 0, tension: 0 },
+    "2024": { borderColor: "#378ADD", borderWidth: 1.5, pointRadius: 0, tension: 0, borderDash: [5,3] },
+    "2023": { borderColor: "#1D9E75", borderWidth: 1.5, pointRadius: 0, tension: 0, borderDash: [4,4] },
+    "5yr":  { borderColor: "#333", borderWidth: 1.5, pointRadius: 0, tension: 0, borderDash: [2,3] },
   };
 
   function niceAxis(allVals) {
@@ -3500,7 +3500,7 @@ function HogsPigsPage({ ready }) {
       new Chart(canvas, {
         type: "line", data: { labels, datasets: [{
           label: "Inventory", data: allData, borderColor: "#D85A30", backgroundColor: "rgba(216,90,48,0.06)",
-          fill: true, borderWidth: 2, pointRadius: 0, tension: 0.3, spanGaps: true,
+          fill: true, borderWidth: 2, pointRadius: 0, tension: 0, spanGaps: true,
         }]},
         options: { responsive: true, maintainAspectRatio: false,
           interaction: { mode: "index", intersect: false },
@@ -3767,10 +3767,10 @@ function COTDetailPage({ ready, commodityId }) {
     { label: "Other Reportables", color: "#534AB7" },
   ];
   const catDS = {
-    "Producer/Merchant": { borderColor: "#A32D2D", borderWidth: 2, pointRadius: 0, tension: 0.3 },
-    "Swap Dealers": { borderColor: "#378ADD", borderWidth: 2, pointRadius: 0, tension: 0.3 },
-    "Managed Money": { borderColor: "#639922", borderWidth: 2.5, pointRadius: 0, tension: 0.3 },
-    "Other Reportables": { borderColor: "#534AB7", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [4,3] },
+    "Producer/Merchant": { borderColor: "#A32D2D", borderWidth: 2, pointRadius: 0, tension: 0 },
+    "Swap Dealers": { borderColor: "#378ADD", borderWidth: 2, pointRadius: 0, tension: 0 },
+    "Managed Money": { borderColor: "#639922", borderWidth: 2.5, pointRadius: 0, tension: 0 },
+    "Other Reportables": { borderColor: "#534AB7", borderWidth: 1.5, pointRadius: 0, tension: 0, borderDash: [4,3] },
   };
   const catData = [
     { key: "Producer/Merchant", data: d.producer.net },
@@ -3819,7 +3819,7 @@ function COTDetailPage({ ready, commodityId }) {
   const rcOI = useCallback(canvas => {
     const { yMin, yMax } = niceAxis(d.oi.net);
     new Chart(canvas, {
-      type: "line", data: { labels: COT_WEEKS, datasets: [{ label: "Open interest", data: d.oi.net, borderColor: "#534AB7", backgroundColor: "rgba(83,74,183,0.06)", fill: true, borderWidth: 2, pointRadius: 0, tension: 0.3 }] },
+      type: "line", data: { labels: COT_WEEKS, datasets: [{ label: "Open interest", data: d.oi.net, borderColor: "#534AB7", backgroundColor: "rgba(83,74,183,0.06)", fill: true, borderWidth: 2, pointRadius: 0, tension: 0 }] },
       options: { responsive: true, maintainAspectRatio: false,
         interaction: { mode: "index", intersect: false },
         plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `OI: ${c.parsed.y.toLocaleString()}` } } },
@@ -3956,7 +3956,7 @@ function COTChartsPage({ ready }) {
         }
       }
       if (points.length === 0) return;
-      datasets.push({label: String(yr), data: points, borderColor: getYearColor(yr), borderWidth: yr === curYear ? 2.5 : 1.5, pointRadius: 0, pointHitRadius: 8, tension: 0.3, fill: false, hidden: hiddenYears.has(String(yr)), showLine: true});
+      datasets.push({label: String(yr), data: points, borderColor: getYearColor(yr), borderWidth: yr === curYear ? 2.5 : 1.5, pointRadius: 0, pointHitRadius: 8, tension: 0, fill: false, hidden: hiddenYears.has(String(yr)), showLine: true});
     });
     var visibleVals = datasets.filter(function(ds){return !ds.hidden;}).flatMap(function(ds){return ds.data.map(function(p){return p.y;});});
     if (visibleVals.length === 0) return;
@@ -4037,7 +4037,7 @@ function COTChartsPage({ ready }) {
     if (step < 1000) step = Math.max(500, step);
     var xMax = xOffset;
     var needsRotation = displayYears.length > 8;
-    new Chart(canvas, {type: "scatter", data: {datasets: [{label: field, data: allPoints, borderColor: "#333", borderWidth: 1.5, pointRadius: 0, pointHitRadius: 6, tension: 0.3, fill: false, showLine: true}]}, options: {
+    new Chart(canvas, {type: "scatter", data: {datasets: [{label: field, data: allPoints, borderColor: "#333", borderWidth: 1.5, pointRadius: 0, pointHitRadius: 6, tension: 0, fill: false, showLine: true}]}, options: {
       responsive: true, maintainAspectRatio: false,
       interaction: {mode: "nearest", intersect: false, axis: "xy"},
       plugins: {legend: {display: false}, tooltip: {mode: "nearest", intersect: false, backgroundColor: "rgba(0,0,0,0.6)", titleFont: {size: 12}, bodyFont: {size: 12},
@@ -4231,9 +4231,9 @@ function EnergyChartPage({ ready, dataKey }) {
     { label: "5-yr avg", color: "#333", key: "5yr", dash: "dotted" },
   ];
   const seasonDS = {
-    "2025": { borderColor: "#A32D2D", borderWidth: 2.5, pointRadius: 0, tension: 0.3 },
-    "2024": { borderColor: "#378ADD", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [5,3] },
-    "5yr":  { borderColor: "#333", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [2,3] },
+    "2025": { borderColor: "#A32D2D", borderWidth: 2.5, pointRadius: 0, tension: 0 },
+    "2024": { borderColor: "#378ADD", borderWidth: 1.5, pointRadius: 0, tension: 0, borderDash: [5,3] },
+    "5yr":  { borderColor: "#333", borderWidth: 1.5, pointRadius: 0, tension: 0, borderDash: [2,3] },
   };
 
   function niceAxis(allVals) {
@@ -4267,7 +4267,7 @@ function EnergyChartPage({ ready, dataKey }) {
       new Chart(canvas, {
         type: "line", data: { labels: allLabels, datasets: [{
           label: d.title, data: allData, borderColor: "#A32D2D", backgroundColor: "rgba(163,45,45,0.06)",
-          fill: true, borderWidth: 2, pointRadius: 0, tension: 0.3, spanGaps: true,
+          fill: true, borderWidth: 2, pointRadius: 0, tension: 0, spanGaps: true,
         }]},
         options: { responsive: true, maintainAspectRatio: false,
           interaction: { mode: "index", intersect: false },
@@ -4371,7 +4371,7 @@ function NGInjWdPage({ ready }) {
       return {
         type: "line", label: k === "5yr" ? "5-yr avg" : k, data: d[k],
         borderColor: k === "2024" ? "#378ADD" : "#333",
-        borderWidth: 1.5, pointRadius: k === "2024" ? 2 : 0, tension: 0.3,
+        borderWidth: 1.5, pointRadius: k === "2024" ? 2 : 0, tension: 0,
         borderDash: k === "5yr" ? [2,2] : [5,3], order: 1,
       };
     });
@@ -4454,7 +4454,7 @@ function FXCurrenciesPage({ ready }) {
     new Chart(canvas, {
       type: "line", data: { labels: FX_WEEKS, datasets: [{
         label: d.label, data: s, borderColor: "#A32D2D", backgroundColor: "rgba(163,45,45,0.06)",
-        fill: true, borderWidth: 2, pointRadius: 0, tension: 0.3,
+        fill: true, borderWidth: 2, pointRadius: 0, tension: 0,
       }]},
       options: { responsive: true, maintainAspectRatio: false,
         interaction: { mode: "index", intersect: false },
@@ -4481,8 +4481,8 @@ function FXCurrenciesPage({ ready }) {
 
   const rcDollar = useCallback(canvas => {
     const datasets = [];
-    if (!hDollar.has("dxy")) datasets.push({ label: "DXY (synthetic)", data: DXY_DATA, borderColor: "#A32D2D", borderWidth: 2.5, pointRadius: 0, tension: 0.3 });
-    if (!hDollar.has("fed")) datasets.push({ label: "Fed Broad Trade-Weighted Dollar", data: FED_TWD_DATA, borderColor: "#378ADD", borderWidth: 2, pointRadius: 0, tension: 0.3, borderDash: [5,3] });
+    if (!hDollar.has("dxy")) datasets.push({ label: "DXY (synthetic)", data: DXY_DATA, borderColor: "#A32D2D", borderWidth: 2.5, pointRadius: 0, tension: 0 });
+    if (!hDollar.has("fed")) datasets.push({ label: "Fed Broad Trade-Weighted Dollar", data: FED_TWD_DATA, borderColor: "#378ADD", borderWidth: 2, pointRadius: 0, tension: 0, borderDash: [5,3] });
     const allVals = [...(!hDollar.has("dxy") ? DXY_DATA : []), ...(!hDollar.has("fed") ? FED_TWD_DATA : [])];
     const axis = niceAxis(allVals.length ? allVals : [100, 125]);
     new Chart(canvas, {
@@ -4647,7 +4647,7 @@ function FXChartWidget({ defaultId, ready, fmt, niceAxis }) {
     new Chart(canvas, {
       type: "line", data: { labels: FX_WEEKS, datasets: [{
         label: `${base}/${quote}`, data: crossSeries, borderColor: "#A32D2D", backgroundColor: "rgba(163,45,45,0.06)",
-        fill: true, borderWidth: 2, pointRadius: 0, tension: 0.3, spanGaps: true,
+        fill: true, borderWidth: 2, pointRadius: 0, tension: 0, spanGaps: true,
       }]},
       options: { responsive: true, maintainAspectRatio: false,
         interaction: { mode: "index", intersect: false },
@@ -4769,7 +4769,7 @@ function DroughtPage({ ready }) {
       if (points.length === 0) return;
       datasets.push({
         label: d.label, data: points, borderColor: d.color, borderWidth: 2,
-        pointRadius: 0, pointHitRadius: 6, tension: 0.3, fill: false, showLine: true,
+        pointRadius: 0, pointHitRadius: 6, tension: 0, fill: false, showLine: true,
       });
     });
     var allVals = datasets.flatMap(function(ds) { return ds.data.map(function(p){return p.y;}); });
@@ -4800,9 +4800,9 @@ function DroughtPage({ ready }) {
     var curPts = d.seasonal[String(curYear)] || [];
     var lastPts = d.seasonal[String(lastYear)] || [];
     var avgPts = d.seasonal["5yr_avg"] || [];
-    if (curPts.length > 0) datasets.push({label: String(curYear), data: curPts, borderColor: d.color, borderWidth: 2.5, pointRadius: 0, pointHitRadius: 6, tension: 0.3, fill: false, showLine: true});
-    if (lastPts.length > 0) datasets.push({label: String(lastYear), data: lastPts, borderColor: d.color, borderWidth: 1.5, borderDash: [5,3], pointRadius: 0, tension: 0.3, fill: false, showLine: true});
-    if (avgPts.length > 0) datasets.push({label: "5-yr avg", data: avgPts, borderColor: "#333", borderWidth: 1.5, borderDash: [2,4], pointRadius: 0, pointHitRadius: 6, tension: 0.3, fill: false, showLine: true});
+    if (curPts.length > 0) datasets.push({label: String(curYear), data: curPts, borderColor: d.color, borderWidth: 2.5, pointRadius: 0, pointHitRadius: 6, tension: 0, fill: false, showLine: true});
+    if (lastPts.length > 0) datasets.push({label: String(lastYear), data: lastPts, borderColor: d.color, borderWidth: 1.5, borderDash: [5,3], pointRadius: 0, tension: 0, fill: false, showLine: true});
+    if (avgPts.length > 0) datasets.push({label: "5-yr avg", data: avgPts, borderColor: "#333", borderWidth: 1.5, borderDash: [2,4], pointRadius: 0, pointHitRadius: 6, tension: 0, fill: false, showLine: true});
     var allVals = datasets.flatMap(function(ds){return ds.data.map(function(p){return p.y;});});
     if (allVals.length === 0) return;
     var yMax = Math.min(100, Math.ceil((Math.max.apply(null, allVals) + 10) / 10) * 10);
@@ -4996,8 +4996,6 @@ function ExportInspectionsPage({ ready }) {
   var eiLoaded = ref.eiLoaded;
   var _comm = useState("corn");
   var comm = _comm[0], setComm = _comm[1];
-  var _mode = useState("seasonal");
-  var mode = _mode[0], setMode = _mode[1];
   var _range = useState("1");
   var range = _range[0], setRange = _range[1];
   var _unit = useState("mt");
@@ -5005,24 +5003,24 @@ function ExportInspectionsPage({ ready }) {
   var _hy = useState(new Set());
   var hiddenYrs = _hy[0], setHiddenYrs = _hy[1];
 
-  useEffect(function(){ setHiddenYrs(new Set()); }, [comm, mode, range, unit]);
+  useEffect(function(){ setHiddenYrs(new Set()); }, [comm, range, unit]);
   var toggleYr = function(label) { setHiddenYrs(function(prev){ var next = new Set(prev); if(next.has(label))next.delete(label);else next.add(label); return next; }); };
 
-  // Bushels per metric ton by commodity
   var BU_PER_MT = { corn: 39.368, soybeans: 36.744, wheat: 36.744, sorghum: 39.368 };
   var isBu = unit === "bu";
-  // MT -> display: thousand MT (default) or million bushels
+  // Chart display conversion
   var conv = function(mt) {
     if (mt == null) return null;
-    if (isBu) return Math.round(mt * BU_PER_MT[comm] / 1000000 * 1000) / 1000; // M bu
+    if (isBu) return Math.round(mt * BU_PER_MT[comm] / 1000000 * 10) / 10; // M bu, 1 decimal
     return Math.round(mt / 1000 * 10) / 10; // thousand MT
   };
+  // Card display: always metric tons
+  var cardConv = function(mt) { return mt == null ? null : Math.round(mt / 1000 * 10) / 10; };
   var weeklyUnit = isBu ? "M bushels" : "1,000 MT";
-  var cumulUnit = isBu ? "M bushels" : "1,000 MT";
+  var cardUnit = "1,000 MT";
 
-  var COMM_TABS = [{id:"corn",label:"Corn"},{id:"soybeans",label:"Soybeans"},{id:"wheat",label:"Wheat"},{id:"sorghum",label:"Sorghum"}];
+  var COMM_OPTS = [{id:"corn",label:"Corn"},{id:"soybeans",label:"Soybeans"},{id:"wheat",label:"Wheat"},{id:"sorghum",label:"Sorghum"}];
 
-  // Marketing year config per commodity
   var myConfig = {
     corn: { startMonth: 9, mktN: ["Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug"] },
     soybeans: { startMonth: 9, mktN: ["Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug"] },
@@ -5043,28 +5041,23 @@ function ExportInspectionsPage({ ready }) {
   };
   var myLabel = function(yr) { return yr + "/" + String(yr + 1).slice(2); };
 
-  // Process into marketing year buckets
   var processWeekly = function(rawPts) {
     if (!rawPts || !rawPts.length) return {};
     var byMY = {};
     rawPts.forEach(function(pt) {
-      var my = dateToMY(pt.d);
-      var day = dateToMktDay(pt.d);
+      var my = dateToMY(pt.d); var day = dateToMktDay(pt.d);
       if (!byMY[my]) byMY[my] = [];
       byMY[my].push({ x: day, y: conv(pt.v) });
     });
-    // Sort within each MY
     Object.keys(byMY).forEach(function(my) { byMY[my].sort(function(a, b) { return a.x - b.x; }); });
     return byMY;
   };
 
-  // Build cumulative from weekly
   var buildCumul = function(weeklyByMY) {
     var cumul = {};
     Object.keys(weeklyByMY).forEach(function(my) {
-      var pts = weeklyByMY[my];
-      var running = 0;
-      cumul[my] = pts.map(function(p) { running += p.y; return { x: p.x, y: Math.round(running * 1000) / 1000 }; });
+      var pts = weeklyByMY[my]; var running = 0;
+      cumul[my] = pts.map(function(p) { running += p.y; return { x: p.x, y: Math.round(running * 10) / 10 }; });
     });
     return cumul;
   };
@@ -5089,24 +5082,39 @@ function ExportInspectionsPage({ ready }) {
   var allItems = buildItems(weeklyByMY);
   var hk = Array.from(hiddenYrs).sort().join(",");
 
-  // Header card info
+  // Card info — always in metric tons (1,000 MT)
   var getCardInfo = function() {
-    if (!rawPts || !rawPts.length) return { curWk: null, prevWk: null, lastYrWk: null, curCumul: null, date: null };
+    if (!rawPts || !rawPts.length) return { curWk: null, prevWk: null, lastYrWk: null, curCumul: null, prevCumul: null, lastYrCumul: null, date: null, my: null };
     var sorted = rawPts.slice().sort(function(a, b) { return a.d < b.d ? 1 : -1; });
     var latest = sorted[0]; var prev = sorted.length > 1 ? sorted[1] : null;
-    // Find same week last year
+    // Same week last year
     var latestDate = new Date(latest.d);
     var targetDate = new Date(latestDate); targetDate.setFullYear(targetDate.getFullYear() - 1);
     var targetMs = targetDate.getTime();
     var lastYrPt = null; var bestDiff = 10 * 86400000;
     rawPts.forEach(function(p) { var diff = Math.abs(new Date(p.d).getTime() - targetMs); if (diff < bestDiff) { bestDiff = diff; lastYrPt = p; } });
+
     // Cumulative for current MY
     var latestMY = dateToMY(latest.d);
-    var myPts = rawPts.filter(function(p) { return dateToMY(p.d) === latestMY && p.d <= latest.d; });
+    var myPts = rawPts.filter(function(p) { return dateToMY(p.d) === latestMY && p.d <= latest.d; }).sort(function(a, b) { return a.d < b.d ? -1 : 1; });
     var cumulVal = myPts.reduce(function(s, p) { return s + p.v; }, 0);
+
+    // Cumulative for previous week in same MY (drop last week)
+    var prevMyPts = myPts.slice(0, -1);
+    var prevCumulVal = prevMyPts.reduce(function(s, p) { return s + p.v; }, 0);
+
+    // Cumulative for same week last year in that MY
+    var lastYrMY = latestMY - 1;
+    var lastYrMyPts = rawPts.filter(function(p) { return dateToMY(p.d) === lastYrMY; }).sort(function(a, b) { return a.d < b.d ? -1 : 1; });
+    // Find how many weeks into the MY we are
+    var weeksIn = myPts.length;
+    var lastYrCumulPts = lastYrMyPts.slice(0, weeksIn);
+    var lastYrCumulVal = lastYrCumulPts.reduce(function(s, p) { return s + p.v; }, 0);
+
     return {
-      curWk: conv(latest.v), prevWk: prev ? conv(prev.v) : null, lastYrWk: lastYrPt ? conv(lastYrPt.v) : null,
-      curCumul: conv(cumulVal), date: latest.d, my: myLabel(latestMY),
+      curWk: cardConv(latest.v), prevWk: prev ? cardConv(prev.v) : null, lastYrWk: lastYrPt ? cardConv(lastYrPt.v) : null,
+      curCumul: cardConv(cumulVal), prevCumul: cardConv(prevCumulVal), lastYrCumul: lastYrCumulVal > 0 ? cardConv(lastYrCumulVal) : null,
+      date: latest.d, my: myLabel(latestMY),
     };
   };
   var cardInfo = getCardInfo();
@@ -5119,7 +5127,7 @@ function ExportInspectionsPage({ ready }) {
       <div style={{borderTop:"0.5px solid var(--color-border-tertiary)",paddingTop:5}}>
         {comparisons.map(function(c2, i) {
           if (curVal == null || c2.val == null) return null;
-          var diff = Math.round((curVal - c2.val) * 100) / 100;
+          var diff = Math.round((curVal - c2.val) * 10) / 10;
           var pctChg = Math.round((curVal - c2.val) / Math.abs(c2.val) * 1000) / 10;
           var col = diff > 0 ? "#639922" : diff < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
           return (<div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:10.5,padding:"1px 0"}}>
@@ -5131,96 +5139,41 @@ function ExportInspectionsPage({ ready }) {
     </div>);
   };
 
-  // Mkt day boundaries for x-axis (approximate: 30 days per month)
   var mktBounds = [0,30,61,91,122,153,181,212,242,273,303,334];
   var mktMids = [15,45,76,106,137,167,196,227,257,288,318,349];
 
-  // Chart builder
-  var mkChart = function(byMY, yLabel) { return function(canvas) {
+  var mkChart = function(byMY) { return function(canvas) {
     if (!byMY || Object.keys(byMY).length === 0) return;
-    var isSeasonal = mode === "seasonal";
     var ds = [];
-    if (isSeasonal) {
-      for (var y = startMY; y <= curMY; y++) {
-        var pts = byMY[y]; if (!pts || !pts.length) continue;
-        ds.push({ label: myLabel(y), data: pts.slice(), borderColor: getColor(y), borderWidth: y === curMY ? 2.5 : 1.5, pointRadius: 0, pointHitRadius: 6, tension: 0.3, fill: false, showLine: true, hidden: hiddenYrs.has(myLabel(y)) });
-      }
-      if (ds.length === 0) return;
-      var vis = ds.filter(function(d) { return !d.hidden; }).flatMap(function(d) { return d.data.map(function(p) { return p.y; }); });
-      if (vis.length === 0) return;
-      var rawMax = Math.max.apply(null, vis), rawMin = Math.min.apply(null, vis);
-      var span = rawMax - rawMin || 1;
-      var step = Math.pow(10, Math.floor(Math.log10(span / 4)));
-      if (span / step < 4) step = step / 2;
-      if (span / step > 8) step = step * 2;
-      var yMin = Math.max(0, Math.floor(rawMin / step) * step);
-      var yMax = Math.ceil(rawMax / step) * step;
-      if (yMax === rawMax) yMax += step;
-      var tks = []; for (var k = 0; k < 12; k++) { tks.push({value: mktBounds[k]}); tks.push({value: mktMids[k]}); }
-      new Chart(canvas, { type: "scatter", data: { datasets: ds }, options: {
-        responsive: true, maintainAspectRatio: false,
-        interaction: { mode: "x", intersect: false },
-        plugins: { legend: { display: false }, tooltip: { mode: "x", intersect: false, backgroundColor: "rgba(0,0,0,0.6)", titleFont: { size: 11 }, bodyFont: { size: 11 },
-          callbacks: { title: function(items) { if (!items.length) return ""; var doy = items[0].parsed.x; var mi = 11; for (var m = 0; m < 11; m++) { if (doy < mktBounds[m+1]) { mi = m; break; } } return cfg.mktN[mi] + " " + (Math.floor(doy - mktBounds[mi]) + 1); },
-            label: function(c2) { return c2.parsed.y == null ? null : c2.dataset.label + ": " + c2.parsed.y.toLocaleString(); } } } },
-        scales: { x: { type: "linear", min: 0, max: 365, afterBuildTicks: function(ax) { ax.ticks = tks; }, ticks: { callback: function(v) { var idx = mktMids.indexOf(v); return idx >= 0 ? cfg.mktN[idx] : ""; }, autoSkip: false, maxRotation: 0, font: { size: 10 } }, grid: { color: function(ctx) { var v = ctx.tick.value; if (v > 0 && mktBounds.indexOf(v) >= 0) return "rgba(0,0,0,0.12)"; return "transparent"; }, lineWidth: 0.75 } },
-          y: { min: yMin, max: yMax, ticks: { stepSize: step, font: { size: 10 }, callback: function(v) { return v.toLocaleString(); } }, grid: { color: "rgba(0,0,0,0.08)", lineWidth: 0.75 } } }
-      } });
-    } else {
-      var allPts = [];
-      var years = [];
-      for (var y2 = startMY; y2 <= curMY; y2++) { if (byMY[y2]) years.push(y2); }
-      years.forEach(function(yr, idx) { var pts2 = byMY[yr]; if (!pts2) return; pts2.forEach(function(p) { allPts.push({ x: idx * 365 + p.x, y: p.y }); }); });
-      if (allPts.length === 0) return;
-      ds.push({ label: "Data", data: allPts, borderColor: "#333", borderWidth: 1.5, pointRadius: 0, tension: 0.3, fill: false, showLine: true });
-      var allY = allPts.map(function(p) { return p.y; });
-      var rMax = Math.max.apply(null, allY), rMin = Math.min.apply(null, allY);
-      var sp2 = rMax - rMin || 1;
-      var st2 = Math.pow(10, Math.floor(Math.log10(sp2 / 4)));
-      if (sp2 / st2 < 4) st2 = st2 / 2;
-      if (sp2 / st2 > 8) st2 = st2 * 2;
-      var yMin2 = Math.max(0, Math.floor(rMin / st2) * st2);
-      var yMax2 = Math.ceil(rMax / st2) * st2;
-      var isShort = years.length <= 2;
-      var xTicks = [];
-      if (isShort) {
-        var tickIdx = 0;
-        var totalMonths = years.length * 12;
-        var interval = totalMonths > 18 ? 3 : totalMonths > 12 ? 2 : 1;
-        years.forEach(function(yr, idx) {
-          for (var mi = 0; mi < 12; mi++) {
-            var calYr = mi >= (12 - cfg.startMonth + 1) ? yr + 1 : yr;
-            if (cfg.startMonth === 6) calYr = mi >= 7 ? yr + 1 : yr;
-            if (tickIdx % interval === 0) {
-              xTicks.push({value: idx*365+mktBounds[mi], label: cfg.mktN[mi] + "-" + String(calYr).slice(2)});
-            } else {
-              xTicks.push({value: idx*365+mktBounds[mi], label: ""});
-            }
-            tickIdx++;
-          }
-        });
-      } else {
-        years.forEach(function(yr, idx) {
-          xTicks.push({value: idx*365, label: "", grid: true});
-          xTicks.push({value: idx*365+182, label: myLabel(yr), grid: false});
-        });
-      }
-      new Chart(canvas, { type: "scatter", data: { datasets: ds }, options: {
-        responsive: true, maintainAspectRatio: false,
-        interaction: { mode: "nearest", intersect: false },
-        plugins: { legend: { display: false }, tooltip: { backgroundColor: "rgba(0,0,0,0.6)", callbacks: { title: function(items) { if (!items.length) return ""; var v = items[0].parsed.x; var yrIdx = Math.floor(v / 365); var dayInYr = v - yrIdx * 365; if (yrIdx >= years.length) return ""; var mi = 11; for (var m = 0; m < 11; m++) { if (dayInYr < mktBounds[m+1]) { mi = m; break; } } return cfg.mktN[mi] + " " + years[yrIdx]; }, label: function(c2) { return c2.parsed.y == null ? null : c2.parsed.y.toLocaleString(); } } } },
-        scales: { x: { type: "linear", min: 0, max: years.length * 365,
-          afterBuildTicks: function(ax) { ax.ticks = xTicks.map(function(t) { return {value: t.value}; }); },
-          ticks: { callback: function(v) { var found = xTicks.find(function(t) { return Math.abs(t.value - v) < 5; }); return found ? found.label : ""; }, autoSkip: false, maxRotation: 0, font: { size: 10 } },
-          grid: { color: function(ctx) { var v = ctx.tick.value; if (v > 0 && v % 365 < 5) return "rgba(0,0,0,0.15)"; return "transparent"; } } },
-          y: { min: yMin2, max: yMax2, ticks: { stepSize: st2, font: { size: 10 }, callback: function(v) { return v.toLocaleString(); } }, grid: { color: "rgba(0,0,0,0.08)" } } }
-      } });
+    for (var y = startMY; y <= curMY; y++) {
+      var pts = byMY[y]; if (!pts || !pts.length) continue;
+      ds.push({ label: myLabel(y), data: pts.slice(), borderColor: getColor(y), borderWidth: y === curMY ? 2.5 : 1.5, pointRadius: 0, pointHitRadius: 6, tension: 0, fill: false, showLine: true, hidden: hiddenYrs.has(myLabel(y)) });
     }
+    if (ds.length === 0) return;
+    var vis = ds.filter(function(d) { return !d.hidden; }).flatMap(function(d) { return d.data.map(function(p) { return p.y; }); });
+    if (vis.length === 0) return;
+    var rawMax = Math.max.apply(null, vis), rawMin = Math.min.apply(null, vis);
+    var span = rawMax - rawMin || 1;
+    var step = Math.pow(10, Math.floor(Math.log10(span / 4)));
+    if (span / step < 4) step = step / 2;
+    if (span / step > 8) step = step * 2;
+    var yMin = Math.max(0, Math.floor(rawMin / step) * step);
+    var yMax = Math.ceil(rawMax / step) * step;
+    if (yMax === rawMax) yMax += step;
+    var tks = []; for (var k = 0; k < 12; k++) { tks.push({value: mktBounds[k]}); tks.push({value: mktMids[k]}); }
+    new Chart(canvas, { type: "scatter", data: { datasets: ds }, options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: "x", intersect: false },
+      plugins: { legend: { display: false }, tooltip: { mode: "x", intersect: false, backgroundColor: "rgba(0,0,0,0.6)", titleFont: { size: 11 }, bodyFont: { size: 11 },
+        callbacks: { title: function(items) { if (!items.length) return ""; var doy = items[0].parsed.x; var mi = 11; for (var m = 0; m < 11; m++) { if (doy < mktBounds[m+1]) { mi = m; break; } } return cfg.mktN[mi] + " " + (Math.floor(doy - mktBounds[mi]) + 1); },
+          label: function(c2) { return c2.parsed.y == null ? null : c2.dataset.label + ": " + c2.parsed.y.toLocaleString(); } } } },
+      scales: { x: { type: "linear", min: 0, max: 365, afterBuildTicks: function(ax) { ax.ticks = tks; }, ticks: { callback: function(v) { var idx = mktMids.indexOf(v); return idx >= 0 ? cfg.mktN[idx] : ""; }, autoSkip: false, maxRotation: 0, font: { size: 10 } }, grid: { color: function(ctx) { var v = ctx.tick.value; if (v > 0 && mktBounds.indexOf(v) >= 0) return "rgba(0,0,0,0.12)"; return "transparent"; }, lineWidth: 0.75 } },
+        y: { min: yMin, max: yMax, ticks: { stepSize: step, font: { size: 10 }, callback: function(v) { return v.toLocaleString(); } }, grid: { color: "rgba(0,0,0,0.08)", lineWidth: 0.75 } } }
+    } });
   }; };
 
-  // CSV
   var dlCSV = function() {
-    var hdrs = ["Date", "MY", "Weekly Volume (" + weeklyUnit + ")", "Cumulative MY (" + cumulUnit + ")"];
+    var hdrs = ["Date", "MY", "Weekly Volume (" + weeklyUnit + ")", "Cumulative MY (" + weeklyUnit + ")"];
     var rows = [];
     rawPts.slice().sort(function(a, b) { return a.d < b.d ? -1 : 1; }).forEach(function(pt) {
       var my = dateToMY(pt.d);
@@ -5234,16 +5187,14 @@ function ExportInspectionsPage({ ready }) {
   var chevSvg = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%23666' stroke-width='1.5'/%3E%3C/svg%3E\")";
   var selSt = {padding:"6px 24px 6px 10px",fontSize:13,fontWeight:500,border:"1px solid var(--color-border-secondary)",borderRadius:6,background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontFamily:"inherit",cursor:"pointer",appearance:"none",backgroundImage:chevSvg,backgroundRepeat:"no-repeat",backgroundPosition:"right 6px center"};
   var modeSt = function(a) { return {padding:"6px 14px",fontSize:12,fontWeight:a?600:400,border:"1px solid "+(a?"#2563EB":"var(--color-border-secondary)"),borderRadius:5,cursor:"pointer",background:a?"#2563EB":"transparent",color:a?"#fff":"var(--color-text-secondary)",transition:"all 0.15s"}; };
-  var tabSt = function(a) { return {padding:"6px 14px",fontSize:12,fontWeight:a?600:400,border:"1px solid var(--color-border-secondary)",borderRadius:5,cursor:"pointer",background:a?"#333":"transparent",color:a?"#fff":"var(--color-text-secondary)",transition:"all 0.15s"}; };
 
   return (<div>
     <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,flexWrap:"wrap"}}>
-      <div style={{display:"flex",gap:3}}>
-        {COMM_TABS.map(function(t) { return <button key={t.id} onClick={function(){setComm(t.id);}} style={tabSt(comm===t.id)}>{t.label}</button>; })}
-      </div>
-      <div style={{display:"flex",gap:3}}>
-        <button onClick={function(){setUnit("mt");}} style={modeSt(unit==="mt")}>Metric Tons</button>
-        <button onClick={function(){setUnit("bu");}} style={modeSt(unit==="bu")}>Bushels</button>
+      <div style={{display:"flex",alignItems:"center",gap:6}}>
+        <span style={{fontSize:11,fontWeight:600,color:"var(--color-text-secondary)",textTransform:"uppercase"}}>Commodity</span>
+        <select value={comm} onChange={function(e){setComm(e.target.value);}} style={selSt}>
+          {COMM_OPTS.map(function(t) { return <option key={t.id} value={t.id}>{t.label}</option>; })}
+        </select>
       </div>
       <div style={{display:"flex",alignItems:"center",gap:6}}>
         <span style={{fontSize:11,fontWeight:600,color:"var(--color-text-secondary)",textTransform:"uppercase"}}>Range</span>
@@ -5254,8 +5205,8 @@ function ExportInspectionsPage({ ready }) {
         </select>
       </div>
       <div style={{display:"flex",gap:3}}>
-        <button onClick={function(){setMode("seasonal");}} style={modeSt(mode==="seasonal")}>Seasonal</button>
-        <button onClick={function(){setMode("contiguous");}} style={modeSt(mode==="contiguous")}>Contiguous</button>
+        <button onClick={function(){setUnit("mt");}} style={modeSt(unit==="mt")}>Metric Tons</button>
+        <button onClick={function(){setUnit("bu");}} style={modeSt(unit==="bu")}>Bushels</button>
       </div>
       <div style={{marginLeft:"auto"}}><DownloadBtn onClick={dlCSV} /></div>
     </div>
@@ -5264,26 +5215,29 @@ function ExportInspectionsPage({ ready }) {
       {statCard("Weekly Volume", cardInfo.curWk, [
         {label: "vs. last week", val: cardInfo.prevWk},
         {label: "vs. last year", val: cardInfo.lastYrWk},
-      ], weeklyUnit)}
-      {statCard("Cumulative MY (" + (cardInfo.my || "") + ")", cardInfo.curCumul, [], cumulUnit)}
+      ], cardUnit)}
+      {statCard("Cumulative MY (" + (cardInfo.my || "") + ")", cardInfo.curCumul, [
+        {label: "vs. last week", val: cardInfo.prevCumul},
+        {label: "vs. last year (same wk)", val: cardInfo.lastYrCumul},
+      ], cardUnit)}
     </div>
 
-    {mode === "seasonal" && <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:16,alignItems:"center"}}>
+    <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:16,alignItems:"center"}}>
       {allItems.map(function(item) { var isH = hiddenYrs.has(item.label); return (
         <button key={item.label} onClick={function(){toggleYr(item.label);}} style={{display:"flex",alignItems:"center",gap:5,padding:"4px 10px",border:"1px solid var(--color-border-secondary)",borderRadius:5,background:isH?"var(--color-background-secondary)":"transparent",cursor:"pointer",opacity:isH?0.3:1,transition:"all 0.15s"}}>
           <span style={{width:18,height:0,borderTop:"2.5px solid "+item.color,display:"inline-block"}}></span>
           <span style={{fontSize:12,fontWeight:500,color:"var(--color-text-primary)"}}>{item.label}</span>
         </button>); })}
-    </div>}
+    </div>
 
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
       <div>
         <div style={{fontSize:14,fontWeight:600,color:"var(--color-text-primary)",marginBottom:6}}>Weekly Inspections <span style={{fontSize:11,fontWeight:400,color:"var(--color-text-tertiary)"}}>({weeklyUnit})</span></div>
-        {ready && <ChartBox id={"ei_wk_"+comm+"_"+mode+"_"+range+"_"+unit} height={280} renderChart={mkChart(weeklyByMY, weeklyUnit)} deps={"ei_wk_"+comm+"_"+mode+"_"+range+"_"+unit+"_"+eiLoaded+"_"+hk} />}
+        {ready && <ChartBox id={"ei_wk_"+comm+"_"+range+"_"+unit} height={280} renderChart={mkChart(weeklyByMY)} deps={"ei_wk_"+comm+"_"+range+"_"+unit+"_"+eiLoaded+"_"+hk} />}
       </div>
       <div>
-        <div style={{fontSize:14,fontWeight:600,color:"var(--color-text-primary)",marginBottom:6}}>Cumulative MY Total <span style={{fontSize:11,fontWeight:400,color:"var(--color-text-tertiary)"}}>({cumulUnit})</span></div>
-        {ready && <ChartBox id={"ei_cu_"+comm+"_"+mode+"_"+range+"_"+unit} height={280} renderChart={mkChart(cumulByMY, cumulUnit)} deps={"ei_cu_"+comm+"_"+mode+"_"+range+"_"+unit+"_"+eiLoaded+"_"+hk} />}
+        <div style={{fontSize:14,fontWeight:600,color:"var(--color-text-primary)",marginBottom:6}}>Cumulative MY Total <span style={{fontSize:11,fontWeight:400,color:"var(--color-text-tertiary)"}}>({weeklyUnit})</span></div>
+        {ready && <ChartBox id={"ei_cu_"+comm+"_"+range+"_"+unit} height={280} renderChart={mkChart(cumulByMY)} deps={"ei_cu_"+comm+"_"+range+"_"+unit+"_"+eiLoaded+"_"+hk} />}
       </div>
     </div>
     <div style={{marginTop:14,fontSize:11,color:"var(--color-text-tertiary)"}}>Source: USDA FGIS Export Grain Inspection Report. Marketing years: Corn/Soybeans/Sorghum (Sep–Aug), Wheat (Jun–May).</div>
@@ -5363,8 +5317,8 @@ function ExportSalesPage({ ready }) {
     const { yMin, yMax } = niceAxis(allVals);
     new Chart(canvas, {
       type: "line", data: { labels: ES_WEEKS, datasets: [
-        { label: label1, data: data1, borderColor: "#A32D2D", borderWidth: 2.5, pointRadius: 0, tension: 0.3 },
-        { label: label2, data: data2, borderColor: "#378ADD", borderWidth: 1.5, pointRadius: 0, tension: 0.3, borderDash: [5,3] },
+        { label: label1, data: data1, borderColor: "#A32D2D", borderWidth: 2.5, pointRadius: 0, tension: 0 },
+        { label: label2, data: data2, borderColor: "#378ADD", borderWidth: 1.5, pointRadius: 0, tension: 0, borderDash: [5,3] },
       ]},
       options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
         plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.parsed.y.toLocaleString()} ${uLabel}` } } },

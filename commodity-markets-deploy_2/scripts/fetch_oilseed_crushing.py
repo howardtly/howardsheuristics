@@ -2,15 +2,12 @@
 """
 Fetch monthly oilseed crushing data from USDA NASS QuickStats API.
 
-NASS parameters (discovered):
-  Crush:         commodity=SOYBEANS, stat=CRUSHED, unit=TONS (agg_level=NATIONAL works)
-  Meal produced: short_desc LIKE "CAKE & MEAL, SOYBEAN - PRODUCTION%"
-  Oil produced:  short_desc LIKE "OIL, SOYBEAN, CRUDE - PRODUCTION%"
-  Meal stocks:   short_desc LIKE "CAKE & MEAL, SOYBEAN - STOCKS%"
-  Oil stocks:    short_desc LIKE "OIL, SOYBEAN, CRUDE - STOCKS%"
-
-For meal/oil, we query by short_desc to ensure we get the right series,
-and take the MAX value per month (national total, not state breakdowns).
+Target series (Feb 2026 verification values):
+  Crush:         SOYBEANS - CRUSHED (NATIONAL, TOTAL)                        = 6,426,352 tons
+  Meal produced: CAKE & MEAL, SOYBEAN - PRODUCTION (TOTAL)                   = 4,752,577 tons
+  Oil produced:  OIL, SOYBEAN, CRUDE - PRODUCTION (CRUSHER)                  = 2,478,751,000 lbs
+  Meal stocks:   CAKE & MEAL, SOYBEAN - STOCKS (TOTAL)                       = 418,594 tons
+  Oil stocks:    OIL, SOYBEAN, ONSITE & OFFSITE, CRUDE - STOCKS (ALL LOCS)   = 2,106,781,000 lbs
 """
 import json
 import os
@@ -53,13 +50,19 @@ def parse_value(val):
         return None
 
 
-def fetch_series(label, params, use_max=False):
-    """Fetch a NASS monthly series. If use_max, take the largest value per month."""
+def fetch_series(label, params, domain_filter=None, domaincat_filter=None):
+    """Fetch a NASS monthly series with optional domain filtering."""
     print(f"  {label}...", end=" ", flush=True)
     try:
         rows = api_get(params)
         seen = {}
         for row in rows:
+            # Apply domain filters
+            if domain_filter and row.get("domain_desc", "") != domain_filter:
+                continue
+            if domaincat_filter and domaincat_filter not in row.get("domaincat_desc", ""):
+                continue
+
             year = row.get("year", "")
             period = row.get("reference_period_desc", "").strip().upper()
             val = parse_value(row.get("Value"))
@@ -67,21 +70,24 @@ def fetch_series(label, params, use_max=False):
             if not mm or not year or val is None:
                 continue
             key = f"{year}-{mm}"
-            if use_max:
-                # Take max value (national total > any individual state)
-                if key not in seen or val > seen[key]:
-                    seen[key] = val
-            else:
-                seen[key] = val
+            seen[key] = val
+
         result = [{"d": k, "v": round(v, 1)} for k, v in sorted(seen.items())]
         print(f"{len(result)} points", end="")
         if result:
             print(f" ({result[0]['d']} to {result[-1]['d']})")
-            # Show latest values for verification
-            for pt in result[-3:]:
+            for pt in result[-2:]:
                 print(f"    {pt['d']}: {pt['v']:,.0f}")
         else:
             print()
+            # Debug: show domains found
+            domains = set()
+            domcats = set()
+            for row in rows[:30]:
+                domains.add(row.get("domain_desc", ""))
+                domcats.add(row.get("domaincat_desc", ""))
+            print(f"    Domains: {domains}")
+            print(f"    DomainCats: {domcats}")
         return result
     except Exception as e:
         print(f"ERROR: {e}")
@@ -104,7 +110,7 @@ def main():
 
     result = {"updated": datetime.now(timezone.utc).isoformat()}
 
-    # 1. Soybeans crushed (tons) — NATIONAL works
+    # 1. Soybeans crushed (tons)
     result["crush"] = fetch_series("Soybeans crushed", {
         "source_desc": "SURVEY",
         "commodity_desc": "SOYBEANS",
@@ -112,43 +118,43 @@ def main():
         "agg_level_desc": "NATIONAL",
         "freq_desc": "MONTHLY",
         "year__GE": str(START_YEAR),
-    })
+    }, domain_filter="TOTAL")
     time.sleep(0.5)
 
-    # 2. Soybean meal produced — query by short_desc, take MAX per month
+    # 2. Soybean meal produced (tons) — domain=TOTAL
     result["meal_produced"] = fetch_series("Soybean meal produced", {
         "source_desc": "SURVEY",
         "short_desc": "CAKE & MEAL, SOYBEAN - PRODUCTION, MEASURED IN TONS",
         "freq_desc": "MONTHLY",
         "year__GE": str(START_YEAR),
-    }, use_max=True)
+    }, domain_filter="TOTAL")
     time.sleep(0.5)
 
-    # 3. Soybean oil produced — crude production
-    result["oil_produced"] = fetch_series("Soybean oil produced", {
+    # 3. Soybean oil produced at crushers (lbs) — crude, crusher operation
+    result["oil_produced"] = fetch_series("Soybean oil produced (crusher)", {
         "source_desc": "SURVEY",
         "short_desc": "OIL, SOYBEAN, CRUDE - PRODUCTION, MEASURED IN LB",
         "freq_desc": "MONTHLY",
         "year__GE": str(START_YEAR),
-    }, use_max=True)
+    }, domaincat_filter="(CRUSHER)")
     time.sleep(0.5)
 
-    # 4. Soybean meal stocks
+    # 4. Soybean meal stocks (tons) — domain=TOTAL
     result["meal_stocks"] = fetch_series("Soybean meal stocks", {
         "source_desc": "SURVEY",
         "short_desc": "CAKE & MEAL, SOYBEAN - STOCKS, MEASURED IN TONS",
         "freq_desc": "MONTHLY",
         "year__GE": str(START_YEAR),
-    }, use_max=True)
+    }, domain_filter="TOTAL")
     time.sleep(0.5)
 
-    # 5. Soybean oil stocks — crude stocks
-    result["oil_stocks"] = fetch_series("Soybean oil stocks", {
+    # 5. Soybean oil stocks — crude, ALL locations (crusher+refiner+warehouse)
+    result["oil_stocks"] = fetch_series("Soybean oil stocks (all locations)", {
         "source_desc": "SURVEY",
-        "short_desc": "OIL, SOYBEAN, CRUDE - STOCKS, MEASURED IN LB",
+        "short_desc": "OIL, SOYBEAN, ONSITE & OFFSITE, CRUDE - STOCKS, MEASURED IN LB",
         "freq_desc": "MONTHLY",
         "year__GE": str(START_YEAR),
-    }, use_max=True)
+    }, domaincat_filter="CRUSHER OR REFINER OR WAREHOUSE")
 
     # Write output
     with open(output_file, "w") as f:
@@ -157,18 +163,21 @@ def main():
     size = os.path.getsize(output_file)
     print(f"\nWriting {output_file}")
     print(f"  {size:,} bytes")
-    for key in ["crush", "meal_produced", "oil_produced", "meal_stocks", "oil_stocks"]:
-        print(f"  {key}: {len(result.get(key, []))} points")
 
-    # Verification
     print("\n  --- Feb 2026 verification ---")
+    expected = {"crush": 6426352, "meal_produced": 4752577,
+                "oil_produced": 2478751000, "meal_stocks": 418594,
+                "oil_stocks": 2106781000}
     for key in ["crush", "meal_produced", "oil_produced", "meal_stocks", "oil_stocks"]:
         pts = result.get(key, [])
         feb = [p for p in pts if p["d"] == "2026-02"]
         if feb:
-            print(f"  {key}: {feb[0]['v']:,.0f}")
+            val = feb[0]["v"]
+            exp = expected.get(key, 0)
+            match = "✓" if abs(val - exp) < 100 else "✗"
+            print(f"  {match} {key}: {val:,.0f} (expected {exp:,.0f})")
         else:
-            print(f"  {key}: (no data)")
+            print(f"  ? {key}: no Feb 2026 data")
 
 
 if __name__ == "__main__":

@@ -5126,7 +5126,7 @@ function ExportInspectionsPage({ ready }) {
   var statCard = function(label, curVal, comparisons, unitLabel) {
     return (<div style={{background:"var(--color-background-secondary)",borderRadius:"var(--border-radius-md)",padding:"12px 14px",minWidth:0}}>
       <div style={{fontSize:11,color:"var(--color-text-secondary)",marginBottom:3,textTransform:"uppercase",letterSpacing:"0.4px"}}>{label}</div>
-      <div style={{fontSize:22,fontWeight:500,color:"var(--color-text-primary)",marginBottom:2}}>{curVal != null ? curVal.toLocaleString() : "—"}<span style={{fontSize:12,fontWeight:400,color:"var(--color-text-secondary)",marginLeft:4}}>{unitLabel}</span></div>
+      <div style={{fontSize:22,fontWeight:500,color:"var(--color-text-primary)",marginBottom:2}}>{curVal != null ? (isBu ? curVal.toFixed(1) : curVal.toLocaleString()) : "—"}<span style={{fontSize:12,fontWeight:400,color:"var(--color-text-secondary)",marginLeft:4}}>{unitLabel}</span></div>
       {cardInfo.date && <div style={{fontSize:10,color:"var(--color-text-tertiary)",marginBottom:6}}>as of {cardInfo.date}</div>}
       <div style={{borderTop:"0.5px solid var(--color-border-tertiary)",paddingTop:5}}>
         {comparisons.map(function(c2, i) {
@@ -5136,7 +5136,7 @@ function ExportInspectionsPage({ ready }) {
           var col = diff > 0 ? "#639922" : diff < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
           return (<div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:10.5,padding:"1px 0"}}>
             <span style={{color:"var(--color-text-tertiary)"}}>{c2.label}</span>
-            <span><span style={{color:"var(--color-text-secondary)"}}>{c2.val.toLocaleString()} </span><span style={{color:col,fontWeight:500}}>({diff > 0 ? "+" : ""}{diff.toLocaleString()} / {pctChg > 0 ? "+" : ""}{pctChg.toFixed(1)}%)</span></span>
+            <span><span style={{color:"var(--color-text-secondary)"}}>{isBu ? c2.val.toFixed(1) : c2.val.toLocaleString()} </span><span style={{color:col,fontWeight:500}}>({diff > 0 ? "+" : ""}{isBu ? diff.toFixed(1) : diff.toLocaleString()} / {pctChg > 0 ? "+" : ""}{pctChg.toFixed(1)}%)</span></span>
           </div>);
         })}
       </div>

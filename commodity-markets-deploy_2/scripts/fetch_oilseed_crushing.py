@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """
 Fetch monthly oilseed crushing data from USDA NASS QuickStats API.
-Outputs oilseed_crushing.json.
 
-NASS parameter names (discovered):
-  Crush:        commodity=SOYBEANS, stat=CRUSHED, unit=TONS
-  Meal produced: commodity=CAKE & MEAL, class=SOYBEAN, stat=PRODUCTION, unit=TONS
-  Oil produced:  commodity=OIL, class=SOYBEAN, stat=PRODUCTION, unit=LB
-  Meal stocks:   commodity=CAKE & MEAL, class=SOYBEAN, stat=STOCKS, unit=TONS
-  Oil stocks:    commodity=OIL, class=SOYBEAN, stat=STOCKS, unit=LB
+NASS parameters (discovered):
+  Crush:         commodity=SOYBEANS, stat=CRUSHED, unit=TONS (agg_level=NATIONAL works)
+  Meal produced: short_desc LIKE "CAKE & MEAL, SOYBEAN - PRODUCTION%"
+  Oil produced:  short_desc LIKE "OIL, SOYBEAN, CRUDE - PRODUCTION%"
+  Meal stocks:   short_desc LIKE "CAKE & MEAL, SOYBEAN - STOCKS%"
+  Oil stocks:    short_desc LIKE "OIL, SOYBEAN, CRUDE - STOCKS%"
+
+For meal/oil, we query by short_desc to ensure we get the right series,
+and take the MAX value per month (national total, not state breakdowns).
 """
 import json
 import os
@@ -22,6 +24,10 @@ API_KEY = os.environ.get("NASS_API_KEY", "")
 OUTPUT_DIR = "commodity-markets-deploy_2/data"
 BASE_URL = "https://quickstats.nass.usda.gov/api/api_GET/"
 START_YEAR = 2014
+
+MONTH_MAP = {"JAN": "01", "FEB": "02", "MAR": "03", "APR": "04",
+             "MAY": "05", "JUN": "06", "JUL": "07", "AUG": "08",
+             "SEP": "09", "OCT": "10", "NOV": "11", "DEC": "12"}
 
 
 def api_get(params):
@@ -47,13 +53,8 @@ def parse_value(val):
         return None
 
 
-MONTH_MAP = {"JAN": "01", "FEB": "02", "MAR": "03", "APR": "04",
-             "MAY": "05", "JUN": "06", "JUL": "07", "AUG": "08",
-             "SEP": "09", "OCT": "10", "NOV": "11", "DEC": "12"}
-
-
-def fetch_series(label, params):
-    """Fetch a NASS monthly series."""
+def fetch_series(label, params, use_max=False):
+    """Fetch a NASS monthly series. If use_max, take the largest value per month."""
     print(f"  {label}...", end=" ", flush=True)
     try:
         rows = api_get(params)
@@ -66,16 +67,21 @@ def fetch_series(label, params):
             if not mm or not year or val is None:
                 continue
             key = f"{year}-{mm}"
-            seen[key] = val
+            if use_max:
+                # Take max value (national total > any individual state)
+                if key not in seen or val > seen[key]:
+                    seen[key] = val
+            else:
+                seen[key] = val
         result = [{"d": k, "v": round(v, 1)} for k, v in sorted(seen.items())]
         print(f"{len(result)} points", end="")
         if result:
             print(f" ({result[0]['d']} to {result[-1]['d']})")
+            # Show latest values for verification
+            for pt in result[-3:]:
+                print(f"    {pt['d']}: {pt['v']:,.0f}")
         else:
             print()
-            # Debug
-            units = set(r.get("unit_desc", "") for r in rows[:10])
-            print(f"    DEBUG: {len(rows)} raw rows, units={units}")
         return result
     except Exception as e:
         print(f"ERROR: {e}")
@@ -96,47 +102,53 @@ def main():
     print(f"Start year: {START_YEAR}")
     print("=" * 60)
 
-    base = {
+    result = {"updated": datetime.now(timezone.utc).isoformat()}
+
+    # 1. Soybeans crushed (tons) — NATIONAL works
+    result["crush"] = fetch_series("Soybeans crushed", {
         "source_desc": "SURVEY",
+        "commodity_desc": "SOYBEANS",
+        "statisticcat_desc": "CRUSHED",
         "agg_level_desc": "NATIONAL",
         "freq_desc": "MONTHLY",
         "year__GE": str(START_YEAR),
-    }
-
-    result = {"updated": datetime.now(timezone.utc).isoformat()}
-
-    # 1. Soybeans crushed (tons)
-    result["crush"] = fetch_series("Soybeans crushed", {
-        **base, "commodity_desc": "SOYBEANS", "statisticcat_desc": "CRUSHED",
     })
     time.sleep(0.5)
 
-    # 2. Soybean meal produced (tons)
+    # 2. Soybean meal produced — query by short_desc, take MAX per month
     result["meal_produced"] = fetch_series("Soybean meal produced", {
-        **base, "commodity_desc": "CAKE & MEAL", "class_desc": "SOYBEAN",
-        "statisticcat_desc": "PRODUCTION",
-    })
+        "source_desc": "SURVEY",
+        "short_desc": "CAKE & MEAL, SOYBEAN - PRODUCTION, MEASURED IN TONS",
+        "freq_desc": "MONTHLY",
+        "year__GE": str(START_YEAR),
+    }, use_max=True)
     time.sleep(0.5)
 
-    # 3. Soybean oil produced (lbs)
+    # 3. Soybean oil produced — crude production
     result["oil_produced"] = fetch_series("Soybean oil produced", {
-        **base, "commodity_desc": "OIL", "class_desc": "SOYBEAN",
-        "statisticcat_desc": "PRODUCTION",
-    })
+        "source_desc": "SURVEY",
+        "short_desc": "OIL, SOYBEAN, CRUDE - PRODUCTION, MEASURED IN LB",
+        "freq_desc": "MONTHLY",
+        "year__GE": str(START_YEAR),
+    }, use_max=True)
     time.sleep(0.5)
 
-    # 4. Soybean meal stocks (tons)
+    # 4. Soybean meal stocks
     result["meal_stocks"] = fetch_series("Soybean meal stocks", {
-        **base, "commodity_desc": "CAKE & MEAL", "class_desc": "SOYBEAN",
-        "statisticcat_desc": "STOCKS",
-    })
+        "source_desc": "SURVEY",
+        "short_desc": "CAKE & MEAL, SOYBEAN - STOCKS, MEASURED IN TONS",
+        "freq_desc": "MONTHLY",
+        "year__GE": str(START_YEAR),
+    }, use_max=True)
     time.sleep(0.5)
 
-    # 5. Soybean oil stocks (lbs)
+    # 5. Soybean oil stocks — crude stocks
     result["oil_stocks"] = fetch_series("Soybean oil stocks", {
-        **base, "commodity_desc": "OIL", "class_desc": "SOYBEAN",
-        "statisticcat_desc": "STOCKS",
-    })
+        "source_desc": "SURVEY",
+        "short_desc": "OIL, SOYBEAN, CRUDE - STOCKS, MEASURED IN LB",
+        "freq_desc": "MONTHLY",
+        "year__GE": str(START_YEAR),
+    }, use_max=True)
 
     # Write output
     with open(output_file, "w") as f:
@@ -147,6 +159,16 @@ def main():
     print(f"  {size:,} bytes")
     for key in ["crush", "meal_produced", "oil_produced", "meal_stocks", "oil_stocks"]:
         print(f"  {key}: {len(result.get(key, []))} points")
+
+    # Verification
+    print("\n  --- Feb 2026 verification ---")
+    for key in ["crush", "meal_produced", "oil_produced", "meal_stocks", "oil_stocks"]:
+        pts = result.get(key, [])
+        feb = [p for p in pts if p["d"] == "2026-02"]
+        if feb:
+            print(f"  {key}: {feb[0]['v']:,.0f}")
+        else:
+            print(f"  {key}: (no data)")
 
 
 if __name__ == "__main__":

@@ -5150,7 +5150,7 @@ function ExportInspectionsPage({ ready }) {
           var col = diff > 0 ? "#639922" : diff < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
           return (<div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:10.5,padding:"1px 0"}}>
             <span style={{color:"var(--color-text-tertiary)"}}>{c2.label}</span>
-            <span style={{display:"flex",gap:4,alignItems:"baseline"}}><span style={{color:"var(--color-text-secondary)",textAlign:"right",minWidth:70}}>{isBu ? c2.val.toFixed(1) : c2.val.toLocaleString()}</span><span style={{color:col,fontWeight:500,textAlign:"right",minWidth:80}}>({diff > 0 ? "+" : ""}{isBu ? diff.toFixed(1) : diff.toLocaleString()} / {pctChg > 0 ? "+" : ""}{pctChg.toFixed(1)}%)</span></span>
+            <span style={{display:"flex",gap:0,alignItems:"baseline"}}><span style={{color:"var(--color-text-secondary)",textAlign:"right",minWidth:72,display:"inline-block"}}>{isBu ? c2.val.toFixed(1) : c2.val.toLocaleString()}</span><span style={{color:col,fontWeight:500,textAlign:"right",minWidth:62,display:"inline-block"}}>({diff > 0 ? "+" : ""}{isBu ? diff.toFixed(1) : diff.toLocaleString()})</span><span style={{color:col,fontWeight:500,textAlign:"right",minWidth:52,display:"inline-block"}}>({pctChg > 0 ? "+" : ""}{pctChg.toFixed(1)}%)</span></span>
           </div>);
         })}
       </div>

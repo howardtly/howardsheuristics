@@ -5539,3 +5539,112 @@ function ExportSalesPage({ ready }) {
     <div style={{marginTop:14,fontSize:11,color:"var(--color-text-tertiary)"}}>Source: USDA FAS Export Sales Reporting. Marketing years: Corn/Soybeans/Sorghum (Sep–Aug), Wheat (Jun–May). Units: metric tons.</div>
   </div>);
 }
+
+  "wasde": { title: "WASDE balance sheets", component: WASDEPage },
+  "crop-progress": { title: "Crop progress & condition", component: CropProgressPage },
+  "ethanol": { title: "Ethanol", component: EthanolPage },
+  "fats-oils": { title: "USDA Oilseed Crushing (Monthly)", component: FatsOilsPage },
+  "cot-summary": { title: "Commitment of Traders (COT) summary", component: COTSummaryPage },
+  "cot-charts": { title: "COT charts", component: COTChartsPage },
+  "export-inspections": { title: "USDA Export Inspections (Weekly)", component: ExportInspectionsPage },
+  "export-sales": { title: "USDA Export Sales (Weekly)", component: ExportSalesPage },
+  "drought": { title: "U.S. Drought Monitor", component: DroughtPage },
+  "on-feed": { title: "Cattle on feed", component: CattleOnFeedPage },
+  "cutout": { title: "Boxed beef & pork prices", component: CutoutPage },
+  "slaughter": { title: "Slaughter", component: SlaughterPage },
+  "cold-storage": { title: "Cold storage", component: ColdStoragePage },
+  "hogs-pigs": { title: "Hogs & pigs", component: HogsPigsPage },
+  "ng-storage": { title: "Natural gas storage", component: EnergyChartPage },
+  "ng-inj-wd": { title: "Injections / withdrawals", component: NGInjWdPage },
+  "ng-production": { title: "Natural gas production", component: EnergyChartPage },
+  "ng-demand": { title: "Natural gas demand", component: EnergyChartPage },
+  "crude-stocks": { title: "Crude oil stocks", component: EnergyChartPage },
+  "crude-production": { title: "Crude oil production", component: EnergyChartPage },
+  "gasoline-stocks": { title: "Gasoline stocks", component: EnergyChartPage },
+  "distillate-stocks": { title: "Distillate stocks", component: EnergyChartPage },
+  "fx-currencies": { title: "Currencies", component: FXCurrenciesPage },
+};
+
+function App() {
+  const [active, setActive] = useState(() => {
+    const hash = window.location.hash.slice(1);
+    return hash || "wasde";
+  });
+  useEffect(() => {
+    const onHash = () => { const h = window.location.hash.slice(1); if (h) setActive(h); };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+  useEffect(() => { if (active) window.location.hash = active; }, [active]);
+  const [chartReady, setChartReady] = useState(false);
+  const [navCollapsed, setNavCollapsed] = useState(false);
+  const [openGroups, setOpenGroups] = useState({ grains: true, livestock: true, energy: true, drivers: true, cot: true });
+
+
+  useEffect(() => {
+    // Load Chart.js
+    if (!window.Chart) {
+      const s = document.createElement("script"); s.src = "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"; s.onload = () => {
+        Chart.defaults.scale.ticks.padding = 4;
+        Chart.defaults.scale.grid.drawTicks = false;
+        setChartReady(true);
+      }; document.head.appendChild(s);
+    } else { setChartReady(true); }
+    // D3 loaded via index.html
+  }, []);
+
+  const toggleGroup = id => setOpenGroups(prev => ({ ...prev, [id]: !prev[id] }));
+  const PageComp = PAGES[active]?.component;
+
+  return (
+    <div style={{ display: "flex", height: "100vh", fontFamily: "var(--font-sans)" }}>
+      <div style={{ width: navCollapsed ? 48 : 220, flexShrink: 0, transition: "width 0.2s ease", borderRight: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-secondary)", display: "flex", flexDirection: "column", overflow: "hidden", height: "100vh", position: "sticky", top: 0 }}>
+        <div style={{ padding: navCollapsed ? "16px 8px" : "16px 16px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", gap: 10, minHeight: 56, flexShrink: 0 }}>
+          {!navCollapsed && <div><div style={{ fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)", whiteSpace: "nowrap" }}>Howard's Heuristics</div></div>}
+          <button onClick={() => setNavCollapsed(!navCollapsed)} style={{ marginLeft: navCollapsed ? 0 : "auto", background: "transparent", border: "none", cursor: "pointer", padding: 4, color: "var(--color-text-secondary)", display: "flex" }}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">{navCollapsed ? <path d="M6 3l5 5-5 5" /> : <path d="M10 3L5 8l5 5" />}</svg>
+          </button>
+        </div>
+        {!navCollapsed && (
+          <nav style={{ padding: "8px 0", flex: 1, overflowY: "auto", minHeight: 0 }}>
+            {NAV_SECTIONS.map(section => {
+              let afterSubheader = false;
+              return (
+              <div key={section.id} style={{ marginBottom: 4 }}>
+                <button onClick={() => toggleGroup(section.id)} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "8px 16px", background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 12, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.4px" }}>
+                  {section.icon}<span style={{ flex: 1, textAlign: "left" }}>{section.label}</span>
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ transform: openGroups[section.id] ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s" }}><path d="M4.5 2.5l3.5 3.5-3.5 3.5" /></svg>
+                </button>
+                {openGroups[section.id] && <div>{section.children.map((child, ci) => {
+                  if (child.subheader) {
+                    afterSubheader = true;
+                    return <div key={`sub-${ci}`} style={{ padding: "10px 16px 3px 40px", fontSize: 10, fontWeight: 600, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>{child.subheader}</div>;
+                  }
+                  const isA = active === child.id;
+                  const leftPad = afterSubheader ? 54 : 40;
+                  return <button key={child.id} onClick={() => setActive(child.id)} style={{ display: "block", width: "100%", textAlign: "left", padding: `7px 16px 7px ${leftPad}px`, background: isA ? "var(--color-background-primary)" : "transparent", border: "none", borderLeft: isA ? "2.5px solid var(--color-text-primary)" : "2.5px solid transparent", cursor: "pointer", color: isA ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontSize: 13, fontWeight: isA ? 500 : 400, transition: "all 0.1s" }}>{child.label}</button>;
+                })}</div>}
+              </div>
+            );})}
+          </nav>
+        )}
+        {navCollapsed && <nav style={{ padding: "12px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>{NAV_SECTIONS.map(s => <div key={s.id} title={s.label} style={{ padding: 8, borderRadius: "var(--border-radius-md)", cursor: "pointer", color: "var(--color-text-secondary)" }} onClick={() => { setNavCollapsed(false); setOpenGroups(p => ({ ...p, [s.id]: true })); }}>{s.icon}</div>)}</nav>}
+        {!navCollapsed && <div style={{ padding: "12px 16px", borderTop: "0.5px solid var(--color-border-tertiary)", fontSize: 10, color: "var(--color-text-tertiary)", flexShrink: 0 }}>Source: USDA WASDE, ERS,<br/>NASS, AMS, EIA reports</div>}
+      </div>
+      <div style={{ flex: 1, minWidth: 0, padding: "20px 28px 40px", overflowY: "auto", height: "100vh" }}>
+        <div style={{ maxWidth: 1400 }}>
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+              <div>
+                <h1 style={{ fontSize: 20, fontWeight: 500, color: "var(--color-text-primary)", margin: "0 0 2px" }}>{PAGES[active]?.title}</h1>
+                
+              </div>
+
+            </div>
+          </div>
+          {PageComp && <PageComp ready={chartReady} />}
+        </div>
+      </div>
+    </div>
+  );
+}

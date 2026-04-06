@@ -2589,8 +2589,8 @@ function CropProgressPage({ ready }) {
       // Tiny states: labels removed from map, shown in sidebar list instead
       var sidebarSet = {"NJ":1,"MD":1,"DE":1,"CT":1,"RI":1,"MA":1,"NH":1,"VT":1};
       // Stacked states: change goes below value
-      var stackSet = {"MI":1,"FL":1,"LA":1,"WV":1,"SC":1,"HI":1,"ID":1};
-      var nudge = {"MI":[10,0],"FL":[8,6],"LA":[-2,4],"WV":[0,2]};
+      var stackSet = {"MI":1,"FL":1,"LA":1,"MS":1,"WV":1,"SC":1,"HI":1,"ID":1};
+      var nudge = {"MI":[10,0],"FL":[8,6],"LA":[-10,4],"MS":[0,2],"WV":[0,2]};
 
       // State abbreviation (skip sidebar states)
       svg.selectAll(".sl").data(feat.features).enter().append("text").attr("class","sl")

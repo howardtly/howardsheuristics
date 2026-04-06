@@ -1,7 +1,7 @@
 name: Fetch Crop Progress (Weekly)
 on:
   schedule:
-    - cron: '0 20 * * 1'  # Every Monday 8PM UTC (after NASS Monday release)
+    - cron: '0 20 * * 1'  # Mondays 4:00 PM ET (USDA release time)
   workflow_dispatch:
 
 permissions:
@@ -14,17 +14,16 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.11'
       - name: Fetch crop progress data
-        run: python commodity-markets-deploy_2/scripts/fetch_crop_progress.py
         env:
-          OUTPUT_DIR: commodity-markets-deploy_2/data
           NASS_API_KEY: ${{ secrets.NASS_API_KEY }}
-      - name: Commit and push
+        run: python commodity-markets-deploy_2/scripts/fetch_crop_progress.py
+      - name: Commit
         run: |
           cd commodity-markets-deploy_2
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/crop_progress.json
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add data/
           git diff --cached --quiet || git commit -m "Update crop progress data $(date -u +%Y-%m-%d)"
           git push

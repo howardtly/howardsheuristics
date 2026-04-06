@@ -5275,293 +5275,267 @@ function ExportInspectionsPage({ ready }) {
   </div>);
 }
 
+
 function ExportSalesPage({ ready }) {
-  const [commodity, setCommodity] = useState("Corn");
-  const [country, setCountry] = useState("GRAND TOTAL");
-  const [esUnit, setEsUnit] = useState("mt");
+  var ref = useLiveExportSales();
+  var esData = ref.esData;
+  var esLoaded = ref.esLoaded;
+  var _comm = useState("corn");
+  var comm = _comm[0], setComm = _comm[1];
+  var _range = useState("1");
+  var range = _range[0], setRange = _range[1];
+  var _country = useState("ALL");
+  var country = _country[0], setCountry = _country[1];
+  var _myType = useState("cmy");
+  var myType = _myType[0], setMyType = _myType[1];
+  var _unit = useState("mt");
+  var unit = _unit[0], setUnit = _unit[1];
+  var _hy = useState(new Set());
+  var hiddenYrs = _hy[0], setHiddenYrs = _hy[1];
 
-  const d = EXPORT_SALES[commodity][country];
-  const li = ES_WEEKS.length - 1;
+  useEffect(function(){ setHiddenYrs(new Set()); }, [comm, range, country, myType, unit]);
+  var toggleYr = function(label) { setHiddenYrs(function(prev){ var next = new Set(prev); if(next.has(label))next.delete(label);else next.add(label); return next; }); };
 
-  // Reset unit to mt when switching commodities
-  const setCommodityAndReset = (c) => { setCommodity(c); setEsUnit("mt"); };
-
-  const convKey = `${commodity}_${esUnit}`;
-  const conv = (v) => {
-    if (v == null) return null;
-    const fn = ES_CONV[convKey];
-    return fn ? Math.round(fn(v)) : v;
+  var BU_PER_MT = { corn: 39.368, soybeans: 36.744, wheat: 36.744, sorghum: 39.368 };
+  var isBu = unit === "bu";
+  var conv = function(mt) {
+    if (mt == null) return null;
+    if (isBu) return Math.round(mt * BU_PER_MT[comm] / 1000000 * 10) / 10;
+    return Math.round(mt);
   };
-  const convArr = (arr) => arr.map(conv);
-  const uLabel = ES_UNIT_LABELS[esUnit] || "MT";
-  const unitOpts = ES_UNIT_OPTIONS[commodity] || [];
+  var cardUnit = isBu ? "M bushels" : "MT";
+  var chartUnit = isBu ? "M bushels" : "1,000 MT";
+  var chartConv = function(mt) {
+    if (mt == null) return null;
+    if (isBu) return Math.round(mt * BU_PER_MT[comm] / 1000000 * 10) / 10;
+    return Math.round(mt / 1000 * 10) / 10;
+  };
 
-  function niceAxis(allVals) {
-    if (allVals.length === 0) return { yMin: 0, yMax: 100 };
-    const dataMin = Math.min(...allVals); const dataMax = Math.max(...allVals);
-    const range = dataMax - dataMin; const pad = Math.max(range * 0.15, 10);
-    const rawStep = (range + pad * 2) / 5;
-    const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
-    const norm = rawStep / mag;
-    const niceNorm = norm <= 1.5 ? 1 : norm <= 3.5 ? 2 : norm <= 7.5 ? 5 : 10;
-    const step = niceNorm * mag;
-    return { yMin: Math.max(0, Math.floor((dataMin - pad) / step) * step), yMax: Math.ceil((dataMax + pad) / step) * step };
+  var COMM_OPTS = [{id:"corn",label:"Corn"},{id:"soybeans",label:"Soybeans"},{id:"wheat",label:"Wheat"},{id:"sorghum",label:"Sorghum"}];
+  var myConfig = {
+    corn: { startMonth: 9, mktN: ["Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug"] },
+    soybeans: { startMonth: 9, mktN: ["Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug"] },
+    sorghum: { startMonth: 9, mktN: ["Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug"] },
+    wheat: { startMonth: 6, mktN: ["Jun","Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May"] },
+  };
+  var cfg = myConfig[comm];
+
+  var dateToMktDay = function(ds) {
+    var p = ds.split("-"); var y = parseInt(p[0]), m = parseInt(p[1]) - 1, d = parseInt(p[2]);
+    var dt = new Date(y, m, d);
+    var myStart = m >= (cfg.startMonth - 1) ? new Date(y, cfg.startMonth - 1, 1) : new Date(y - 1, cfg.startMonth - 1, 1);
+    return Math.max(0, Math.min(365, Math.round((dt - myStart) / 86400000)));
+  };
+  var myLabel = function(yr) { return yr + "/" + String(yr + 1).slice(2); };
+
+  // Get raw weekly points for selected commodity + country
+  var getRawPts = function() {
+    if (!esData || !esData[comm]) return [];
+    var commData = esData[comm];
+    if (country === "ALL") return commData.totals || [];
+    var cc = commData.byCountry || {};
+    return cc[country] || [];
+  };
+  var rawPts = getRawPts();
+
+  // Build marketing year buckets for a given metric
+  var buildByMY = function(pts, metricKey) {
+    var byMY = {};
+    pts.forEach(function(pt) {
+      var my = pt.my;
+      var day = dateToMktDay(pt.d);
+      if (!byMY[my]) byMY[my] = [];
+      byMY[my].push({ x: day, y: chartConv(pt[metricKey]) });
+    });
+    Object.keys(byMY).forEach(function(my) { byMY[my].sort(function(a, b) { return a.x - b.x; }); });
+    return byMY;
+  };
+
+  // Select metric keys based on CMY/NMY
+  var isCMY = myType === "cmy";
+  var nsKey = isCMY ? "ns" : "nns";
+  var osKey = isCMY ? "os" : "nos";
+
+  var nsByMY = buildByMY(rawPts, nsKey);
+  var osByMY = buildByMY(rawPts, osKey);
+  var wsByMY = buildByMY(rawPts, "we");
+  var aeByMY = buildByMY(rawPts, "ae");
+  var tcByMY = buildByMY(rawPts, "tc");
+
+  // Current MY and range
+  var allMYs = rawPts.map(function(p) { return p.my; });
+  var curMY = allMYs.length > 0 ? Math.max.apply(null, allMYs) : 2026;
+  var rangeN = parseInt(range);
+  var startMY = curMY - rangeN;
+
+  var yrColors = ["#A32D2D","#D85A30","#E8A735","#639922","#1D9E75","#378ADD","#534AB7","#8B5CF6","#EC4899","#6B7280"];
+  var getColor = function(my) { if (my === curMY) return "#333"; var dist = curMY - my; if (dist === 1) return "#1D9E75"; if (dist === 2) return "#639922"; if (dist === 3) return "#E8A735"; if (dist === 4) return "#D85A30"; if (dist === 5) return "#A32D2D"; return yrColors[(dist - 1) % yrColors.length]; };
+
+  var buildItems = function(byMY) {
+    var items = [];
+    for (var y = startMY; y <= curMY; y++) { if (byMY[y]) items.push({ label: myLabel(y), my: y, color: getColor(y) }); }
+    return items;
+  };
+  var allItems = buildItems(wsByMY);
+  var hk = Array.from(hiddenYrs).sort().join(",");
+
+  // Country dropdown options
+  var countryOpts = [{c:"ALL",n:"All Countries"}];
+  if (esData && esData.countries) {
+    esData.countries.forEach(function(ct) { countryOpts.push({c: String(ct.c), n: ct.n}); });
   }
 
-  const fmtV = (v) => {
-    if (v == null) return "—";
-    if (Math.abs(v) >= 1000000) return (v / 1000000).toFixed(2) + "M";
-    if (Math.abs(v) >= 1000) return (v / 1000).toFixed(0) + "K";
-    return v.toLocaleString();
+  // Header card info
+  var getCardInfo = function(metricKey) {
+    if (!rawPts || !rawPts.length) return { cur: null, prevWk: null, lastYr: null, date: null };
+    var sorted = rawPts.slice().sort(function(a, b) { return a.d < b.d ? 1 : -1; });
+    var latest = sorted[0]; var prev = sorted.length > 1 ? sorted[1] : null;
+    var latestDate = new Date(latest.d);
+    var targetDate = new Date(latestDate); targetDate.setFullYear(targetDate.getFullYear() - 1);
+    var targetMs = targetDate.getTime();
+    var lastYrPt = null; var bestDiff = 10 * 86400000;
+    rawPts.forEach(function(p) { var diff = Math.abs(new Date(p.d).getTime() - targetMs); if (diff < bestDiff) { bestDiff = diff; lastYrPt = p; } });
+    return {
+      cur: conv(latest[metricKey]),
+      prevWk: prev ? conv(prev[metricKey]) : null,
+      lastYr: lastYrPt ? conv(lastYrPt[metricKey]) : null,
+      date: latest.d,
+    };
   };
 
-  const ESDiff = ({ label, absVal, cur }) => {
-    if (absVal == null || cur == null) return null;
-    const diff = cur - absVal;
-    const pct = absVal !== 0 ? ((diff / absVal) * 100).toFixed(1) : null;
-    const col = diff > 0 ? "#639922" : diff < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
-    return (
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, padding: "2px 0" }}>
-        <span style={{ color: "var(--color-text-tertiary)" }}>{label} ({fmtV(absVal)})</span>
-        <span style={{ color: col, fontWeight: 500, fontFamily: "var(--font-mono)" }}>{diff > 0 ? "+" : ""}{fmtV(diff)} ({pct}%)</span>
+  var nsInfo = getCardInfo(nsKey);
+  var weInfo = getCardInfo("we");
+
+  var statCard = function(label, info, unitLabel) {
+    var fmtVal = function(v) { return v == null ? "—" : isBu ? v.toFixed(1) : v.toLocaleString(); };
+    var diffLine = function(lbl, comp) {
+      if (info.cur == null || comp == null) return null;
+      var diff = isBu ? Math.round((info.cur - comp) * 10) / 10 : Math.round(info.cur - comp);
+      var pctChg = Math.round((info.cur - comp) / Math.abs(comp) * 1000) / 10;
+      var col = diff > 0 ? "#639922" : diff < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
+      return (<div style={{display:"flex",justifyContent:"space-between",fontSize:10.5,padding:"1px 0"}}>
+        <span style={{color:"var(--color-text-tertiary)"}}>{lbl}</span>
+        <span style={{display:"flex",gap:6,alignItems:"baseline",justifyContent:"flex-end"}}><span style={{color:"var(--color-text-secondary)",textAlign:"right",flex:"none"}}>{fmtVal(comp)}</span><span style={{color:col,fontWeight:500,textAlign:"right",minWidth:76,flex:"none"}}>({diff > 0 ? "+" : ""}{isBu ? diff.toFixed(1) : diff.toLocaleString()})</span><span style={{color:col,fontWeight:500,textAlign:"right",minWidth:52,flex:"none"}}>({pctChg > 0 ? "+" : ""}{pctChg.toFixed(1)}%)</span></span>
+      </div>);
+    };
+    return (<div style={{background:"var(--color-background-secondary)",borderRadius:"var(--border-radius-md)",padding:"12px 14px",minWidth:0}}>
+      <div style={{fontSize:11,color:"var(--color-text-secondary)",marginBottom:3,textTransform:"uppercase",letterSpacing:"0.4px"}}>{label}</div>
+      <div style={{fontSize:22,fontWeight:500,color:"var(--color-text-primary)",marginBottom:2}}>{fmtVal(info.cur)}<span style={{fontSize:12,fontWeight:400,color:"var(--color-text-secondary)",marginLeft:4}}>{unitLabel}</span></div>
+      {info.date && <div style={{fontSize:10,color:"var(--color-text-tertiary)",marginBottom:6}}>as of {info.date}</div>}
+      <div style={{borderTop:"0.5px solid var(--color-border-tertiary)",paddingTop:5}}>
+        {diffLine("vs. last week", info.prevWk)}
+        {diffLine("vs. last year", info.lastYr)}
       </div>
-    );
+    </div>);
   };
 
-  // Converted data
-  const cNetSales = convArr(d.netSales);
-  const cNetSalesPY = convArr(d.netSalesPY);
-  const cAccumNS = convArr(d.accumNetSales);
-  const cAccumNSPY = convArr(d.accumNetSalesPY);
-  const cTotalComm = convArr(d.totalCommitments);
-  const cTotalCommPY = convArr(d.totalCommitmentsPY);
-  const cNmyNS = convArr(d.nmyNetSales);
-  const cNmyNSPY = convArr(d.nmyNetSalesPY);
-  const cNmyAccumNS = convArr(d.nmyAccumNetSales);
-  const cNmyAccumNSPY = convArr(d.nmyAccumNetSalesPY);
-  const cWeeklyExp = convArr(d.weeklyExports);
-  const cOutSales = convArr(d.outstandingSales);
+  // Chart builder (seasonal overlay)
+  var mktBounds = [0,30,61,91,122,153,181,212,242,273,303,334];
+  var mktMids = [15,45,76,106,137,167,196,227,257,288,318,349];
 
-  const mkLineChart = (data1, data2, label1, label2, yTitle) => (canvas) => {
-    const allVals = [...data1, ...data2].filter(v => v != null);
-    const { yMin, yMax } = niceAxis(allVals);
-    new Chart(canvas, {
-      type: "line", data: { labels: ES_WEEKS, datasets: [
-        { label: label1, data: data1, borderColor: "#A32D2D", borderWidth: 2.5, pointRadius: 0, tension: 0 },
-        { label: label2, data: data2, borderColor: "#378ADD", borderWidth: 1.5, pointRadius: 0, tension: 0, borderDash: [5,3] },
-      ]},
-      options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
-        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.parsed.y.toLocaleString()} ${uLabel}` } } },
-        scales: { x: { ticks: { autoSkip: true, maxTicksLimit: 14, maxRotation: 45, font: { size: 10 } }, grid: { color: "rgba(0,0,0,0.08)" } }, y: { min: yMin, max: yMax, title: { display: true, text: yTitle, font: { size: 11 } }, ticks: { font: { size: 10 }, callback: v => fmtV(v) }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } } },
-      },
+  var mkChart = function(byMY) { return function(canvas) {
+    if (!byMY || Object.keys(byMY).length === 0) return;
+    var ds = [];
+    for (var y = startMY; y <= curMY; y++) {
+      var pts = byMY[y]; if (!pts || !pts.length) continue;
+      ds.push({ label: myLabel(y), data: pts.slice(), borderColor: getColor(y), borderWidth: y === curMY ? 2.5 : 1.5, pointRadius: 0, pointHitRadius: 6, tension: 0, fill: false, showLine: true, hidden: hiddenYrs.has(myLabel(y)) });
+    }
+    if (ds.length === 0) return;
+    var vis = ds.filter(function(d) { return !d.hidden; }).flatMap(function(d) { return d.data.map(function(p) { return p.y; }); });
+    if (vis.length === 0) return;
+    var rawMax = Math.max.apply(null, vis), rawMin = Math.min.apply(null, vis);
+    var span = rawMax - rawMin || 1;
+    var step = Math.pow(10, Math.floor(Math.log10(span / 4)));
+    if (span / step < 4) step = step / 2;
+    if (span / step > 8) step = step * 2;
+    var yMin = Math.floor(rawMin / step) * step;
+    var yMax = Math.ceil(rawMax / step) * step;
+    if (yMax === rawMax) yMax += step;
+    var tks = []; for (var k = 0; k < 12; k++) { tks.push({value: mktBounds[k]}); tks.push({value: mktMids[k]}); }
+    new Chart(canvas, { type: "scatter", data: { datasets: ds }, options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: "x", intersect: false },
+      plugins: { legend: { display: false }, tooltip: { mode: "x", intersect: false, backgroundColor: "rgba(0,0,0,0.6)", titleFont: { size: 11 }, bodyFont: { size: 11 },
+        callbacks: { title: function(items) { if (!items.length) return ""; var doy = items[0].parsed.x; var mi = 11; for (var m = 0; m < 11; m++) { if (doy < mktBounds[m+1]) { mi = m; break; } } return cfg.mktN[mi] + " " + (Math.floor(doy - mktBounds[mi]) + 1); },
+          label: function(c2) { return c2.parsed.y == null ? null : c2.dataset.label + ": " + c2.parsed.y.toLocaleString(); } } } },
+      scales: { x: { type: "linear", min: 0, max: 365, afterBuildTicks: function(ax) { ax.ticks = tks; }, ticks: { callback: function(v) { var idx = mktMids.indexOf(v); return idx >= 0 ? cfg.mktN[idx] : ""; }, autoSkip: false, maxRotation: 0, font: { size: 10 } }, grid: { color: function(ctx) { var v = ctx.tick.value; if (v > 0 && mktBounds.indexOf(v) >= 0) return "rgba(0,0,0,0.12)"; return "transparent"; }, lineWidth: 0.75 } },
+        y: { min: yMin, max: yMax, ticks: { stepSize: step, font: { size: 10 }, callback: function(v) { return v.toLocaleString(); } }, grid: { color: "rgba(0,0,0,0.08)", lineWidth: 0.75 } } }
+    } });
+  }; };
+
+  var dlCSV = function() {
+    var hdrs = ["Date", "MY", "Net Sales (" + chartUnit + ")", "Outstanding Sales (" + chartUnit + ")", "Weekly Exports (" + chartUnit + ")", "Accumulated Exports (" + chartUnit + ")", "Total Commitments (" + chartUnit + ")"];
+    var filtered = rawPts.filter(function(p) { return p.my >= startMY && p.my <= curMY; });
+    var rows = filtered.sort(function(a, b) { return a.d < b.d ? -1 : 1; }).map(function(pt) {
+      return [pt.d, myLabel(pt.my), chartConv(pt[nsKey]), chartConv(pt[osKey]), chartConv(pt.we), chartConv(pt.ae), chartConv(pt.tc)];
     });
+    downloadCSV("export_sales_" + comm + "_" + myType + "_" + unit + ".csv", hdrs, rows);
   };
 
-  const seasonLegend = [
-    { label: "2024/25", color: "#A32D2D" },
-    { label: "2023/24", color: "#378ADD", dash: "dashed" },
+  var chevSvg = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%23666' stroke-width='1.5'/%3E%3C/svg%3E\")";
+  var selSt = {padding:"6px 24px 6px 10px",fontSize:13,fontWeight:500,border:"1px solid var(--color-border-secondary)",borderRadius:6,background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontFamily:"inherit",cursor:"pointer",appearance:"none",backgroundImage:chevSvg,backgroundRepeat:"no-repeat",backgroundPosition:"right 6px center"};
+  var modeSt = function(a) { return {padding:"6px 14px",fontSize:12,fontWeight:a?600:400,border:"1px solid "+(a?"#2563EB":"var(--color-border-secondary)"),borderRadius:5,cursor:"pointer",background:a?"#2563EB":"transparent",color:a?"#fff":"var(--color-text-secondary)",transition:"all 0.15s"}; };
+
+  var CHARTS = [
+    { key: "ns", label: (isCMY ? "CMY" : "NMY") + " Net Sales", data: nsByMY },
+    { key: "os", label: "Outstanding Sales" + (isCMY ? "" : " (NMY)"), data: osByMY },
+    { key: "we", label: "Weekly Exports", data: wsByMY },
+    { key: "ae", label: "Accumulated Exports", data: aeByMY },
+    { key: "tc", label: "Total Commitments", data: tcByMY },
   ];
 
-  const dlES = () => {
-    const headers = ["Week","CMY Net Sales","CMY Accum Net Sales","CMY Total Commitments","NMY Net Sales","NMY Accum Net Sales"];
-    const rows = ES_WEEKS.map((w, i) => [w, cNetSales[i], cAccumNS[i], cTotalComm[i], cNmyNS[i], cNmyAccumNS[i]]);
-    downloadCSV(`export_sales_${commodity}_${country}.csv`, headers, rows);
-  };
-
-  const chevronSvg = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%23666' stroke-width='1.5'/%3E%3C/svg%3E")`;
-  const selectStyle = { padding: "7px 28px 7px 12px", fontSize: 13, fontWeight: 500, border: "1px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-primary)", color: "var(--color-text-primary)", fontFamily: "inherit", cursor: "pointer", appearance: "none", backgroundImage: chevronSvg, backgroundRepeat: "no-repeat", backgroundPosition: "right 8px center" };
-  const labelStyle = { fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.4px" };
-
   return (<div>
-    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={labelStyle}>Commodity</span>
-        <select value={commodity} onChange={e => setCommodityAndReset(e.target.value)} style={selectStyle}>
-          {ES_COMMODITIES.map(c => <option key={c} value={c}>{c}</option>)}
+    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,flexWrap:"wrap"}}>
+      <div style={{display:"flex",alignItems:"center",gap:6}}>
+        <span style={{fontSize:11,fontWeight:600,color:"var(--color-text-secondary)",textTransform:"uppercase"}}>Commodity</span>
+        <select value={comm} onChange={function(e){setComm(e.target.value);}} style={selSt}>
+          {COMM_OPTS.map(function(t) { return <option key={t.id} value={t.id}>{t.label}</option>; })}
         </select>
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={labelStyle}>Destination</span>
-        <select value={country} onChange={e => setCountry(e.target.value)} style={selectStyle}>
-          {ES_COUNTRIES.map(c => <option key={c} value={c}>{c === "GRAND TOTAL" ? "All destinations" : c}</option>)}
+      <div style={{display:"flex",alignItems:"center",gap:6}}>
+        <span style={{fontSize:11,fontWeight:600,color:"var(--color-text-secondary)",textTransform:"uppercase"}}>Range</span>
+        <select value={range} onChange={function(e){setRange(e.target.value);}} style={selSt}>
+          <option value="1">1 Year</option>
+          <option value="5">5 Years</option>
+          <option value="10">10 Years</option>
         </select>
       </div>
-      {unitOpts.length > 1 && <div style={{ display: "inline-flex", borderRadius: 6, overflow: "hidden", border: "1px solid var(--color-border-secondary)" }}>
-        {unitOpts.map(u => (
-          <button key={u.id} onClick={() => setEsUnit(u.id)} style={{
-            padding: "5px 14px", fontSize: 11, cursor: "pointer", border: "none",
-            borderRight: u.id === unitOpts[0].id ? "1px solid var(--color-border-secondary)" : "none",
-            background: esUnit === u.id ? "#333" : "transparent",
-            color: esUnit === u.id ? "#fff" : "var(--color-text-tertiary)",
-            fontWeight: 500, transition: "all 0.15s",
-          }}>{u.label}</button>
-        ))}
-      </div>}
-      <div style={{ marginLeft: "auto" }}><DownloadBtn onClick={dlES} /></div>
+      <div style={{display:"flex",alignItems:"center",gap:6}}>
+        <span style={{fontSize:11,fontWeight:600,color:"var(--color-text-secondary)",textTransform:"uppercase"}}>Country</span>
+        <select value={country} onChange={function(e){setCountry(e.target.value);}} style={{padding:"6px 24px 6px 10px",fontSize:13,fontWeight:500,border:"1px solid var(--color-border-secondary)",borderRadius:6,background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontFamily:"inherit",cursor:"pointer",appearance:"none",backgroundImage:chevSvg,backgroundRepeat:"no-repeat",backgroundPosition:"right 6px center",maxWidth:180}}>
+          {countryOpts.map(function(ct) { return <option key={ct.c} value={ct.c}>{ct.n}</option>; })}
+        </select>
+      </div>
+      <div style={{display:"flex",gap:3}}>
+        <button onClick={function(){setMyType("cmy");}} style={modeSt(myType==="cmy")}>CMY</button>
+        <button onClick={function(){setMyType("nmy");}} style={modeSt(myType==="nmy")}>NMY</button>
+      </div>
+      <div style={{display:"flex",gap:3}}>
+        <button onClick={function(){setUnit("mt");}} style={modeSt(unit==="mt")}>Metric Tons</button>
+        <button onClick={function(){setUnit("bu");}} style={modeSt(unit==="bu")}>Bushels</button>
+      </div>
+      <div style={{marginLeft:"auto"}}><DownloadBtn onClick={dlCSV} /></div>
     </div>
 
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10, marginBottom: 8 }}>
-      <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px" }}>
-        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.4px" }}>Weekly net sales (CMY)</div>
-        <div style={{ fontSize: 22, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 6 }}>{fmtV(cNetSales[li])} <span style={{ fontSize: 12, fontWeight: 400, color: "var(--color-text-secondary)" }}>{uLabel}</span></div>
-        <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 6, display: "flex", flexDirection: "column", gap: 1 }}>
-          <ESDiff label="vs. last week" absVal={cNetSales[li - 1]} cur={cNetSales[li]} />
-          <ESDiff label="vs. last year" absVal={cNetSalesPY[li]} cur={cNetSales[li]} />
-        </div>
-      </div>
-      <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px" }}>
-        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.4px" }}>Total commitments (CMY)</div>
-        <div style={{ fontSize: 22, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 6 }}>{fmtV(cTotalComm[li])} <span style={{ fontSize: 12, fontWeight: 400, color: "var(--color-text-secondary)" }}>{uLabel}</span></div>
-        <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 6, display: "flex", flexDirection: "column", gap: 1 }}>
-          <ESDiff label="vs. last year" absVal={cTotalCommPY[li]} cur={cTotalComm[li]} />
-        </div>
-      </div>
-      <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px" }}>
-        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.4px" }}>Outstanding sales (CMY)</div>
-        <div style={{ fontSize: 22, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 6 }}>{fmtV(cOutSales[li])} <span style={{ fontSize: 12, fontWeight: 400, color: "var(--color-text-secondary)" }}>{uLabel}</span></div>
-      </div>
-      <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px" }}>
-        <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.4px" }}>Weekly net sales (NMY)</div>
-        <div style={{ fontSize: 22, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 6 }}>{fmtV(cNmyNS[li])} <span style={{ fontSize: 12, fontWeight: 400, color: "var(--color-text-secondary)" }}>{uLabel}</span></div>
-      </div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
+      {statCard(isCMY ? "Net Sales (CMY)" : "Net Sales (NMY)", nsInfo, cardUnit)}
+      {statCard("Weekly Exports", weInfo, cardUnit)}
     </div>
 
-    <h3 style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text-primary)", margin: "24px 0 6px", textTransform: "uppercase", letterSpacing: "0.3px" }}>Current marketing year</h3>
-
-    <SectionTitle>Net sales — weekly</SectionTitle>
-    <InteractiveLegend items={seasonLegend} hidden={new Set()} onToggle={() => {}} />
-    {ready && <ChartBox id={`es_ns_${commodity}_${country}_${esUnit}`} height={220} renderChart={mkLineChart(cNetSales, cNetSalesPY, "2024/25", "2023/24", uLabel)} deps={`${commodity}_${country}_${esUnit}`} />}
-
-    <SectionTitle>Cumulative net sales</SectionTitle>
-    <InteractiveLegend items={seasonLegend} hidden={new Set()} onToggle={() => {}} />
-    {ready && <ChartBox id={`es_cumns_${commodity}_${country}_${esUnit}`} height={240} renderChart={mkLineChart(cAccumNS, cAccumNSPY, "2024/25", "2023/24", uLabel + " (cumulative)")} deps={`${commodity}_${country}_${esUnit}`} />}
-
-    <SectionTitle>Total commitments</SectionTitle>
-    <InteractiveLegend items={seasonLegend} hidden={new Set()} onToggle={() => {}} />
-    {ready && <ChartBox id={`es_tc_${commodity}_${country}_${esUnit}`} height={240} renderChart={mkLineChart(cTotalComm, cTotalCommPY, "2024/25", "2023/24", uLabel)} deps={`${commodity}_${country}_${esUnit}`} />}
-
-    <h3 style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text-primary)", margin: "32px 0 6px", textTransform: "uppercase", letterSpacing: "0.3px" }}>Next marketing year</h3>
-
-    <SectionTitle>Net sales — weekly (NMY)</SectionTitle>
-    <InteractiveLegend items={seasonLegend} hidden={new Set()} onToggle={() => {}} />
-    {ready && <ChartBox id={`es_nmyns_${commodity}_${country}_${esUnit}`} height={220} renderChart={mkLineChart(cNmyNS, cNmyNSPY, "2025/26", "2024/25", uLabel)} deps={`${commodity}_${country}_${esUnit}`} />}
-
-    <SectionTitle>Cumulative net sales (NMY)</SectionTitle>
-    <InteractiveLegend items={seasonLegend} hidden={new Set()} onToggle={() => {}} />
-    {ready && <ChartBox id={`es_nmycumns_${commodity}_${country}_${esUnit}`} height={240} renderChart={mkLineChart(cNmyAccumNS, cNmyAccumNSPY, "2025/26", "2024/25", uLabel + " (cumulative)")} deps={`${commodity}_${country}_${esUnit}`} />}
-
-    <div style={{ marginTop: 14, fontSize: 10, color: "var(--color-text-tertiary)" }}>
-      Source: USDA/FAS Weekly Export Sales report. Released Thursdays. CMY = current marketing year, NMY = next marketing year. {esUnit === "bu" ? "Converted to bushels: corn & sorghum at 56 lbs/bu, soybeans & wheat at 60 lbs/bu." : esUnit === "st" ? "Converted to short tons (1 MT = 1.10231 ST)." : esUnit === "lbs" ? "Converted to pounds (1 MT = 2,204.62 lbs)." : "All volumes in metric tons."}
+    <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:16,alignItems:"center"}}>
+      {allItems.map(function(item) { var isH = hiddenYrs.has(item.label); return (
+        <button key={item.label} onClick={function(){toggleYr(item.label);}} style={{display:"flex",alignItems:"center",gap:5,padding:"4px 10px",border:"1px solid var(--color-border-secondary)",borderRadius:5,background:isH?"var(--color-background-secondary)":"transparent",cursor:"pointer",opacity:isH?0.3:1,transition:"all 0.15s"}}>
+          <span style={{width:18,height:0,borderTop:"2.5px solid "+item.color,display:"inline-block"}}></span>
+          <span style={{fontSize:12,fontWeight:500,color:"var(--color-text-primary)"}}>{item.label}</span>
+        </button>); })}
     </div>
+
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+      {CHARTS.map(function(ch) { return (<div key={ch.key}>
+        <div style={{fontSize:14,fontWeight:600,color:"var(--color-text-primary)",marginBottom:6}}>{ch.label} <span style={{fontSize:11,fontWeight:400,color:"var(--color-text-tertiary)"}}>({chartUnit})</span></div>
+        {ready && <ChartBox id={"es_"+ch.key+"_"+comm+"_"+range+"_"+country+"_"+myType+"_"+unit} height={240} renderChart={mkChart(ch.data)} deps={"es_"+ch.key+"_"+comm+"_"+range+"_"+country+"_"+myType+"_"+unit+"_"+esLoaded+"_"+hk} />}
+      </div>); })}
+    </div>
+    <div style={{marginTop:14,fontSize:11,color:"var(--color-text-tertiary)"}}>Source: USDA FAS Export Sales Reporting. Marketing years: Corn/Soybeans/Sorghum (Sep–Aug), Wheat (Jun–May). Units: metric tons.</div>
   </div>);
-}
-
-const PAGES = {
-  "export-sales": { title: "USDA Export Sales (Weekly)", component: ExportSalesPage },
-  "export-inspections": { title: "USDA Export Inspections (Weekly)", component: ExportInspectionsPage },
-  "drought": { title: "Commodities in drought", component: DroughtPage },
-  "on-feed": { title: "Cattle on feed", component: CattleOnFeedPage },
-  "cutout": { title: "Boxed beef & pork prices", component: CutoutPage },
-  "slaughter": { title: "Slaughter", component: SlaughterPage },
-  "cold-storage": { title: "Cold storage", component: ColdStoragePage },
-  "hogs-pigs": { title: "Hogs & pigs", component: HogsPigsPage },
-  "ng-storage": { title: "Natural gas storage", component: (p) => <EnergyChartPage {...p} dataKey="ngStorage" /> },
-  "ng-inj-wd": { title: "NG injections / withdrawals", component: NGInjWdPage },
-  "ng-production": { title: "Natural gas production", component: (p) => <EnergyChartPage {...p} dataKey="ngProduction" /> },
-  "ng-demand": { title: "Natural gas demand", component: (p) => <EnergyChartPage {...p} dataKey="ngDemand" /> },
-  "petro-crude-stocks": { title: "Crude oil stocks", component: (p) => <EnergyChartPage {...p} dataKey="crudeStocks" /> },
-  "petro-production": { title: "Crude oil production", component: (p) => <EnergyChartPage {...p} dataKey="crudeProduction" /> },
-  "petro-gasoline": { title: "Gasoline stocks", component: (p) => <EnergyChartPage {...p} dataKey="gasolineStocks" /> },
-  "petro-distillate": { title: "Distillate stocks", component: (p) => <EnergyChartPage {...p} dataKey="distillateStocks" /> },
-  "fx-currencies": { title: "Currencies", component: FXCurrenciesPage },
-  "wasde": { title: "WASDE balance sheets", component: WASDEPage },
-  "crop-progress": { title: "Crop progress & condition", component: CropProgressPage },
-  "ethanol": { title: "Ethanol", component: EthanolPage },
-  "fats-oils": { title: "USDA Oilseed Crushing (Monthly)", component: FatsOilsPage },
-  "cot-summary": { title: "Commitment of Traders (COT) summary", component: COTSummaryPage },
-  "cot-charts": { title: "COT charts", component: COTChartsPage },
-};
-
-function App() {
-  const [active, setActive] = useState(() => {
-    const hash = window.location.hash.slice(1);
-    return hash || "wasde";
-  });
-  useEffect(() => {
-    const onHash = () => { const h = window.location.hash.slice(1); if (h) setActive(h); };
-    window.addEventListener("hashchange", onHash);
-    return () => window.removeEventListener("hashchange", onHash);
-  }, []);
-  useEffect(() => { if (active) window.location.hash = active; }, [active]);
-  const [chartReady, setChartReady] = useState(false);
-  const [navCollapsed, setNavCollapsed] = useState(false);
-  const [openGroups, setOpenGroups] = useState({ grains: true, livestock: true, energy: true, drivers: true, cot: true });
-
-
-  useEffect(() => {
-    // Load Chart.js
-    if (!window.Chart) {
-      const s = document.createElement("script"); s.src = "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"; s.onload = () => {
-        Chart.defaults.scale.ticks.padding = 4;
-        Chart.defaults.scale.grid.drawTicks = false;
-        setChartReady(true);
-      }; document.head.appendChild(s);
-    } else { setChartReady(true); }
-    // D3 loaded via index.html
-  }, []);
-
-  const toggleGroup = id => setOpenGroups(prev => ({ ...prev, [id]: !prev[id] }));
-  const PageComp = PAGES[active]?.component;
-
-  return (
-    <div style={{ display: "flex", height: "100vh", fontFamily: "var(--font-sans)" }}>
-      <div style={{ width: navCollapsed ? 48 : 220, flexShrink: 0, transition: "width 0.2s ease", borderRight: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-secondary)", display: "flex", flexDirection: "column", overflow: "hidden", height: "100vh", position: "sticky", top: 0 }}>
-        <div style={{ padding: navCollapsed ? "16px 8px" : "16px 16px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", gap: 10, minHeight: 56, flexShrink: 0 }}>
-          {!navCollapsed && <div><div style={{ fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)", whiteSpace: "nowrap" }}>Howard's Heuristics</div></div>}
-          <button onClick={() => setNavCollapsed(!navCollapsed)} style={{ marginLeft: navCollapsed ? 0 : "auto", background: "transparent", border: "none", cursor: "pointer", padding: 4, color: "var(--color-text-secondary)", display: "flex" }}>
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">{navCollapsed ? <path d="M6 3l5 5-5 5" /> : <path d="M10 3L5 8l5 5" />}</svg>
-          </button>
-        </div>
-        {!navCollapsed && (
-          <nav style={{ padding: "8px 0", flex: 1, overflowY: "auto", minHeight: 0 }}>
-            {NAV_SECTIONS.map(section => {
-              let afterSubheader = false;
-              return (
-              <div key={section.id} style={{ marginBottom: 4 }}>
-                <button onClick={() => toggleGroup(section.id)} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "8px 16px", background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", fontSize: 12, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.4px" }}>
-                  {section.icon}<span style={{ flex: 1, textAlign: "left" }}>{section.label}</span>
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ transform: openGroups[section.id] ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s" }}><path d="M4.5 2.5l3.5 3.5-3.5 3.5" /></svg>
-                </button>
-                {openGroups[section.id] && <div>{section.children.map((child, ci) => {
-                  if (child.subheader) {
-                    afterSubheader = true;
-                    return <div key={`sub-${ci}`} style={{ padding: "10px 16px 3px 40px", fontSize: 10, fontWeight: 600, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>{child.subheader}</div>;
-                  }
-                  const isA = active === child.id;
-                  const leftPad = afterSubheader ? 54 : 40;
-                  return <button key={child.id} onClick={() => setActive(child.id)} style={{ display: "block", width: "100%", textAlign: "left", padding: `7px 16px 7px ${leftPad}px`, background: isA ? "var(--color-background-primary)" : "transparent", border: "none", borderLeft: isA ? "2.5px solid var(--color-text-primary)" : "2.5px solid transparent", cursor: "pointer", color: isA ? "var(--color-text-primary)" : "var(--color-text-secondary)", fontSize: 13, fontWeight: isA ? 500 : 400, transition: "all 0.1s" }}>{child.label}</button>;
-                })}</div>}
-              </div>
-            );})}
-          </nav>
-        )}
-        {navCollapsed && <nav style={{ padding: "12px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>{NAV_SECTIONS.map(s => <div key={s.id} title={s.label} style={{ padding: 8, borderRadius: "var(--border-radius-md)", cursor: "pointer", color: "var(--color-text-secondary)" }} onClick={() => { setNavCollapsed(false); setOpenGroups(p => ({ ...p, [s.id]: true })); }}>{s.icon}</div>)}</nav>}
-        {!navCollapsed && <div style={{ padding: "12px 16px", borderTop: "0.5px solid var(--color-border-tertiary)", fontSize: 10, color: "var(--color-text-tertiary)", flexShrink: 0 }}>Source: USDA WASDE, ERS,<br/>NASS, AMS, EIA reports</div>}
-      </div>
-      <div style={{ flex: 1, minWidth: 0, padding: "20px 28px 40px", overflowY: "auto", height: "100vh" }}>
-        <div style={{ maxWidth: 1400 }}>
-          <div style={{ marginBottom: 20 }}>
-            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-              <div>
-                <h1 style={{ fontSize: 20, fontWeight: 500, color: "var(--color-text-primary)", margin: "0 0 2px" }}>{PAGES[active]?.title}</h1>
-                
-              </div>
-
-            </div>
-          </div>
-          {PageComp && <PageComp ready={chartReady} />}
-        </div>
-      </div>
-    </div>
-  );
 }

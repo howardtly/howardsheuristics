@@ -1,7 +1,7 @@
 name: Fetch Ethanol (Weekly)
 on:
   schedule:
-    - cron: '0 18 * * 3'  # Wednesdays 6PM UTC (after EIA publishes)
+    - cron: '30 14 * * 3'  # Wednesdays 10:30 AM ET (EIA release time)
   workflow_dispatch:
 
 permissions:

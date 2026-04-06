@@ -1,8 +1,7 @@
 name: Fetch COT Data (Weekly)
-
 on:
   schedule:
-    - cron: '0 22 * * 5'
+    - cron: '30 19 * * 5'  # Fridays 3:30 PM ET (CFTC release time)
   workflow_dispatch:
 
 permissions:
@@ -14,15 +13,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
       - name: Fetch COT data
         run: python commodity-markets-deploy_2/scripts/fetch_cot.py
-
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"

@@ -1,7 +1,9 @@
 name: Fetch Oilseed Crushing (Monthly)
 on:
   schedule:
-    - cron: '0 20 2 * *'  # 2nd of each month, 8PM UTC
+    # Runs 1st, 2nd, and 3rd at 3:00 PM ET = 20:00 UTC
+    # Script has business-day logic: only fetches on 1st business day of month
+    - cron: '0 20 1-3 * *'
   workflow_dispatch:
 
 permissions:

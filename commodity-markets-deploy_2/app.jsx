@@ -5328,6 +5328,15 @@ function ExportSalesPage({ ready }) {
   };
   var myLabel = function(yr) { return yr + "/" + String(yr + 1).slice(2); };
 
+  // Current marketing year based on date (not data)
+  var now = new Date();
+  var actualCMY = now.getMonth() >= (cfg.startMonth - 1) ? now.getFullYear() : now.getFullYear() - 1;
+  // For CMY view, latest year = actualCMY. For NMY view, latest year = actualCMY + 1
+  var isCMY = myType === "cmy";
+  var curMY = isCMY ? actualCMY : actualCMY + 1;
+  var rangeN = parseInt(range);
+  var startMY = curMY - rangeN;
+
   // Get raw weekly points for selected commodity + country
   var getRawPts = function() {
     if (!esData || !esData[comm]) return [];
@@ -5338,35 +5347,35 @@ function ExportSalesPage({ ready }) {
   };
   var rawPts = getRawPts();
 
-  // Build marketing year buckets for a given metric
-  var buildByMY = function(pts, metricKey) {
+  // Build marketing year buckets, skip first data point of each MY to avoid rollover artifacts
+  var buildByMY = function(pts, metricKey, skipFirst) {
     var byMY = {};
     pts.forEach(function(pt) {
       var my = pt.my;
+      if (my < startMY || my > curMY) return;
       var day = dateToMktDay(pt.d);
       if (!byMY[my]) byMY[my] = [];
       byMY[my].push({ x: day, y: chartConv(pt[metricKey]) });
     });
-    Object.keys(byMY).forEach(function(my) { byMY[my].sort(function(a, b) { return a.x - b.x; }); });
+    // Sort and optionally skip first point per MY
+    Object.keys(byMY).forEach(function(my) {
+      byMY[my].sort(function(a, b) { return a.x - b.x; });
+      if (skipFirst && byMY[my].length > 1) {
+        byMY[my] = byMY[my].slice(1);
+      }
+    });
     return byMY;
   };
 
-  // Select metric keys based on CMY/NMY
-  var isCMY = myType === "cmy";
   var nsKey = isCMY ? "ns" : "nns";
   var osKey = isCMY ? "os" : "nos";
 
-  var nsByMY = buildByMY(rawPts, nsKey);
-  var osByMY = buildByMY(rawPts, osKey);
-  var wsByMY = buildByMY(rawPts, "we");
-  var aeByMY = buildByMY(rawPts, "ae");
-  var tcByMY = buildByMY(rawPts, "tc");
-
-  // Current MY and range
-  var allMYs = rawPts.map(function(p) { return p.my; });
-  var curMY = allMYs.length > 0 ? Math.max.apply(null, allMYs) : 2026;
-  var rangeN = parseInt(range);
-  var startMY = curMY - rangeN;
+  // Level metrics (outstanding, accumulated, total commitments) skip first point to avoid rollover jumps
+  var nsByMY = buildByMY(rawPts, nsKey, true);
+  var osByMY = buildByMY(rawPts, osKey, true);
+  var wsByMY = buildByMY(rawPts, "we", true);
+  var aeByMY = buildByMY(rawPts, "ae", true);
+  var tcByMY = buildByMY(rawPts, "tc", true);
 
   var yrColors = ["#A32D2D","#D85A30","#E8A735","#639922","#1D9E75","#378ADD","#534AB7","#8B5CF6","#EC4899","#6B7280"];
   var getColor = function(my) { if (my === curMY) return "#333"; var dist = curMY - my; if (dist === 1) return "#1D9E75"; if (dist === 2) return "#639922"; if (dist === 3) return "#E8A735"; if (dist === 4) return "#D85A30"; if (dist === 5) return "#A32D2D"; return yrColors[(dist - 1) % yrColors.length]; };
@@ -5376,19 +5385,35 @@ function ExportSalesPage({ ready }) {
     for (var y = startMY; y <= curMY; y++) { if (byMY[y]) items.push({ label: myLabel(y), my: y, color: getColor(y) }); }
     return items;
   };
-  var allItems = buildItems(wsByMY);
+  var allItems = buildItems(nsByMY);
   var hk = Array.from(hiddenYrs).sort().join(",");
 
-  // Country dropdown options
+  // Country dropdown: only include countries with data for selected commodity
   var countryOpts = [{c:"ALL",n:"All Countries"}];
-  if (esData && esData.countries) {
-    esData.countries.forEach(function(ct) { countryOpts.push({c: String(ct.c), n: ct.n}); });
+  if (esData && esData[comm] && esData[comm].byCountry) {
+    var bc = esData[comm].byCountry;
+    var countryMap = {};
+    if (esData.countries) {
+      esData.countries.forEach(function(ct) { countryMap[String(ct.c)] = ct.n; });
+    }
+    var codes = Object.keys(bc).filter(function(cc) { return bc[cc] && bc[cc].length > 0; });
+    codes.sort(function(a, b) {
+      var na = countryMap[a] || a;
+      var nb = countryMap[b] || b;
+      return na < nb ? -1 : na > nb ? 1 : 0;
+    });
+    codes.forEach(function(cc) {
+      var name = countryMap[cc] || ("Code " + cc);
+      countryOpts.push({c: cc, n: name});
+    });
   }
 
   // Header card info
   var getCardInfo = function(metricKey) {
     if (!rawPts || !rawPts.length) return { cur: null, prevWk: null, lastYr: null, date: null };
-    var sorted = rawPts.slice().sort(function(a, b) { return a.d < b.d ? 1 : -1; });
+    var filtered = rawPts.filter(function(p) { return p.my >= startMY && p.my <= curMY; });
+    if (!filtered.length) return { cur: null, prevWk: null, lastYr: null, date: null };
+    var sorted = filtered.slice().sort(function(a, b) { return a.d < b.d ? 1 : -1; });
     var latest = sorted[0]; var prev = sorted.length > 1 ? sorted[1] : null;
     var latestDate = new Date(latest.d);
     var targetDate = new Date(latestDate); targetDate.setFullYear(targetDate.getFullYear() - 1);
@@ -5411,7 +5436,7 @@ function ExportSalesPage({ ready }) {
     var diffLine = function(lbl, comp) {
       if (info.cur == null || comp == null) return null;
       var diff = isBu ? Math.round((info.cur - comp) * 10) / 10 : Math.round(info.cur - comp);
-      var pctChg = Math.round((info.cur - comp) / Math.abs(comp) * 1000) / 10;
+      var pctChg = comp !== 0 ? Math.round((info.cur - comp) / Math.abs(comp) * 1000) / 10 : 0;
       var col = diff > 0 ? "#639922" : diff < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
       return (<div style={{display:"flex",justifyContent:"space-between",fontSize:10.5,padding:"1px 0"}}>
         <span style={{color:"var(--color-text-tertiary)"}}>{lbl}</span>
@@ -5429,7 +5454,6 @@ function ExportSalesPage({ ready }) {
     </div>);
   };
 
-  // Chart builder (seasonal overlay)
   var mktBounds = [0,30,61,91,122,153,181,212,242,273,303,334];
   var mktMids = [15,45,76,106,137,167,196,227,257,288,318,349];
 
@@ -5476,19 +5500,24 @@ function ExportSalesPage({ ready }) {
   var selSt = {padding:"6px 24px 6px 10px",fontSize:13,fontWeight:500,border:"1px solid var(--color-border-secondary)",borderRadius:6,background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontFamily:"inherit",cursor:"pointer",appearance:"none",backgroundImage:chevSvg,backgroundRepeat:"no-repeat",backgroundPosition:"right 6px center"};
   var modeSt = function(a) { return {padding:"6px 14px",fontSize:12,fontWeight:a?600:400,border:"1px solid "+(a?"#2563EB":"var(--color-border-secondary)"),borderRadius:5,cursor:"pointer",background:a?"#2563EB":"transparent",color:a?"#fff":"var(--color-text-secondary)",transition:"all 0.15s"}; };
 
-  var CHARTS = [
-    { key: "ns", label: (isCMY ? "CMY" : "NMY") + " Net Sales", data: nsByMY },
-    { key: "os", label: "Outstanding Sales" + (isCMY ? "" : " (NMY)"), data: osByMY },
+  var CMY_CHARTS = [
+    { key: "ns", label: "Net Sales", data: nsByMY },
+    { key: "os", label: "Outstanding Sales", data: osByMY },
     { key: "we", label: "Weekly Exports", data: wsByMY },
     { key: "ae", label: "Accumulated Exports", data: aeByMY },
     { key: "tc", label: "Total Commitments", data: tcByMY },
   ];
+  var NMY_CHARTS = [
+    { key: "ns", label: "Net Sales (NMY)", data: nsByMY },
+    { key: "os", label: "Outstanding Sales (NMY)", data: osByMY },
+  ];
+  var CHARTS = isCMY ? CMY_CHARTS : NMY_CHARTS;
 
   return (<div>
     <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,flexWrap:"wrap"}}>
       <div style={{display:"flex",alignItems:"center",gap:6}}>
         <span style={{fontSize:11,fontWeight:600,color:"var(--color-text-secondary)",textTransform:"uppercase"}}>Commodity</span>
-        <select value={comm} onChange={function(e){setComm(e.target.value);}} style={selSt}>
+        <select value={comm} onChange={function(e){setComm(e.target.value); setCountry("ALL");}} style={selSt}>
           {COMM_OPTS.map(function(t) { return <option key={t.id} value={t.id}>{t.label}</option>; })}
         </select>
       </div>
@@ -5518,8 +5547,8 @@ function ExportSalesPage({ ready }) {
     </div>
 
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
-      {statCard(isCMY ? "Net Sales (CMY)" : "Net Sales (NMY)", nsInfo, cardUnit)}
-      {statCard("Weekly Exports", weInfo, cardUnit)}
+      {statCard(isCMY ? "Net Sales" : "Net Sales (NMY)", nsInfo, cardUnit)}
+      {isCMY && statCard("Weekly Exports", weInfo, cardUnit)}
     </div>
 
     <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:16,alignItems:"center"}}>
@@ -5536,9 +5565,10 @@ function ExportSalesPage({ ready }) {
         {ready && <ChartBox id={"es_"+ch.key+"_"+comm+"_"+range+"_"+country+"_"+myType+"_"+unit} height={240} renderChart={mkChart(ch.data)} deps={"es_"+ch.key+"_"+comm+"_"+range+"_"+country+"_"+myType+"_"+unit+"_"+esLoaded+"_"+hk} />}
       </div>); })}
     </div>
-    <div style={{marginTop:14,fontSize:11,color:"var(--color-text-tertiary)"}}>Source: USDA FAS Export Sales Reporting. Marketing years: Corn/Soybeans/Sorghum (Sep–Aug), Wheat (Jun–May). Units: metric tons.</div>
+    <div style={{marginTop:14,fontSize:11,color:"var(--color-text-tertiary)"}}>Source: USDA FAS Export Sales Reporting. Marketing years: Corn/Soybeans/Sorghum (Sep–Aug), Wheat (Jun–May). CMY = current marketing year, NMY = next marketing year.</div>
   </div>);
 }
+
 
 const PAGES = {
   "wasde": { title: "WASDE balance sheets", component: WASDEPage },

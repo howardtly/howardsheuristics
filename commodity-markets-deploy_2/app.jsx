@@ -2435,7 +2435,7 @@ function CropProgressPage({ ready }) {
   var selState = _st[0], setSelState = _st[1];
   var _hy = useState(new Set());
   var hiddenYrs = _hy[0], setHiddenYrs = _hy[1];
-  var _mc = useState("winter_wheat");
+  var _mc = useState("corn");
   var mapCrop = _mc[0], setMapCrop = _mc[1];
   var _ms = useState("planted");
   var mapStage = _ms[0], setMapStage = _ms[1];
@@ -2595,21 +2595,21 @@ function CropProgressPage({ ready }) {
       // State abbreviation (skip sidebar states)
       svg.selectAll(".sl").data(feat.features).enter().append("text").attr("class","sl")
         .attr("transform",function(d){var ct=geoPath.centroid(d);if(isNaN(ct[0]))return"translate(-999,-999)";var ab=FIPS[String(d.id).padStart(2,"0")];if(sidebarSet[ab])return"translate(-999,-999)";var n2=nudge[ab]||[0,0];return"translate("+(ct[0]+n2[0])+","+(ct[1]+n2[1]-3)+")";})
-        .attr("text-anchor","middle").attr("font-size","11").attr("font-weight","700")
+        .attr("text-anchor","middle").attr("font-size","12").attr("font-weight","700")
         .attr("fill",function(d){var ab=FIPS[String(d.id).padStart(2,"0")];if(!ab||vals[ab]==null)return"#ccc";return isDark(getColor(ab))?"#fff":"#222";})
         .text(function(d){var ab=FIPS[String(d.id).padStart(2,"0")];return ab&&vals[ab]!=null?ab:"";});
 
       // Value + change inline (skip sidebar and stacked states show value only)
       svg.selectAll(".vl").data(feat.features).enter().append("text").attr("class","vl")
         .attr("transform",function(d){var ct=geoPath.centroid(d);if(isNaN(ct[0]))return"translate(-999,-999)";var ab=FIPS[String(d.id).padStart(2,"0")];if(sidebarSet[ab])return"translate(-999,-999)";var n2=nudge[ab]||[0,0];return"translate("+(ct[0]+n2[0])+","+(ct[1]+n2[1]+9)+")";})
-        .attr("text-anchor","middle").attr("font-size","9.5")
+        .attr("text-anchor","middle").attr("font-size","10.5")
         .attr("fill",function(d){var ab=FIPS[String(d.id).padStart(2,"0")];if(!ab||vals[ab]==null)return"#ccc";return isDark(getColor(ab))?"#eee":"#333";})
         .text(function(d){var ab=FIPS[String(d.id).padStart(2,"0")];if(!ab||vals[ab]==null)return"";var s3=vals[ab]+"%";var cg=chgs[ab];if(!stackSet[ab]&&cg!=null&&cg!==0)s3+=" ("+(cg>0?"+":"")+cg+")";return s3;});
 
       // Stacked change line (only for stacked states)
       svg.selectAll(".cl").data(feat.features).enter().append("text").attr("class","cl")
         .attr("transform",function(d){var ct=geoPath.centroid(d);if(isNaN(ct[0]))return"translate(-999,-999)";var ab=FIPS[String(d.id).padStart(2,"0")];if(!stackSet[ab])return"translate(-999,-999)";var n2=nudge[ab]||[0,0];return"translate("+(ct[0]+n2[0])+","+(ct[1]+n2[1]+19)+")";})
-        .attr("text-anchor","middle").attr("font-size","8")
+        .attr("text-anchor","middle").attr("font-size","9")
         .attr("fill",function(d){var ab=FIPS[String(d.id).padStart(2,"0")];if(!ab||!stackSet[ab]||chgs[ab]==null||chgs[ab]===0)return"transparent";return isDark(getColor(ab))?"#ddd":"#555";})
         .text(function(d){var ab=FIPS[String(d.id).padStart(2,"0")];if(!ab||!stackSet[ab]||chgs[ab]==null||chgs[ab]===0)return"";return"("+(chgs[ab]>0?"+":"")+chgs[ab]+")";});
 
@@ -2623,7 +2623,7 @@ function CropProgressPage({ ready }) {
           var txt = ab + "  " + vals[ab] + "%";
           var cg = chgs[ab];
           if (cg != null && cg !== 0) txt += " (" + (cg > 0 ? "+" : "") + cg + ")";
-          sbG.append("text").attr("x",14).attr("y",y).attr("font-size","9.5").attr("fill","#333").attr("font-weight","500").text(txt);
+          sbG.append("text").attr("x",14).attr("y",y).attr("font-size","10.5").attr("fill","#333").attr("font-weight","500").text(txt);
         });
       }
 
@@ -3741,7 +3741,7 @@ function COTSummaryPage() {
                   <td style={{ ...tdNum, color: netColor(d.swap.net[li]) }}>{fmt(d.swap.net[li])}</td>
                   <td style={{ ...tdNum, color: chgColor(d.swap.chg) }}>{fmtChg(d.swap.chg)}</td>
                   <td style={{ padding: 0, border: "none" }}></td>
-                  <td style={{ ...tdNum, color: netColor(d.managed.net[li]), fontWeight: 500, background: "rgba(163,45,45,0.02)" }}>{fmt(d.managed.net[li])}</td>
+                  <td style={{ ...tdNum, color: netColor(d.managed.net[li]), fontWeight: (d.managed.net[li] >= d.managed.recLong || d.managed.net[li] <= d.managed.recShort) ? 700 : 500, background: "rgba(163,45,45,0.02)", outline: d.managed.net[li] >= d.managed.recLong ? "2px solid #639922" : d.managed.net[li] <= d.managed.recShort ? "2px solid #A32D2D" : "none", outlineOffset: "-2px" }}>{fmt(d.managed.net[li])}</td>
                   <td style={{ ...tdNum, color: chgColor(d.managed.chg), background: "rgba(163,45,45,0.02)" }}>{fmtChg(d.managed.chg)}</td>
                   <td style={{ ...tdNum, color: "var(--color-text-secondary)", background: "rgba(163,45,45,0.02)" }}>{d.managed.recLong.toLocaleString()}</td>
                   <td style={{ ...tdNum, color: "var(--color-text-secondary)", background: "rgba(163,45,45,0.02)" }}>({Math.abs(d.managed.recShort).toLocaleString()})</td>
@@ -5300,10 +5300,10 @@ function ExportSalesPage({ ready }) {
   var isBu = unit === "bu";
   var conv = function(mt) {
     if (mt == null) return null;
-    if (isBu) return Math.round(mt * BU_PER_MT[comm] / 1000000 * 10) / 10;
+    if (isBu) return Math.round(mt * BU_PER_MT[comm]);
     return Math.round(mt);
   };
-  var cardUnit = isBu ? "M bushels" : "MT";
+  var cardUnit = isBu ? "bushels" : "MT";
   var chartUnit = isBu ? "M bushels" : "1,000 MT";
   var chartConv = function(mt) {
     if (mt == null) return null;
@@ -5439,15 +5439,15 @@ function ExportSalesPage({ ready }) {
   var weInfo = getCardInfo("we");
 
   var statCard = function(label, info, unitLabel) {
-    var fmtVal = function(v) { return v == null ? "—" : isBu ? v.toFixed(1) : v.toLocaleString(); };
+    var fmtVal = function(v) { return v == null ? "—" : v.toLocaleString(); };
     var diffLine = function(lbl, comp) {
       if (info.cur == null || comp == null) return null;
-      var diff = isBu ? Math.round((info.cur - comp) * 10) / 10 : Math.round(info.cur - comp);
+      var diff = Math.round(info.cur - comp);
       var pctChg = comp !== 0 ? Math.round((info.cur - comp) / Math.abs(comp) * 1000) / 10 : 0;
       var col = diff > 0 ? "#639922" : diff < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
       return (<div style={{display:"flex",justifyContent:"space-between",fontSize:10.5,padding:"1px 0"}}>
         <span style={{color:"var(--color-text-tertiary)"}}>{lbl}</span>
-        <span style={{display:"flex",gap:6,alignItems:"baseline",justifyContent:"flex-end"}}><span style={{color:"var(--color-text-secondary)",textAlign:"right",flex:"none"}}>{fmtVal(comp)}</span><span style={{color:col,fontWeight:500,textAlign:"right",minWidth:76,flex:"none"}}>({diff > 0 ? "+" : ""}{isBu ? diff.toFixed(1) : diff.toLocaleString()})</span><span style={{color:col,fontWeight:500,textAlign:"right",minWidth:52,flex:"none"}}>({pctChg > 0 ? "+" : ""}{pctChg.toFixed(1)}%)</span></span>
+        <span style={{display:"flex",gap:6,alignItems:"baseline",justifyContent:"flex-end"}}><span style={{color:"var(--color-text-secondary)",textAlign:"right",flex:"none"}}>{fmtVal(comp)}</span><span style={{color:col,fontWeight:500,textAlign:"right",minWidth:76,flex:"none"}}>({diff > 0 ? "+" : ""}{diff.toLocaleString()})</span><span style={{color:col,fontWeight:500,textAlign:"right",minWidth:52,flex:"none"}}>({pctChg > 0 ? "+" : ""}{pctChg.toFixed(1)}%)</span></span>
       </div>);
     };
     return (<div style={{background:"var(--color-background-secondary)",borderRadius:"var(--border-radius-md)",padding:"12px 14px",minWidth:0}}>

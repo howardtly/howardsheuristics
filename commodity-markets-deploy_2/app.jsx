@@ -5326,11 +5326,11 @@ function ExportSalesPage({ ready }) {
     var myStart = m >= (cfg.startMonth - 1) ? new Date(y, cfg.startMonth - 1, 1) : new Date(y - 1, cfg.startMonth - 1, 1);
     return Math.max(0, Math.min(365, Math.round((dt - myStart) / 86400000)));
   };
-  var myLabel = function(yr) { return yr + "/" + String(yr + 1).slice(2); };
+  var myLabel = function(yr) { return (yr - 1) + "/" + String(yr).slice(2); };
 
   // Current marketing year based on date (not data)
   var now = new Date();
-  var actualCMY = now.getMonth() >= (cfg.startMonth - 1) ? now.getFullYear() : now.getFullYear() - 1;
+  var actualCMY = now.getMonth() >= (cfg.startMonth - 1) ? now.getFullYear() + 1 : now.getFullYear();
   // For CMY view, latest year = actualCMY. For NMY view, latest year = actualCMY + 1
   var isCMY = myType === "cmy";
   var curMY = isCMY ? actualCMY : actualCMY + 1;
@@ -5396,7 +5396,14 @@ function ExportSalesPage({ ready }) {
     if (esData.countries) {
       esData.countries.forEach(function(ct) { countryMap[String(ct.c)] = ct.n; });
     }
-    var codes = Object.keys(bc).filter(function(cc) { return bc[cc] && bc[cc].length > 0; });
+    var codes = Object.keys(bc).filter(function(cc) {
+      if (!bc[cc] || !bc[cc].length) return false;
+      if (!isCMY) {
+        // NMY: only include if country had NMY data in at least prior year
+        return bc[cc].some(function(pt) { return (pt.nns !== 0 || pt.nos !== 0) && pt.my >= curMY - 1; });
+      }
+      return true;
+    });
     codes.sort(function(a, b) {
       var na = countryMap[a] || a;
       var nb = countryMap[b] || b;
@@ -5549,6 +5556,7 @@ function ExportSalesPage({ ready }) {
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
       {statCard(isCMY ? "Net Sales" : "Net Sales (NMY)", nsInfo, cardUnit)}
       {isCMY && statCard("Weekly Exports", weInfo, cardUnit)}
+      {!isCMY && statCard("Outstanding Sales (NMY)", getCardInfo(osKey), cardUnit)}
     </div>
 
     <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:16,alignItems:"center"}}>

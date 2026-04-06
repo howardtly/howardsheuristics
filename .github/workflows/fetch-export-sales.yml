@@ -1,7 +1,7 @@
 name: Fetch Export Sales (Weekly)
 on:
   schedule:
-    - cron: '0 16 * * 4'  # Thursdays 4PM UTC (after USDA publishes ~8:30AM ET)
+    - cron: '30 12 * * 4'  # Thursdays 8:30 AM ET (USDA release time)
   workflow_dispatch:
 
 permissions:

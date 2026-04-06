@@ -16,6 +16,37 @@ OUTPUT_DIR = "commodity-markets-deploy_2/data"
 BASE_URL = "https://quickstats.nass.usda.gov/api/api_GET/"
 START_YEAR = 2014
 
+
+def is_release_day():
+    """
+    USDA releases Fats & Oils on the 1st business day of the month.
+    - 1st is Mon-Fri → release on 1st
+    - 1st is Saturday → release on Monday the 3rd
+    - 1st is Sunday → release on Monday the 2nd
+    Returns True if today is the expected release day.
+    Skips check for manual workflow_dispatch triggers.
+    """
+    if os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch":
+        print("  Manual trigger — skipping release day check")
+        return True
+
+    today = datetime.now(timezone.utc).date()
+    first = today.replace(day=1)
+    weekday = first.weekday()  # 0=Mon, 5=Sat, 6=Sun
+
+    if weekday <= 4:      # Mon-Fri: release on 1st
+        release_day = first
+    elif weekday == 5:    # Sat: release on Monday the 3rd
+        release_day = first.replace(day=3)
+    else:                 # Sun: release on Monday the 2nd
+        release_day = first.replace(day=2)
+
+    print(f"  1st of month: {first} ({['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][weekday]})")
+    print(f"  Expected release day: {release_day}")
+    print(f"  Today: {today}")
+
+    return today == release_day
+
 MONTH_MAP = {"JAN": "01", "FEB": "02", "MAR": "03", "APR": "04",
              "MAY": "05", "JUN": "06", "JUL": "07", "AUG": "08",
              "SEP": "09", "OCT": "10", "NOV": "11", "DEC": "12"}
@@ -79,6 +110,10 @@ def main():
     if not API_KEY:
         print("ERROR: NASS_API_KEY not set")
         sys.exit(1)
+
+    if not is_release_day():
+        print("  Not a release day — skipping fetch")
+        sys.exit(0)
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     output_file = os.path.join(OUTPUT_DIR, "oilseed_crushing.json")

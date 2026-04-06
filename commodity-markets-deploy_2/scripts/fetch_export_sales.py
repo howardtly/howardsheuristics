@@ -27,7 +27,7 @@ COMMODITIES = {
 
 # How many MYs back to fetch
 TOTAL_HISTORY = 11  # current + 10 prior
-COUNTRY_HISTORY = 2  # store per-country data for recent MYs only
+COUNTRY_HISTORY = 11  # store per-country data for all fetched MYs
 
 
 def api_get(url):
@@ -82,7 +82,7 @@ def fetch_commodity(name, code, current_my):
                 w["nos"] += row.get("nextMYOutstandingSales", 0) or 0
 
                 # Store per-country data for recent MYs
-                if offset < COUNTRY_HISTORY:
+                if offset < COUNTRY_HISTORY:  # now matches TOTAL_HISTORY
                     cc = str(row["countryCode"])
                     if cc not in by_country:
                         by_country[cc] = []

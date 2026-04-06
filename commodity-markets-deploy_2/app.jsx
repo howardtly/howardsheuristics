@@ -5540,6 +5540,7 @@ function ExportSalesPage({ ready }) {
   </div>);
 }
 
+const PAGES = {
   "wasde": { title: "WASDE balance sheets", component: WASDEPage },
   "crop-progress": { title: "Crop progress & condition", component: CropProgressPage },
   "ethanol": { title: "Ethanol", component: EthanolPage },
@@ -5554,14 +5555,14 @@ function ExportSalesPage({ ready }) {
   "slaughter": { title: "Slaughter", component: SlaughterPage },
   "cold-storage": { title: "Cold storage", component: ColdStoragePage },
   "hogs-pigs": { title: "Hogs & pigs", component: HogsPigsPage },
-  "ng-storage": { title: "Natural gas storage", component: EnergyChartPage },
+  "ng-storage": { title: "Natural gas storage", component: (p) => <EnergyChartPage {...p} dataKey="ngStorage" /> },
   "ng-inj-wd": { title: "Injections / withdrawals", component: NGInjWdPage },
-  "ng-production": { title: "Natural gas production", component: EnergyChartPage },
-  "ng-demand": { title: "Natural gas demand", component: EnergyChartPage },
-  "crude-stocks": { title: "Crude oil stocks", component: EnergyChartPage },
-  "crude-production": { title: "Crude oil production", component: EnergyChartPage },
-  "gasoline-stocks": { title: "Gasoline stocks", component: EnergyChartPage },
-  "distillate-stocks": { title: "Distillate stocks", component: EnergyChartPage },
+  "ng-production": { title: "Natural gas production", component: (p) => <EnergyChartPage {...p} dataKey="ngProduction" /> },
+  "ng-demand": { title: "Natural gas demand", component: (p) => <EnergyChartPage {...p} dataKey="ngDemand" /> },
+  "petro-crude-stocks": { title: "Crude oil stocks", component: (p) => <EnergyChartPage {...p} dataKey="crudeStocks" /> },
+  "petro-production": { title: "Crude oil production", component: (p) => <EnergyChartPage {...p} dataKey="crudeProduction" /> },
+  "petro-gasoline": { title: "Gasoline stocks", component: (p) => <EnergyChartPage {...p} dataKey="gasolineStocks" /> },
+  "petro-distillate": { title: "Distillate stocks", component: (p) => <EnergyChartPage {...p} dataKey="distillateStocks" /> },
   "fx-currencies": { title: "Currencies", component: FXCurrenciesPage },
 };
 

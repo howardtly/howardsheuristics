@@ -2533,20 +2533,19 @@ function CropProgressPage({ ready }) {
         var usingPriorYear = (s2[String(curYear)]||[]).length === 0;
         var isStale = usingPriorYear ? (lastPt.w < 30) : (nowWk - lastPt.w > 8);
         if(isStale) return;
-        // Find point closest to current calendar week
-        var closestPt = pts[0]; var closestDiff = Math.abs(pts[0].w - nowWk);
-        var prevPt = null;
-        for (var pi = 1; pi < pts.length; pi++) {
-          var diff2 = Math.abs(pts[pi].w - nowWk);
-          if (diff2 < closestDiff) { closestDiff = diff2; closestPt = pts[pi]; }
+        var lastPt;
+        if (isWWCondMap) {
+          // Winter wheat condition: pick point closest to current week
+          var best = pts[0]; var bestD = Math.abs(pts[0].w - nowWk);
+          for (var pi = 1; pi < pts.length; pi++) { var dd = Math.abs(pts[pi].w - nowWk); if (dd < bestD) { bestD = dd; best = pts[pi]; } }
+          lastPt = best;
+        } else {
+          lastPt = pts[pts.length - 1];
         }
-        // Find previous point (closest to closestPt.w but before it, or next closest to nowWk)
-        var others2 = pts.filter(function(p) { return p !== closestPt; });
-        if (others2.length > 0) {
-          others2.sort(function(a,b) { return Math.abs(a.w - nowWk) - Math.abs(b.w - nowWk); });
-          prevPt = others2[0];
-        }
-        vals[st]=closestPt.v;if(!latestWk)latestWk=closestPt.w;if(prevPt)chgs[st]=closestPt.v-prevPt.v;}});}
+        vals[st]=lastPt.v;if(!latestWk)latestWk=lastPt.w;if(pts.length>1){
+          var mapPrev = isWWCondMap ? pts.filter(function(p){return p!==lastPt;}).sort(function(a,b){return Math.abs(a.w-nowWk)-Math.abs(b.w-nowWk);})[0] : pts[pts.length-2];
+          if(mapPrev)chgs[st]=lastPt.v-mapPrev.v;
+        }}});}
       var vArr=Object.values(vals);
       if (vArr.length === 0) { el.innerHTML="<p style='color:#999;text-align:center;padding:40px'>No state-level data for this selection.</p>"; return; }
       var cMax=Math.max.apply(null,vArr);
@@ -2656,13 +2655,18 @@ function CropProgressPage({ ready }) {
         usCurPts = usStageData[String(curYear - 1)] || [];
       }
       if (usCurPts.length > 0) {
-        // Pick point closest to current week
-        var usNowWk = Math.max(1, Math.min(52, Math.ceil(Math.floor((Date.now() - new Date(curYear,0,1).getTime()) / 86400000) / 7)));
-        var usSorted = usCurPts.slice().sort(function(a,b) { return Math.abs(a.w - usNowWk) - Math.abs(b.w - usNowWk); });
-        var usLast = usSorted[0];
-        var usOthers = usCurPts.filter(function(p) { return p !== usLast; });
-        usOthers.sort(function(a,b) { return Math.abs(a.w - usNowWk) - Math.abs(b.w - usNowWk); });
-        var usChg = usOthers.length > 0 ? usLast.v - usOthers[0].v : null;
+        var usLast, usChg;
+        if (isWWCondMap) {
+          var usNowWk = Math.max(1, Math.min(52, Math.ceil(Math.floor((Date.now() - new Date(curYear,0,1).getTime()) / 86400000) / 7)));
+          var usSorted = usCurPts.slice().sort(function(a,b) { return Math.abs(a.w - usNowWk) - Math.abs(b.w - usNowWk); });
+          usLast = usSorted[0];
+          var usOthers = usCurPts.filter(function(p) { return p !== usLast; });
+          usOthers.sort(function(a,b) { return Math.abs(a.w - usNowWk) - Math.abs(b.w - usNowWk); });
+          usChg = usOthers.length > 0 ? usLast.v - usOthers[0].v : null;
+        } else {
+          usLast = usCurPts[usCurPts.length - 1];
+          usChg = usCurPts.length > 1 ? usLast.v - usCurPts[usCurPts.length - 2].v : null;
+        }
         var usG = svg.append("g").attr("transform", "translate(870,430)");
         usG.append("text").attr("x", 0).attr("y", 0).attr("font-size", "13").attr("font-weight", "700").attr("fill", "#333").text("U.S.: " + usLast.v + "%");
         if (usChg != null && usChg !== 0) {
@@ -2676,34 +2680,28 @@ function CropProgressPage({ ready }) {
   }, [tab, mapCrop, mapStage, cpLoaded]);
 
   // Get latest info for a stage
-  var getLatest = function(stageObj, fallbackPriorYear) {
+  var getLatest = function(stageObj, useClosestWeek) {
     if (!stageObj) return {cur:null,prev:null,avg:null,wk:null,prevWk:null};
     var sd=stageObj[selState]||stageObj["US"]||{};
     var cp2=sd[String(curYear)]||[];
-    // For data with mixed marketing-year weeks (e.g. winter wheat condition
-    // where fall wk46-47 and spring wk13-14 both appear under same year),
-    // find the point closest to current calendar week
-    var nowDoy2 = Math.floor((Date.now() - new Date(curYear,0,1).getTime()) / 86400000);
-    var nowWk2 = Math.max(1, Math.min(52, Math.ceil(nowDoy2 / 7)));
     var latest=null,secondLatest=null;
     if(cp2.length>0){
-      // Sort by proximity to current week (closest first)
-      var sorted2 = cp2.slice().sort(function(a,b) { return Math.abs(a.w - nowWk2) - Math.abs(b.w - nowWk2); });
-      latest = sorted2[0];
-      // Second latest = the point just before latest in chronological order
-      var latestIdx = cp2.indexOf(latest);
-      // Find the previous point by week proximity (excluding the latest)
-      var others = cp2.filter(function(p) { return p !== latest; });
-      if (others.length > 0) {
-        others.sort(function(a,b) { return Math.abs(a.w - nowWk2) - Math.abs(b.w - nowWk2); });
-        secondLatest = others[0];
+      if(useClosestWeek){
+        // Winter wheat condition: fall wk46-47 and spring wk13-14 mixed under same year
+        // Pick point closest to current calendar week
+        var nowDoy2 = Math.floor((Date.now() - new Date(curYear,0,1).getTime()) / 86400000);
+        var nowWk2 = Math.max(1, Math.min(52, Math.ceil(nowDoy2 / 7)));
+        var sorted2 = cp2.slice().sort(function(a,b) { return Math.abs(a.w - nowWk2) - Math.abs(b.w - nowWk2); });
+        latest = sorted2[0];
+        var others = cp2.filter(function(p) { return p !== latest; });
+        if (others.length > 0) { others.sort(function(a,b) { return Math.abs(a.w - nowWk2) - Math.abs(b.w - nowWk2); }); secondLatest = others[0]; }
+      } else {
+        // Normal: last element is the most recent
+        latest=cp2[cp2.length-1];if(cp2.length>1)secondLatest=cp2[cp2.length-2];
       }
     }
-    // Only fall back to prior year if explicitly allowed (winter wheat condition)
-    if(!latest&&fallbackPriorYear){var cpPrev=sd[String(curYear-1)]||[];if(cpPrev.length>0){
-      var sortedPrev = cpPrev.slice().sort(function(a,b) { return Math.abs(a.w - nowWk2) - Math.abs(b.w - nowWk2); });
-      latest=sortedPrev[0];if(sortedPrev.length>1)secondLatest=sortedPrev[1];
-    }}
+    // Fall back to prior year only for winter wheat condition
+    if(!latest&&useClosestWeek){var cpPrev=sd[String(curYear-1)]||[];if(cpPrev.length>0){latest=cpPrev[cpPrev.length-1];if(cpPrev.length>1)secondLatest=cpPrev[cpPrev.length-2];}}
     var curVal=latest?latest.v:null;
     var curWk=latest?latest.w:null;
     var prevWkVal=secondLatest?secondLatest.v:null;
@@ -2898,7 +2896,7 @@ function CropProgressPage({ ready }) {
             {mapStageOpts(mapCrop).map(function(o){return <option key={o.id} value={o.id}>{o.label}</option>;})}
           </select>
         </div>
-        {(function(){var cr=allCrops[mapCrop];var sd2=cr&&cr.stages?cr.stages[mapStage]:null;var us=sd2?sd2["US"]:null;var pts=us?us[String(curYear)]||[]:[];if(pts.length===0&&us&&mapCrop==="winter_wheat"&&mapStage==="condition"){pts=us[String(curYear-1)]||[];}if(pts.length===0)return null;var inlineNowWk=Math.max(1,Math.min(52,Math.ceil(Math.floor((Date.now()-new Date(curYear,0,1).getTime())/86400000)/7)));var inlineSorted=pts.slice().sort(function(a,b){return Math.abs(a.w-inlineNowWk)-Math.abs(b.w-inlineNowWk);});var last=inlineSorted[0];var inlineOthers=pts.filter(function(p){return p!==last;});inlineOthers.sort(function(a,b){return Math.abs(a.w-inlineNowWk)-Math.abs(b.w-inlineNowWk);});var chg=inlineOthers.length>0?last.v-inlineOthers[0].v:null;var wk=last.w;var doy2=weekToDoy(wk);var mi2=11;for(var m2=0;m2<11;m2++){if(doy2<mB[m2+1]){mi2=m2;break;}}var calYear=wk>30?(curYear-1):curYear;var dateStr2=mN[mi2]+" "+(Math.floor(doy2-mB[mi2])+1)+", "+calYear;return <span style={{fontSize:13,fontWeight:500,color:"var(--color-text-primary)"}}>U.S.: {last.v}%{chg!=null&&<span style={{color:chg>0?"#639922":chg<0?"#A32D2D":"#666",marginLeft:6,fontSize:12}}>({chg>0?"+":""}{chg} vs prev wk)</span>}<span style={{color:"var(--color-text-tertiary)",marginLeft:10,fontSize:12,fontWeight:400}}>as of {dateStr2}</span></span>;})()}
+        {(function(){var cr=allCrops[mapCrop];var sd2=cr&&cr.stages?cr.stages[mapStage]:null;var us=sd2?sd2["US"]:null;var pts=us?us[String(curYear)]||[]:[];if(pts.length===0&&us&&mapCrop==="winter_wheat"&&mapStage==="condition"){pts=us[String(curYear-1)]||[];}if(pts.length===0)return null;var last,chg;if(mapCrop==="winter_wheat"&&mapStage==="condition"){var inWk=Math.max(1,Math.min(52,Math.ceil(Math.floor((Date.now()-new Date(curYear,0,1).getTime())/86400000)/7)));var inS=pts.slice().sort(function(a,b){return Math.abs(a.w-inWk)-Math.abs(b.w-inWk);});last=inS[0];var inO=pts.filter(function(p){return p!==last;});inO.sort(function(a,b){return Math.abs(a.w-inWk)-Math.abs(b.w-inWk);});chg=inO.length>0?last.v-inO[0].v:null;}else{last=pts[pts.length-1];chg=pts.length>1?last.v-pts[pts.length-2].v:null;}var wk=last.w;var doy2=weekToDoy(wk);var mi2=11;for(var m2=0;m2<11;m2++){if(doy2<mB[m2+1]){mi2=m2;break;}}var calYear=wk>30?(curYear-1):curYear;var dateStr2=mN[mi2]+" "+(Math.floor(doy2-mB[mi2])+1)+", "+calYear;return <span style={{fontSize:13,fontWeight:500,color:"var(--color-text-primary)"}}>U.S.: {last.v}%{chg!=null&&<span style={{color:chg>0?"#639922":chg<0?"#A32D2D":"#666",marginLeft:6,fontSize:12}}>({chg>0?"+":""}{chg} vs prev wk)</span>}<span style={{color:"var(--color-text-tertiary)",marginLeft:10,fontSize:12,fontWeight:400}}>as of {dateStr2}</span></span>;})()}
       </div>
       <div ref={mapRef} style={{width:"100%",minHeight:100,background:"var(--color-background-primary)",borderRadius:8,border:"0.5px solid var(--color-border-tertiary)",marginBottom:24,display:"flex",alignItems:"center",justifyContent:"center"}}>
         <span style={{color:"var(--color-text-tertiary)",fontSize:13}}>Loading map...</span>

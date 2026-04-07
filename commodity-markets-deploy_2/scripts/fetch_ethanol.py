@@ -28,6 +28,7 @@ SERIES = {
     "production": "W_EPOOXE_YOP_NUS_MBBLD",
     "stocks": "W_EPOOXE_SAE_NUS_MBBL",
     "exports": "W_EPOOXE_EEX_NUS-Z00_MBBLD",
+    "gasoline_demand": "WGFUPUS2",
 }
 
 # Fallback series IDs for exports if primary returns empty

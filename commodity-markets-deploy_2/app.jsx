@@ -3063,7 +3063,7 @@ function EthanolPage({ ready }) {
       if (info.cur == null || comp == null) return null;
       var d2 = Math.round((info.cur - comp) * 100) / 100;
       var col = d2 > 0 ? "#639922" : d2 < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
-      var fmtE = function(v) { return isGal ? v.toFixed(1) : v.toLocaleString(); };
+      var fmtE = function(v) { return isGal ? Number(v.toFixed(1)).toLocaleString(undefined, {minimumFractionDigits:1, maximumFractionDigits:1}) : v.toLocaleString(); };
       return (<div style={{display:"flex",justifyContent:"space-between",fontSize:10.5,padding:"1px 0"}}>
         <span style={{color:"var(--color-text-tertiary)"}}>{lbl}</span>
         <span style={{display:"flex",gap:4,alignItems:"baseline"}}><span style={{color:"var(--color-text-secondary)",textAlign:"right",minWidth:60}}>{fmtE(comp)}</span><span style={{color:col,fontWeight:500,textAlign:"right",minWidth:52}}>({d2 > 0 ? "+" : ""}{fmtE(d2)})</span></span>
@@ -3071,7 +3071,7 @@ function EthanolPage({ ready }) {
     };
     return (<div style={{background:"var(--color-background-secondary)",borderRadius:"var(--border-radius-md)",padding:"12px 14px",minWidth:0}}>
       <div style={{fontSize:11,color:"var(--color-text-secondary)",marginBottom:3,textTransform:"uppercase",letterSpacing:"0.4px"}}>{label}</div>
-      <div style={{fontSize:22,fontWeight:500,color:"var(--color-text-primary)",marginBottom:2}}>{info.cur != null ? (isGal ? info.cur.toFixed(1) : info.cur.toLocaleString()) : "—"}<span style={{fontSize:12,fontWeight:400,color:"var(--color-text-secondary)",marginLeft:4}}>{unitLabel}</span></div>
+      <div style={{fontSize:22,fontWeight:500,color:"var(--color-text-primary)",marginBottom:2}}>{info.cur != null ? (isGal ? info.cur.toLocaleString(undefined, {minimumFractionDigits:1, maximumFractionDigits:1}) : info.cur.toLocaleString()) : "—"}<span style={{fontSize:12,fontWeight:400,color:"var(--color-text-secondary)",marginLeft:4}}>{unitLabel}</span></div>
       {info.date && <div style={{fontSize:10,color:"var(--color-text-tertiary)",marginBottom:6}}>as of {info.date}</div>}
       <div style={{borderTop:"0.5px solid var(--color-border-tertiary)",paddingTop:5}}>
         {diffLine("vs. last week", info.prevWk)}
@@ -5225,7 +5225,7 @@ function ExportInspectionsPage({ ready }) {
   var statCard = function(label, curVal, comparisons, unitLabel) {
     return (<div style={{background:"var(--color-background-secondary)",borderRadius:"var(--border-radius-md)",padding:"12px 14px",minWidth:0}}>
       <div style={{fontSize:11,color:"var(--color-text-secondary)",marginBottom:3,textTransform:"uppercase",letterSpacing:"0.4px"}}>{label}</div>
-      <div style={{fontSize:22,fontWeight:500,color:"var(--color-text-primary)",marginBottom:2}}>{curVal != null ? (isBu ? curVal.toFixed(1) : curVal.toLocaleString()) : "—"}<span style={{fontSize:12,fontWeight:400,color:"var(--color-text-secondary)",marginLeft:4}}>{unitLabel}</span></div>
+      <div style={{fontSize:22,fontWeight:500,color:"var(--color-text-primary)",marginBottom:2}}>{curVal != null ? (isBu ? curVal.toLocaleString(undefined, {minimumFractionDigits:1, maximumFractionDigits:1}) : curVal.toLocaleString()) : "—"}<span style={{fontSize:12,fontWeight:400,color:"var(--color-text-secondary)",marginLeft:4}}>{unitLabel}</span></div>
       {cardInfo.date && <div style={{fontSize:10,color:"var(--color-text-tertiary)",marginBottom:6}}>as of {cardInfo.date}</div>}
       <div style={{borderTop:"0.5px solid var(--color-border-tertiary)",paddingTop:5}}>
         {comparisons.map(function(c2, i) {
@@ -5235,7 +5235,7 @@ function ExportInspectionsPage({ ready }) {
           var col = diff > 0 ? "#639922" : diff < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
           return (<div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:10.5,padding:"1px 0"}}>
             <span style={{color:"var(--color-text-tertiary)"}}>{c2.label}</span>
-            <span style={{display:"flex",gap:6,alignItems:"baseline",justifyContent:"flex-end"}}><span style={{color:"var(--color-text-secondary)",textAlign:"right",flex:"none"}}>{isBu ? c2.val.toFixed(1) : c2.val.toLocaleString()}</span><span style={{color:col,fontWeight:500,textAlign:"right",minWidth:76,flex:"none"}}>({diff > 0 ? "+" : ""}{isBu ? diff.toFixed(1) : diff.toLocaleString()})</span><span style={{color:col,fontWeight:500,textAlign:"right",minWidth:52,flex:"none"}}>({pctChg > 0 ? "+" : ""}{pctChg.toFixed(1)}%)</span></span>
+            <span style={{display:"flex",gap:6,alignItems:"baseline",justifyContent:"flex-end"}}><span style={{color:"var(--color-text-secondary)",textAlign:"right",flex:"none"}}>{isBu ? c2.val.toLocaleString(undefined, {minimumFractionDigits:1, maximumFractionDigits:1}) : c2.val.toLocaleString()}</span><span style={{color:col,fontWeight:500,textAlign:"right",minWidth:76,flex:"none"}}>({diff > 0 ? "+" : ""}{isBu ? diff.toLocaleString(undefined, {minimumFractionDigits:1, maximumFractionDigits:1}) : diff.toLocaleString()})</span><span style={{color:col,fontWeight:500,textAlign:"right",minWidth:52,flex:"none"}}>({pctChg > 0 ? "+" : ""}{pctChg.toFixed(1)}%)</span></span>
           </div>);
         })}
       </div>
@@ -5420,7 +5420,7 @@ function ExportSalesPage({ ready }) {
   var rawPts = getRawPts();
 
   // Build marketing year buckets, skip first data point of each MY to avoid rollover artifacts
-  var buildByMY = function(pts, metricKey, skipFirst) {
+  var buildByMY = function(pts, metricKey) {
     var byMY = {};
     pts.forEach(function(pt) {
       var my = pt.my;
@@ -5429,11 +5429,17 @@ function ExportSalesPage({ ready }) {
       if (!byMY[my]) byMY[my] = [];
       byMY[my].push({ x: day, y: chartConv(pt[metricKey]) });
     });
-    // Sort and optionally skip first point per MY
+    // Sort and handle MY rollover: if first two points are within 3 days,
+    // keep the one with smaller absolute value (new crop, not old crop carryover)
     Object.keys(byMY).forEach(function(my) {
       byMY[my].sort(function(a, b) { return a.x - b.x; });
-      if (skipFirst && byMY[my].length > 1) {
-        byMY[my] = byMY[my].slice(1);
+      if (byMY[my].length >= 2 && byMY[my][0].x < 10 && Math.abs(byMY[my][1].x - byMY[my][0].x) < 3) {
+        // Two points near start of MY — keep the one with smaller |y| (new crop)
+        if (Math.abs(byMY[my][0].y) > Math.abs(byMY[my][1].y)) {
+          byMY[my] = byMY[my].slice(1);
+        } else {
+          byMY[my] = [byMY[my][0]].concat(byMY[my].slice(2));
+        }
       }
     });
     return byMY;
@@ -5443,11 +5449,11 @@ function ExportSalesPage({ ready }) {
   var osKey = isCMY ? "os" : "nos";
 
   // Level metrics (outstanding, accumulated, total commitments) skip first point to avoid rollover jumps
-  var nsByMY = buildByMY(rawPts, nsKey, true);
-  var osByMY = buildByMY(rawPts, osKey, true);
-  var wsByMY = buildByMY(rawPts, "we", true);
-  var aeByMY = buildByMY(rawPts, "ae", true);
-  var tcByMY = buildByMY(rawPts, "tc", true);
+  var nsByMY = buildByMY(rawPts, nsKey);
+  var osByMY = buildByMY(rawPts, osKey);
+  var wsByMY = buildByMY(rawPts, "we");
+  var aeByMY = buildByMY(rawPts, "ae");
+  var tcByMY = buildByMY(rawPts, "tc");
 
   var yrColors = ["#A32D2D","#D85A30","#E8A735","#639922","#1D9E75","#378ADD","#534AB7","#8B5CF6","#EC4899","#6B7280"];
   var getColor = function(my) { if (my === curMY) return "#333"; var dist = curMY - my; if (dist === 1) return "#1D9E75"; if (dist === 2) return "#639922"; if (dist === 3) return "#E8A735"; if (dist === 4) return "#D85A30"; if (dist === 5) return "#A32D2D"; return yrColors[(dist - 1) % yrColors.length]; };

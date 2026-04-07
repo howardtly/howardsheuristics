@@ -2636,6 +2636,22 @@ function CropProgressPage({ ready }) {
         });
       }
 
+      // U.S. national number (bottom-right of map)
+      var usStageData = sd ? sd["US"] : null;
+      var usCurPts = usStageData ? usStageData[String(curYear)] || [] : [];
+      if (usCurPts.length === 0 && usStageData && mapCrop === "winter_wheat" && mapStage === "condition") {
+        usCurPts = usStageData[String(curYear - 1)] || [];
+      }
+      if (usCurPts.length > 0) {
+        var usLast = usCurPts[usCurPts.length - 1];
+        var usChg = usCurPts.length > 1 ? usLast.v - usCurPts[usCurPts.length - 2].v : null;
+        var usG = svg.append("g").attr("transform", "translate(870,430)");
+        usG.append("text").attr("x", 0).attr("y", 0).attr("font-size", "13").attr("font-weight", "700").attr("fill", "#333").text("U.S.: " + usLast.v + "%");
+        if (usChg != null && usChg !== 0) {
+          usG.append("text").attr("x", 0).attr("y", 16).attr("font-size", "11").attr("font-weight", "500").attr("fill", usChg > 0 ? "#639922" : "#A32D2D").text("(" + (usChg > 0 ? "+" : "") + usChg + " vs prev wk)");
+        }
+      }
+
       // Store latest week for date display
       if (latestWk && mapRef.current) mapRef.current.setAttribute("data-week", latestWk);
     }).catch(function(err){ if(el)el.innerHTML="<p style='color:#999;text-align:center;padding:20px'>Map error: "+err.message+"</p>"; });

@@ -2829,7 +2829,7 @@ function CropProgressPage({ ready }) {
     var thS={padding:"5px 8px",textAlign:"right",fontWeight:500,fontSize:11,color:"var(--color-text-secondary)",borderBottom:"1.5px solid var(--color-border-primary)",whiteSpace:"nowrap"};
     var thL=Object.assign({},thS,{textAlign:"left"});var tdS={padding:"4px 8px",textAlign:"right",fontSize:12,borderBottom:"0.5px solid var(--color-border-tertiary)"};var tdL=Object.assign({},tdS,{textAlign:"left",fontWeight:500});
     var dSp=function(cur,comp){if(cur==null||comp==null)return null;var d2=cur-comp;var col=d2>0?"#639922":d2<0?"#A32D2D":"var(--color-text-tertiary)";return <span style={{color:col,fontSize:10,marginLeft:4}}>({d2>0?"+":""}{d2})</span>;};
-    var trs=[];cids.forEach(function(cid){var cr=allCrops[cid];if(!cr)return;trs.push(<tr key={cid+"h"}><td colSpan={5} style={{padding:"10px 8px 4px",fontWeight:600,fontSize:13,color:"var(--color-text-primary)",borderBottom:"1px solid var(--color-border-secondary)"}}>{cr.label}</td></tr>);Object.keys(cr.stages||{}).forEach(function(sid){var isWWCond=(cid==="winter_wheat"&&sid==="condition");var info=getLatest((cr.stages||{})[sid],isWWCond);trs.push(<tr key={cid+sid}><td style={tdL}>&nbsp;&nbsp;{SL[sid]||sid}</td><td style={tdS}>{info.wk?"#"+info.wk:"—"}</td><td style={tdS}>{info.cur!=null?info.cur+"%":"—"}</td><td style={tdS}>{info.prev!=null?info.prev+"%":"—"}{dSp(info.cur,info.prev)}</td><td style={tdS}>{info.avg!=null?info.avg+"%":"—"}{dSp(info.cur,info.avg)}</td></tr>);});});
+    var trs=[];cids.forEach(function(cid){var cr=allCrops[cid];if(!cr)return;trs.push(<tr key={cid+"h"}><td colSpan={5} style={{padding:"10px 8px 4px",fontWeight:600,fontSize:13,color:"var(--color-text-primary)",borderBottom:"1px solid var(--color-border-secondary)"}}>{cr.label}</td></tr>);Object.keys(cr.stages||{}).forEach(function(sid){var isWWCond=(cid==="winter_wheat"&&sid==="condition");var info=getLatest((cr.stages||{})[sid],isWWCond);trs.push(<tr key={cid+sid}><td style={tdL}>&nbsp;&nbsp;{SL[sid]||sid}</td><td style={tdS}>{info.wk?"#"+info.wk:"—"}</td><td style={tdS}>{info.cur!=null?info.cur+"%":"—"}</td><td style={tdS}>{info.prev!=null?info.prev+"%":"—"}</td><td style={tdS}>{info.avg!=null?info.avg+"%":"—"}</td></tr>);});});
     return (<table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr><th style={thL}>Commodity / Stage</th><th style={thS}>Week</th><th style={thS}>{curYear}</th><th style={thS}>{lastYear}</th><th style={thS}>5-yr Avg</th></tr></thead><tbody>{trs}</tbody></table>);
   })();
 
@@ -3014,6 +3014,7 @@ function EthanolPage({ ready }) {
   var stk = ethData ? processRaw(ethData.stocks, convStk) : {};
   var exp = ethData ? processRaw(ethData.exports, convProd) : {};
   var oft = processRaw(computeOfftake(), convStk);
+  var gasDem = ethData ? processRaw(ethData.gasoline_demand, convProd) : {};
 
   var now = new Date();
   var curMY = now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1;
@@ -3055,6 +3056,7 @@ function EthanolPage({ ready }) {
   var expInfo = ethData ? getCardInfo(ethData.exports, convProd) : {};
   var oftRaw = computeOfftake();
   var oftInfo = getCardInfo(oftRaw, convStk);
+  var gasDemInfo = ethData ? getCardInfo(ethData.gasoline_demand, convProd) : {};
 
   var statCard = function(label, info, unitLabel) {
     var diffLine = function(lbl, comp) {
@@ -3187,6 +3189,7 @@ function EthanolPage({ ready }) {
       (ethData.exports || []).filter(function(p){return inRange(p.d);}).forEach(function(p) { allDates[p.d] = allDates[p.d] || {}; allDates[p.d].exp = convProd(p.v); });
     }
     computeOfftake().filter(function(p){return inRange(p.d);}).forEach(function(p) { allDates[p.d] = allDates[p.d] || {}; allDates[p.d].oft = convStk(p.v); });
+    if (ethData && ethData.gasoline_demand) { (ethData.gasoline_demand).filter(function(p){return inRange(p.d);}).forEach(function(p) { allDates[p.d] = allDates[p.d] || {}; allDates[p.d].gas = convProd(p.v); }); }
     Object.keys(allDates).sort().forEach(function(d) {
       var r = allDates[d];
       rows.push([d, myLabel(dateToMY(d)), r.prod || "", r.stk || "", r.oft || "", r.exp || ""]);
@@ -3201,8 +3204,9 @@ function EthanolPage({ ready }) {
   var CHARTS = [
     { key: "prod", label: "Weekly Production", data: prod, yLabel: prodUnit },
     { key: "stk", label: "Weekly Stocks", data: stk, yLabel: stkUnit },
-    { key: "oft", label: "Weekly Implied Offtake", data: oft, yLabel: stkUnit },
+    { key: "oft", label: "Implied Offtake", data: oft, yLabel: stkUnit },
     { key: "exp", label: "Weekly Exports", data: exp, yLabel: prodUnit },
+    { key: "gas", label: "Gasoline Demand", data: gasDem, yLabel: prodUnit },
   ];
 
   var hasExports = ethData && ethData.exports && ethData.exports.length > 0;
@@ -3228,11 +3232,12 @@ function EthanolPage({ ready }) {
       <div style={{marginLeft:"auto"}}><DownloadBtn onClick={dlCSV} /></div>
     </div>
 
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:10,marginBottom:16}}>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",gap:10,marginBottom:16}}>
       {statCard("Production", prodInfo, prodUnit)}
       {statCard("Stocks", stkInfo, stkUnit)}
-      {statCard("Weekly Implied Offtake", oftInfo, stkUnit)}
+      {statCard("Implied Offtake", oftInfo, stkUnit)}
       {statCard("Exports", expInfo, prodUnit)}
+      {statCard("Gasoline Demand", gasDemInfo, prodUnit)}
     </div>
 
     {!hasExports && <div style={{fontSize:12,color:"var(--color-text-tertiary)",marginBottom:8,padding:"6px 10px",background:"var(--color-background-secondary)",borderRadius:6}}>Note: EIA ethanol export data may be unavailable. Checking series ID...</div>}

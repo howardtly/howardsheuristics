@@ -3063,14 +3063,15 @@ function EthanolPage({ ready }) {
       if (info.cur == null || comp == null) return null;
       var d2 = Math.round((info.cur - comp) * 100) / 100;
       var col = d2 > 0 ? "#639922" : d2 < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
+      var fmtE = function(v) { return isGal ? v.toFixed(1) : v.toLocaleString(); };
       return (<div style={{display:"flex",justifyContent:"space-between",fontSize:10.5,padding:"1px 0"}}>
         <span style={{color:"var(--color-text-tertiary)"}}>{lbl}</span>
-        <span style={{display:"flex",gap:4,alignItems:"baseline"}}><span style={{color:"var(--color-text-secondary)",textAlign:"right",minWidth:60}}>{comp.toLocaleString()}</span><span style={{color:col,fontWeight:500,textAlign:"right",minWidth:52}}>({d2 > 0 ? "+" : ""}{d2.toLocaleString()})</span></span>
+        <span style={{display:"flex",gap:4,alignItems:"baseline"}}><span style={{color:"var(--color-text-secondary)",textAlign:"right",minWidth:60}}>{fmtE(comp)}</span><span style={{color:col,fontWeight:500,textAlign:"right",minWidth:52}}>({d2 > 0 ? "+" : ""}{fmtE(d2)})</span></span>
       </div>);
     };
     return (<div style={{background:"var(--color-background-secondary)",borderRadius:"var(--border-radius-md)",padding:"12px 14px",minWidth:0}}>
       <div style={{fontSize:11,color:"var(--color-text-secondary)",marginBottom:3,textTransform:"uppercase",letterSpacing:"0.4px"}}>{label}</div>
-      <div style={{fontSize:22,fontWeight:500,color:"var(--color-text-primary)",marginBottom:2}}>{info.cur != null ? info.cur.toLocaleString() : "—"}<span style={{fontSize:12,fontWeight:400,color:"var(--color-text-secondary)",marginLeft:4}}>{unitLabel}</span></div>
+      <div style={{fontSize:22,fontWeight:500,color:"var(--color-text-primary)",marginBottom:2}}>{info.cur != null ? (isGal ? info.cur.toFixed(1) : info.cur.toLocaleString()) : "—"}<span style={{fontSize:12,fontWeight:400,color:"var(--color-text-secondary)",marginLeft:4}}>{unitLabel}</span></div>
       {info.date && <div style={{fontSize:10,color:"var(--color-text-tertiary)",marginBottom:6}}>as of {info.date}</div>}
       <div style={{borderTop:"0.5px solid var(--color-border-tertiary)",paddingTop:5}}>
         {diffLine("vs. last week", info.prevWk)}
@@ -3202,10 +3203,10 @@ function EthanolPage({ ready }) {
   var modeSt = function(a) { return {padding:"6px 14px",fontSize:12,fontWeight:a?600:400,border:"1px solid "+(a?"#2563EB":"var(--color-border-secondary)"),borderRadius:5,cursor:"pointer",background:a?"#2563EB":"transparent",color:a?"#fff":"var(--color-text-secondary)",transition:"all 0.15s"}; };
 
   var CHARTS = [
-    { key: "prod", label: "Weekly Production", data: prod, yLabel: prodUnit },
-    { key: "stk", label: "Weekly Stocks", data: stk, yLabel: stkUnit },
-    { key: "oft", label: "Implied Offtake", data: oft, yLabel: stkUnit },
-    { key: "exp", label: "Weekly Exports", data: exp, yLabel: prodUnit },
+    { key: "prod", label: "Ethanol Production", data: prod, yLabel: prodUnit },
+    { key: "stk", label: "Ethanol Stocks", data: stk, yLabel: stkUnit },
+    { key: "oft", label: "Implied Ethanol Offtake", data: oft, yLabel: stkUnit },
+    { key: "exp", label: "Ethanol Exports", data: exp, yLabel: prodUnit },
     { key: "gas", label: "Gasoline Demand", data: gasDem, yLabel: prodUnit },
   ];
 
@@ -3233,10 +3234,10 @@ function EthanolPage({ ready }) {
     </div>
 
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",gap:10,marginBottom:16}}>
-      {statCard("Production", prodInfo, prodUnit)}
-      {statCard("Stocks", stkInfo, stkUnit)}
-      {statCard("Implied Offtake", oftInfo, stkUnit)}
-      {statCard("Exports", expInfo, prodUnit)}
+      {statCard("Ethanol Production", prodInfo, prodUnit)}
+      {statCard("Ethanol Stocks", stkInfo, stkUnit)}
+      {statCard("Implied Ethanol Offtake", oftInfo, stkUnit)}
+      {statCard("Ethanol Exports", expInfo, prodUnit)}
       {statCard("Gasoline Demand", gasDemInfo, prodUnit)}
     </div>
 
@@ -5652,7 +5653,7 @@ function ExportSalesPage({ ready }) {
 const PAGES = {
   "wasde": { title: "WASDE balance sheets", component: WASDEPage },
   "crop-progress": { title: "Crop progress & condition", component: CropProgressPage },
-  "ethanol": { title: "Ethanol", component: EthanolPage },
+  "ethanol": { title: "EIA Ethanol (Weekly)", component: EthanolPage },
   "fats-oils": { title: "USDA Oilseed Crushing (Monthly)", component: FatsOilsPage },
   "cot-summary": { title: "Commitment of Traders (COT) summary", component: COTSummaryPage },
   "cot-charts": { title: "COT charts", component: COTChartsPage },

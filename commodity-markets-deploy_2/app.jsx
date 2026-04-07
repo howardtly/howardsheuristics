@@ -5429,18 +5429,18 @@ function ExportSalesPage({ ready }) {
       if (!byMY[my]) byMY[my] = [];
       byMY[my].push({ x: day, y: chartConv(pt[metricKey]) });
     });
-    // Sort and handle MY rollover: if first two points are within 3 days,
-    // keep the one with smaller absolute value (new crop, not old crop carryover)
+    // Sort and deduplicate: if two points at same x (within 3 days), keep last (new crop)
     Object.keys(byMY).forEach(function(my) {
       byMY[my].sort(function(a, b) { return a.x - b.x; });
-      if (byMY[my].length >= 2 && byMY[my][0].x < 10 && Math.abs(byMY[my][1].x - byMY[my][0].x) < 3) {
-        // Two points near start of MY — keep the one with smaller |y| (new crop)
-        if (Math.abs(byMY[my][0].y) > Math.abs(byMY[my][1].y)) {
-          byMY[my] = byMY[my].slice(1);
+      var deduped = [];
+      byMY[my].forEach(function(pt) {
+        if (deduped.length > 0 && Math.abs(deduped[deduped.length - 1].x - pt.x) < 3) {
+          deduped[deduped.length - 1] = pt; // overwrite with later entry (new crop)
         } else {
-          byMY[my] = [byMY[my][0]].concat(byMY[my].slice(2));
+          deduped.push(pt);
         }
-      }
+      });
+      byMY[my] = deduped;
     });
     return byMY;
   };

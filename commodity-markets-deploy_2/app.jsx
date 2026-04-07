@@ -1122,7 +1122,7 @@ function useLiveCropProgress() {
   const [data, setData] = useState(null);
   const [loaded, setLoaded] = useState(false);
   useEffect(() => {
-    fetch("data/crop_progress.json")
+    fetch("data/crop_progress.json?t=" + Date.now())
       .then(r => { if (!r.ok) throw new Error("not found"); return r.json(); })
       .then(d => { setData(d); setLoaded(true); })
       .catch(() => { setLoaded(true); });
@@ -1518,7 +1518,7 @@ function WASDEPage() {
 
   // Try to load live data
   useEffect(() => {
-    fetch("data/wasde.json")
+    fetch("data/wasde.json?t=" + Date.now())
       .then(r => { if (!r.ok) throw new Error("not found"); return r.json(); })
       .then(data => {
         if (data && data.us && Object.keys(data.us).length > 0) {
@@ -2569,11 +2569,11 @@ function CropProgressPage({ ready }) {
       legendEl.style.cssText = "display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:10px;padding:4px 0;width:100%;";
       if (isCondition) {
         // Red-to-green change legend
-        legendEl.innerHTML = "<span style='font-size:10px;color:#A32D2D;font-weight:500'>Decline</span>";
+        legendEl.innerHTML = "<span style='font-size:12px;color:#A32D2D;font-weight:500'>Decline</span>";
         var gb = document.createElement("div");
         gb.style.cssText = "width:280px;height:14px;border-radius:4px;border:1px solid #ccc;background:linear-gradient(to right, #e55, #f0f0f0, #5a5);";
         legendEl.appendChild(gb);
-        var sp2 = document.createElement("span"); sp2.style.cssText="font-size:13px;color:#639922;font-weight:600;"; sp2.textContent="Increase"; legendEl.appendChild(sp2);
+        var sp2 = document.createElement("span"); sp2.style.cssText="font-size:12px;color:#639922;font-weight:500;"; sp2.textContent="Increase"; legendEl.appendChild(sp2);
         var sp3 = document.createElement("span"); sp3.style.cssText="font-size:11px;color:#999;margin-left:8px;"; sp3.textContent="(week-over-week change)"; legendEl.appendChild(sp3);
       } else {
         // 0-max% value legend
@@ -3675,7 +3675,7 @@ function useLiveCOT() {
   const [cotMeta, setCotMeta] = useState(null);
   const [loaded, setLoaded] = useState(false);
   useEffect(() => {
-    fetch("data/cot.json")
+    fetch("data/cot.json?t=" + Date.now())
       .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
       .then(data => {
         if (data && data.data && Object.keys(data.data).length > 0) {
@@ -4777,7 +4777,7 @@ function useLiveDrought() {
   const [data, setData] = useState(null);
   const [loaded, setLoaded] = useState(false);
   useEffect(() => {
-    fetch("data/drought.json")
+    fetch("data/drought.json?t=" + Date.now())
       .then(r => { if (!r.ok) throw new Error("not found"); return r.json(); })
       .then(d => { if (d && d.data) setData(d.data); setLoaded(true); })
       .catch(() => { setLoaded(true); });

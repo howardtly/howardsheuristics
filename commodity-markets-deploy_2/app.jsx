@@ -2510,20 +2510,25 @@ function CropProgressPage({ ready }) {
 
       // Collect state values and changes
       var vals={}, chgs={}, latestWk=null, usWk=null;
-      // First find the US-level latest week to determine what's "current"
-      if(sd && sd["US"]){var uPts=sd["US"][String(curYear)]||[];if(uPts.length>0)usWk=uPts[uPts.length-1].w;}
-      // If no US-level data for current year, this stage isn't active yet
+      // Find US-level latest week — check curYear first, then curYear-1 (winter wheat split season)
+      var mapDataYear = String(curYear);
+      if(sd && sd["US"]){var uPts=sd["US"][String(curYear)]||[];if(uPts.length>0){usWk=uPts[uPts.length-1].w;}else{var uPtsPrev=sd["US"][String(curYear-1)]||[];if(uPtsPrev.length>0){usWk=uPtsPrev[uPtsPrev.length-1].w;mapDataYear=String(curYear-1);}}}
       if(!usWk && sd) {
-        // Check if ANY state has curYear data — if not, show message
-        var anyData = Object.keys(sd).some(function(st){return st!=="US" && (sd[st][String(curYear)]||[]).length > 0;});
+        var anyData = Object.keys(sd).some(function(st){return st!=="US" && ((sd[st][String(curYear)]||[]).length > 0 || (sd[st][String(curYear-1)]||[]).length > 0);});
         if (!anyData) { el.innerHTML="<p style='color:#999;text-align:center;padding:40px'>No "+curYear+" data available yet for this selection.</p>"; el.style.display="flex"; el.style.alignItems="center"; el.style.justifyContent="center"; return; }
       }
       // Current approx week number (1-52)
       var nowDoy = Math.floor((Date.now() - new Date(curYear,0,1).getTime()) / 86400000);
       var nowWk = Math.max(1, Math.min(52, Math.ceil(nowDoy / 7)));
-      if(sd){Object.keys(sd).forEach(function(st){if(st==="US")return;var s2=sd[st];var pts=s2[String(curYear)]||[];if(pts.length>0){var lastPt=pts[pts.length-1];
-        // Skip stale data: if latest report is >8 weeks behind today, it is carryover
-        if(nowWk - lastPt.w > 8) return;
+      if(sd){Object.keys(sd).forEach(function(st){if(st==="US")return;var s2=sd[st];
+        // Try curYear data first, then fall back to curYear-1
+        var pts=s2[String(curYear)]||[];
+        if(pts.length===0) pts=s2[String(curYear-1)]||[];
+        if(pts.length>0){var lastPt=pts[pts.length-1];
+        // Skip stale data: if latest report is >8 weeks behind today AND we're using curYear data
+        // For prior-year fallback, allow if the week is in the fall range (week > 30)
+        var isStale = (mapDataYear === String(curYear)) ? (nowWk - lastPt.w > 8) : (lastPt.w < 30);
+        if(isStale) return;
         vals[st]=lastPt.v;if(!latestWk)latestWk=lastPt.w;if(pts.length>1)chgs[st]=lastPt.v-pts[pts.length-2].v;}});}
       var vArr=Object.values(vals);
       if (vArr.length === 0) { el.innerHTML="<p style='color:#999;text-align:center;padding:40px'>No state-level data for this selection.</p>"; return; }
@@ -2636,13 +2641,26 @@ function CropProgressPage({ ready }) {
   var getLatest = function(stageObj) {
     if (!stageObj) return {cur:null,prev:null,avg:null,wk:null,prevWk:null};
     var sd=stageObj[selState]||stageObj["US"]||{};
-    var cp2=sd[String(curYear)]||[];var pp2=sd[String(lastYear)]||[];var ap2=sd["5yr_avg"]||[];
-    var curVal=cp2.length>0?cp2[cp2.length-1].v:null;
-    var curWk=cp2.length>0?cp2[cp2.length-1].w:null;
-    var prevWkVal=cp2.length>1?cp2[cp2.length-2].v:null;
+    // Look at curYear first, then fall back to curYear-1 (handles winter wheat split season)
+    var cp2=sd[String(curYear)]||[];
+    var cpPrev=sd[String(curYear-1)]||[];
+    // If curYear has data, use it; otherwise check if previous year has MORE RECENT data
+    var latest=null,secondLatest=null;
+    if(cp2.length>0){latest=cp2[cp2.length-1];if(cp2.length>1)secondLatest=cp2[cp2.length-2];}
+    if(!latest&&cpPrev.length>0){latest=cpPrev[cpPrev.length-1];if(cpPrev.length>1)secondLatest=cpPrev[cpPrev.length-2];}
+    // Also check: if curYear data exists but previous year has a LATER week (shouldn't happen, but safety)
+    if(latest&&cpPrev.length>0){var prevLast=cpPrev[cpPrev.length-1];
+      // If latest is from curYear with a low week, and prev year has a high week,
+      // the curYear data IS more recent (it's a new calendar year)
+      // So only override if we have NO curYear data at all (handled above)
+    }
+    var curVal=latest?latest.v:null;
+    var curWk=latest?latest.w:null;
+    var prevWkVal=secondLatest?secondLatest.v:null;
+    // For prev year and 5yr avg, use the comparison year data
+    var pp2=sd[String(lastYear)]||[];var ap2=sd["5yr_avg"]||[];
     var prevVal=null,avgVal=null;
     if(curWk){var pm=pp2.find(function(p){return p.w===curWk;});if(pm)prevVal=pm.v;var am=ap2.find(function(p){return Math.abs(p.w-curWk)<=1;});if(am)avgVal=am.v;}
-    // Approximate date from week number
     var dateStr = null;
     if (curWk) { var doy = weekToDoy(curWk); var mi = 11; for(var m=0;m<11;m++){if(doy<mB[m+1]){mi=m;break;}} dateStr = mN[mi] + " " + (Math.floor(doy-mB[mi])+1); }
     return{cur:curVal,prev:prevVal,avg:avgVal,wk:curWk,prevWk:prevWkVal,date:dateStr};
@@ -2830,7 +2848,7 @@ function CropProgressPage({ ready }) {
             {mapStageOpts(mapCrop).map(function(o){return <option key={o.id} value={o.id}>{o.label}</option>;})}
           </select>
         </div>
-        {(function(){var cr=allCrops[mapCrop];var sd2=cr&&cr.stages?cr.stages[mapStage]:null;var us=sd2?sd2["US"]:null;var pts=us?us[String(curYear)]||[]:[];if(pts.length===0)return null;var last=pts[pts.length-1];var chg=pts.length>1?last.v-pts[pts.length-2].v:null;var wk=last.w;var doy2=weekToDoy(wk);var mi2=11;for(var m2=0;m2<11;m2++){if(doy2<mB[m2+1]){mi2=m2;break;}}var dateStr2=mN[mi2]+" "+(Math.floor(doy2-mB[mi2])+1)+", "+curYear;return <span style={{fontSize:13,fontWeight:500,color:"var(--color-text-primary)"}}>U.S.: {last.v}%{chg!=null&&<span style={{color:chg>0?"#639922":chg<0?"#A32D2D":"#666",marginLeft:6,fontSize:12}}>({chg>0?"+":""}{chg} vs prev wk)</span>}<span style={{color:"var(--color-text-tertiary)",marginLeft:10,fontSize:12,fontWeight:400}}>as of {dateStr2}</span></span>;})()}
+        {(function(){var cr=allCrops[mapCrop];var sd2=cr&&cr.stages?cr.stages[mapStage]:null;var us=sd2?sd2["US"]:null;var pts=us?us[String(curYear)]||[]:[];if(pts.length===0&&us){pts=us[String(curYear-1)]||[];}if(pts.length===0)return null;var last=pts[pts.length-1];var chg=pts.length>1?last.v-pts[pts.length-2].v:null;var wk=last.w;var doy2=weekToDoy(wk);var mi2=11;for(var m2=0;m2<11;m2++){if(doy2<mB[m2+1]){mi2=m2;break;}}var calYear=wk>30?(curYear-1):curYear;var dateStr2=mN[mi2]+" "+(Math.floor(doy2-mB[mi2])+1)+", "+calYear;return <span style={{fontSize:13,fontWeight:500,color:"var(--color-text-primary)"}}>U.S.: {last.v}%{chg!=null&&<span style={{color:chg>0?"#639922":chg<0?"#A32D2D":"#666",marginLeft:6,fontSize:12}}>({chg>0?"+":""}{chg} vs prev wk)</span>}<span style={{color:"var(--color-text-tertiary)",marginLeft:10,fontSize:12,fontWeight:400}}>as of {dateStr2}</span></span>;})()}
       </div>
       <div ref={mapRef} style={{width:"100%",minHeight:100,background:"var(--color-background-primary)",borderRadius:8,border:"0.5px solid var(--color-border-tertiary)",marginBottom:24,display:"flex",alignItems:"center",justifyContent:"center"}}>
         <span style={{color:"var(--color-text-tertiary)",fontSize:13}}>Loading map...</span>

@@ -7,7 +7,7 @@ WASDE Data Fetch v11
 
 import json, os, sys, time, urllib.request, urllib.error, zipfile
 from io import BytesIO
-from datetime import datetime
+from datetime import datetime, timedelta
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(SCRIPT_DIR)
@@ -758,8 +758,412 @@ def fetch_livestock_data(fetch_url_fn, fetch_fallbacks_fn, existing):
 
 
 
+
+# ══════════════════════════════════════════════════════════════
+# TIER 1: Monthly WASDE Report (USDA OCE)
+# Released ~noon ET on the 9th-12th of each month
+# Contains latest 2-3 MY estimates for all commodities
+# ══════════════════════════════════════════════════════════════
+
+
+def build_wasde_report_urls():
+    """Generate URL candidates for the current and previous month's WASDE report."""
+    now = datetime.now()
+    urls = []
+    for months_back in [0, 1]:
+        m = now.month - months_back
+        y = now.year
+        if m < 1:
+            m += 12
+            y -= 1
+        mm = f"{m:02d}"
+        yy = f"{y % 100:02d}"
+        yyyy = str(y)
+        urls.append(f"https://www.usda.gov/oce/commodity/wasde/wasde{mm}{yy}.xlsx")
+        urls.append(f"https://www.usda.gov/sites/default/files/documents/oce-wasde-{yyyy}-{mm}.xlsx")
+        urls.append(f"https://usda.library.cornell.edu/apod/wasde{mm}{yy}.xlsx")
+    return urls
+
+
+def parse_wasde_report(wb_data):
+    """Parse the monthly WASDE report Excel file.
+    Returns dict: {commodity_id: {years: [...], rows: [...]}}
+    """
+    import openpyxl
+    from io import BytesIO
+    wb = openpyxl.load_workbook(BytesIO(wb_data), read_only=True, data_only=True)
+    
+    print(f"  WASDE report sheets: {wb.sheetnames[:20]}")
+    
+    results = {}
+    
+    # Map commodity searches to their parsers
+    # Each entry: (commodity_id, search_keywords_in_title, row_label_mapping)
+    COMMODITY_CONFIGS = {
+        "corn": {
+            "title_keywords": ["corn", "feed grain"],
+            "section_marker": "corn",  # Look for "Corn" section within feed grains table
+            "labels": [
+                ("Area planted", ["area planted"]),
+                ("Area harvested", ["area harvested"]),
+                ("Yield per harvested acre", ["yield"]),
+                ("Beginning stocks", ["beginning stocks", "beg. stocks"]),
+                ("Production", ["production"]),
+                ("Imports", ["imports"]),
+                ("Total supply", ["supply, total", "total supply"]),
+                ("Feed and residual", ["feed and residual"]),
+                ("Food, seed & industrial", ["food, seed", "food,seed", "food, seed, and ind"]),
+                ("Ethanol", ["ethanol"]),
+                ("Seed", ["seed"]),
+                ("Total domestic use", ["domestic, total", "total domestic"]),
+                ("Exports", ["exports"]),
+                ("Total use", ["use, total", "total use"]),
+                ("Ending stocks", ["ending stocks"]),
+            ],
+            "bold_rows": ["Total supply", "Total domestic use", "Total use", "Ending stocks"],
+            "indent_rows": ["Ethanol", "Seed"],
+        },
+        "soybeans": {
+            "title_keywords": ["soybean"],
+            "section_marker": None,
+            "labels": [
+                ("Area planted", ["area planted"]),
+                ("Area harvested", ["area harvested"]),
+                ("Yield per harvested acre", ["yield"]),
+                ("Beginning stocks", ["beginning stocks", "beg. stocks"]),
+                ("Production", ["production"]),
+                ("Imports", ["imports"]),
+                ("Total supply", ["supply, total", "total supply"]),
+                ("Crush", ["crushings", "crush"]),
+                ("Exports", ["exports"]),
+                ("Seed", ["seed"]),
+                ("Residual", ["residual"]),
+                ("Total use", ["use, total", "total use", "total disappearance"]),
+                ("Ending stocks", ["ending stocks"]),
+            ],
+            "bold_rows": ["Total supply", "Total use", "Ending stocks"],
+            "indent_rows": [],
+        },
+        "wheat": {
+            "title_keywords": ["wheat"],
+            "section_marker": "all wheat",
+            "labels": [
+                ("Area planted", ["area planted"]),
+                ("Area harvested", ["area harvested"]),
+                ("Yield per harvested acre", ["yield"]),
+                ("Beginning stocks", ["beginning stocks", "beg. stocks"]),
+                ("Production", ["production"]),
+                ("Imports", ["imports"]),
+                ("Total supply", ["supply, total", "total supply"]),
+                ("Food", ["food"]),
+                ("Seed", ["seed"]),
+                ("Feed and residual", ["feed and residual"]),
+                ("Total domestic use", ["domestic, total", "total domestic"]),
+                ("Exports", ["exports"]),
+                ("Total use", ["use, total", "total use"]),
+                ("Ending stocks", ["ending stocks"]),
+            ],
+            "bold_rows": ["Total supply", "Total domestic use", "Total use", "Ending stocks"],
+            "indent_rows": [],
+        },
+        "beef": {
+            "title_keywords": ["beef"],
+            "section_marker": None,
+            "labels": [
+                ("Beginning stocks", ["beginning", "beg."]),
+                ("Production", ["production", "total production", "commercial prod"]),
+                ("Imports", ["imports"]),
+                ("Total supply", ["supply, total", "total supply"]),
+                ("Exports", ["exports"]),
+                ("Ending stocks", ["ending"]),
+                ("Total use", ["use, total", "total use", "total disappearance"]),
+                ("Per capita disappearance (lbs)", ["per capita"]),
+            ],
+            "bold_rows": ["Total supply", "Total use", "Ending stocks"],
+            "indent_rows": [],
+        },
+        "pork": {
+            "title_keywords": ["pork"],
+            "section_marker": None,
+            "labels": [
+                ("Beginning stocks", ["beginning", "beg."]),
+                ("Production", ["production", "total production", "commercial prod"]),
+                ("Imports", ["imports"]),
+                ("Total supply", ["supply, total", "total supply"]),
+                ("Exports", ["exports"]),
+                ("Ending stocks", ["ending"]),
+                ("Total use", ["use, total", "total use", "total disappearance"]),
+                ("Per capita disappearance (lbs)", ["per capita"]),
+            ],
+            "bold_rows": ["Total supply", "Total use", "Ending stocks"],
+            "indent_rows": [],
+        },
+        "broiler": {
+            "title_keywords": ["broiler"],
+            "section_marker": None,
+            "labels": [
+                ("Beginning stocks", ["beginning", "beg."]),
+                ("Production", ["production"]),
+                ("Imports", ["imports"]),
+                ("Total supply", ["supply, total", "total supply"]),
+                ("Exports", ["exports"]),
+                ("Ending stocks", ["ending"]),
+                ("Total use", ["use, total", "total use", "total disappearance"]),
+                ("Per capita disappearance (lbs)", ["per capita"]),
+            ],
+            "bold_rows": ["Total supply", "Total use", "Ending stocks"],
+            "indent_rows": [],
+        },
+        "turkey": {
+            "title_keywords": ["turkey"],
+            "section_marker": None,
+            "labels": [
+                ("Beginning stocks", ["beginning", "beg."]),
+                ("Production", ["production"]),
+                ("Imports", ["imports"]),
+                ("Total supply", ["supply, total", "total supply"]),
+                ("Exports", ["exports"]),
+                ("Ending stocks", ["ending"]),
+                ("Total use", ["use, total", "total use", "total disappearance"]),
+                ("Per capita disappearance (lbs)", ["per capita"]),
+            ],
+            "bold_rows": ["Total supply", "Total use", "Ending stocks"],
+            "indent_rows": [],
+        },
+    }
+    
+    for comm_id, config in COMMODITY_CONFIGS.items():
+        parsed = _parse_wasde_commodity(wb, config, comm_id)
+        if parsed:
+            results[comm_id] = parsed
+    
+    return results
+
+
+def _find_wasde_sheet(wb, keywords):
+    """Find a worksheet whose content matches the given keywords."""
+    for ws in wb.worksheets:
+        # Check first 15 rows for keyword matches
+        try:
+            rows = []
+            for i, row in enumerate(ws.iter_rows(values_only=True)):
+                if i >= 15: break
+                rows.append(row)
+            
+            text = ' '.join(str(c).lower() for row in rows for c in row if c)
+            if all(kw.lower() in text for kw in keywords):
+                return ws, rows
+        except:
+            continue
+    return None, None
+
+
+def _parse_wasde_commodity(wb, config, comm_id):
+    """Parse a single commodity from the WASDE report."""
+    ws, preview_rows = _find_wasde_sheet(wb, config["title_keywords"])
+    if not ws:
+        print(f"  {comm_id}: sheet not found")
+        return None
+    
+    print(f"  {comm_id}: found sheet '{ws.title}'")
+    
+    # Read all rows
+    all_rows = list(ws.iter_rows(values_only=True))
+    
+    # Find the header row with marketing year labels (e.g., "2024/25", "2025/26")
+    header_row_idx = None
+    year_cols = {}  # {col_index: year_label}
+    
+    for i, row in enumerate(all_rows):
+        if not row: continue
+        for ci, cell in enumerate(row):
+            if cell is None: continue
+            s = str(cell).strip()
+            # Look for marketing year patterns: "2024/25" or "2024-25" or "2024/2025"
+            if '/' in s and len(s) >= 5:
+                try:
+                    parts = s.replace(" ", "").split('/')
+                    yr = int(parts[0][:4])
+                    if 1990 <= yr <= 2030:
+                        year_cols[ci] = s.split('\n')[0].strip()  # Remove any Est./Proj. suffix from newlines
+                except (ValueError, IndexError):
+                    pass
+        if len(year_cols) >= 2:
+            header_row_idx = i
+            break
+    
+    if header_row_idx is None or not year_cols:
+        print(f"  {comm_id}: no year headers found")
+        # Debug: print first 10 rows
+        for i in range(min(10, len(all_rows))):
+            cells = [str(c)[:30] if c else '' for c in (all_rows[i] or [])]
+            print(f"    Row {i}: {cells[:8]}")
+        return None
+    
+    # Clean year labels - extract just the MY part
+    clean_years = {}
+    for ci, raw in sorted(year_cols.items()):
+        # Extract "YYYY/YY" from strings like "2024/25 Est." or "2025/26\nApr"
+        parts = raw.replace('\n', ' ').split()
+        my = parts[0] if parts else raw
+        # Normalize: "2024/25" stays, "2024/2025" -> "2024/25"
+        if len(my) > 7 and '/' in my:
+            yr1 = my.split('/')[0]
+            yr2 = my.split('/')[1][-2:]
+            my = f"{yr1}/{yr2}"
+        clean_years[ci] = my
+    
+    sorted_cols = sorted(clean_years.keys())
+    years = [clean_years[ci] for ci in sorted_cols]
+    print(f"  {comm_id}: years = {years} (cols {sorted_cols})")
+    
+    # Parse data rows after the header
+    rows_out = []
+    in_section = config["section_marker"] is None  # If no section marker, parse everything
+    
+    for i in range(header_row_idx + 1, len(all_rows)):
+        row = all_rows[i]
+        if not row: continue
+        
+        # Get the row label (usually column 0 or 1)
+        label = None
+        for ci in range(min(3, len(row))):
+            if row[ci] is not None:
+                label = str(row[ci]).strip()
+                if label and len(label) > 1:
+                    break
+        if not label: continue
+        
+        label_lower = label.lower().replace('\n', ' ')
+        
+        # Section detection for multi-commodity sheets (e.g., feed grains has corn + sorghum)
+        if config["section_marker"] and not in_section:
+            if config["section_marker"].lower() in label_lower:
+                in_section = True
+            continue
+        
+        # Stop at next section header or blank region
+        if in_section and config["section_marker"]:
+            # Check if we've hit a new section (e.g., "Sorghum" after "Corn")
+            if label_lower and not any(kw in label_lower for pair in config["labels"] for kw in pair[1]):
+                # Could be a section break - check if it looks like a header
+                if all(row[ci] is None for ci in sorted_cols if ci < len(row)):
+                    if any(c and str(c).strip() for c in row[:3]):
+                        # Non-data row with no values in year columns - might be new section
+                        pass  # Continue looking
+        
+        # Try to match this row to one of our target labels
+        for out_label, search_terms in config["labels"]:
+            if any(term in label_lower for term in search_terms):
+                # Extract values from year columns
+                values = []
+                for ci in sorted_cols:
+                    if ci < len(row) and row[ci] is not None:
+                        try:
+                            v = float(str(row[ci]).replace(',', '').strip())
+                            values.append(round(v, 1))
+                        except (ValueError, TypeError):
+                            values.append(None)
+                    else:
+                        values.append(None)
+                
+                if any(v is not None for v in values):
+                    rd = {"label": out_label, "values": values}
+                    if out_label in config.get("bold_rows", []):
+                        rd["bold"] = True
+                    if out_label in config.get("indent_rows", []):
+                        rd["indent"] = True
+                    # Avoid duplicates
+                    if not any(r["label"] == out_label for r in rows_out):
+                        rows_out.append(rd)
+                break
+    
+    if not rows_out:
+        print(f"  {comm_id}: no data rows matched")
+        return None
+    
+    # Add stocks/use ratio
+    es = next((r for r in rows_out if r["label"] == "Ending stocks"), None)
+    tu = next((r for r in rows_out if r["label"] in ("Total use",)), None)
+    if es and tu:
+        su = []
+        for i in range(len(years)):
+            e = es["values"][i] if i < len(es["values"]) else None
+            t = tu["values"][i] if i < len(tu["values"]) else None
+            if e is not None and t is not None and t != 0:
+                su.append(round(e / t * 100, 1))
+            else:
+                su.append(None)
+        rows_out.append({"label": "Stocks/use (%)", "values": su, "bold": True, "pct": True})
+    
+    print(f"  {comm_id}: {len(rows_out)} rows, {len(years)} years")
+    for r in rows_out:
+        print(f"    {r['label']}: {r['values']}")
+    
+    # Determine unit
+    is_livestock = comm_id in ("beef", "pork", "broiler", "turkey")
+    unit = "million lbs" if is_livestock else "million bushels / million acres"
+    
+    return {
+        "years": years,
+        "rows": rows_out,
+        "unit": unit,
+    }
+
+
+def merge_wasde_into_existing(existing_commodity, wasde_data, comm_id):
+    """Merge WASDE report data (2-3 years) into existing yearbook data (full history).
+    WASDE data overwrites matching years; non-matching years preserved."""
+    if not existing_commodity or not wasde_data:
+        return existing_commodity
+    
+    ex_years = existing_commodity.get("years", [])
+    ex_sections = existing_commodity.get("sections", [])
+    if not ex_years or not ex_sections:
+        return existing_commodity
+    
+    wasde_years = wasde_data["years"]
+    wasde_rows = wasde_data["rows"]
+    
+    # Build a map of label -> wasde row data
+    wasde_map = {}
+    for wr in wasde_rows:
+        wasde_map[wr["label"]] = wr
+    
+    # For each year in WASDE data, find or append it in existing
+    for wi, wy in enumerate(wasde_years):
+        if wy in ex_years:
+            # Overwrite existing values
+            yi = ex_years.index(wy)
+            for section in ex_sections:
+                for row in section.get("rows", []):
+                    if row["label"] in wasde_map:
+                        wr = wasde_map[row["label"]]
+                        if wi < len(wr["values"]) and wr["values"][wi] is not None:
+                            while len(row["values"]) <= yi:
+                                row["values"].append(None)
+                            row["values"][yi] = wr["values"][wi]
+        else:
+            # Append new year
+            ex_years.append(wy)
+            yi = len(ex_years) - 1
+            for section in ex_sections:
+                for row in section.get("rows", []):
+                    if row["label"] in wasde_map:
+                        wr = wasde_map[row["label"]]
+                        val = wr["values"][wi] if wi < len(wr["values"]) else None
+                    else:
+                        val = None
+                    while len(row["values"]) < yi:
+                        row["values"].append(None)
+                    row["values"].append(val)
+    
+    existing_commodity["years"] = ex_years
+    print(f"  {comm_id}: merged WASDE data, now {len(ex_years)} years")
+    return existing_commodity
+
+
 def main():
-    from datetime import datetime
     import openpyxl
     
     os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -776,10 +1180,10 @@ def main():
 
     print("=" * 60)
     print("WASDE Data Fetch — Two-Tier Architecture")
-    print(f"Time: {datetime.utcnow().isoformat()}Z")
+    print(f"Time: {datetime.now().isoformat()}Z")
     print("=" * 60)
 
-    result = {"fetched_at": datetime.utcnow().isoformat() + "Z", "us": {}}
+    result = {"fetched_at": datetime.now().isoformat() + "Z", "us": {}}
     
     # Start with existing data as base
     if "us" in existing:
@@ -840,7 +1244,7 @@ def main():
                     print(f"  {comm_id}: created new entry ({len(wdata['years'])} years)")
             
             result["wasde_report_source"] = wasde_source
-            result["wasde_report_fetched_at"] = datetime.utcnow().isoformat() + "Z"
+            result["wasde_report_fetched_at"] = datetime.now().isoformat() + "Z"
         except Exception as e:
             print(f"  WASDE report parse error: {e}")
             import traceback; traceback.print_exc()

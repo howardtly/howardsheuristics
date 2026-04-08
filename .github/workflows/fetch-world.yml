@@ -2,7 +2,7 @@ name: Fetch World Balance Sheets
 
 on:
   schedule:
-    - cron: '0 0 13 * *'
+    - cron: '0 0 13 * *'  # 13th of month at midnight UTC (after WASDE)
   workflow_dispatch:
 
 permissions:

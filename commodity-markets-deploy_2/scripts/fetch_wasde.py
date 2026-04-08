@@ -25,7 +25,6 @@ WHEAT_URL = "https://www.ers.usda.gov/media/5706/wheat-data-all-years.xlsx?v=539
 
 
 def fetch_url(url, timeout=60, retries=3, delay=30):
-    """Fetch URL with retry logic. Retries on failure with increasing delay."""
     for attempt in range(1, retries + 1):
         print(f"  Attempt {attempt}/{retries}: {url[:90]}...")
         try:
@@ -37,7 +36,7 @@ def fetch_url(url, timeout=60, retries=3, delay=30):
         except Exception as e:
             print(f"  FAILED: {e}")
             if attempt < retries:
-                wait = delay * attempt  # 30s, 60s, 90s
+                wait = delay * attempt
                 print(f"  Retrying in {wait}s...")
                 time.sleep(wait)
     print(f"  All {retries} attempts failed for {url[:90]}")
@@ -605,6 +604,241 @@ def parse_wheat(wb_data):
         return None
 
 
+
+# ══════════════════════════════════════════════════════════════
+# PSD WORLD DATA
+# ══════════════════════════════════════════════════════════════
+
+def psd_my_label(year_int):
+    return f"{year_int}/{str(year_int + 1)[-2:]}"
+
+"""
+PSD World Data Fetcher - adds world/foreign balance sheets to wasde.json
+Fetches from USDA FAS PSD API for corn, soybeans, soybean meal, soybean oil, wheat.
+"""
+
+PSD_API_KEY = os.environ.get("PSD_API_KEY", "9B50B342-EA13-4269-BFC8-77E9E9903161")
+PSD_BASE = "https://apps.fas.usda.gov/PSDOnlineDataServices/api/CommodityData/GetCommodityDataByYear"
+HEADERS = {"API_KEY": PSD_API_KEY, "User-Agent": "HowardsHeuristics/1.0", "Accept": "application/json"}
+
+# Commodity codes
+PSD_COMMODITIES = {
+    "corn":         {"code": "0440000", "label": "Corn"},
+    "soybeans":     {"code": "2222000", "label": "Soybeans"},
+    "soybean_meal": {"code": "0813100", "label": "Soybean Meal"},
+    "soybean_oil":  {"code": "4232000", "label": "Soybean Oil"},
+    "wheat":        {"code": "0410000", "label": "Wheat"},
+}
+
+# Key countries to extract per commodity
+KEY_COUNTRIES = {
+    "corn":         ["United States", "China", "Brazil", "European Union", "Argentina", "Mexico", "Ukraine", "India"],
+    "soybeans":     ["United States", "Brazil", "Argentina", "China", "European Union", "Paraguay", "India"],
+    "soybean_meal": ["United States", "Brazil", "Argentina", "China", "European Union", "India"],
+    "soybean_oil":  ["United States", "Brazil", "Argentina", "China", "European Union", "India", "Indonesia"],
+    "wheat":        ["United States", "China", "European Union", "Russia", "India", "Australia", "Canada", "Ukraine", "Argentina"],
+}
+
+# Attributes we want (PSD attribute descriptions -> our labels)
+# We'll discover exact IDs from data, matching by description keywords
+ATTR_MAP = {
+    "Area Harvested":        {"label": "Area harvested", "bold": False},
+    "Beginning Stocks":      {"label": "Beginning stocks", "bold": False},
+    "Production":            {"label": "Production", "bold": False},
+    "MY Imports":            {"label": "Imports", "bold": False},
+    "Total Supply":          {"label": "Total supply", "bold": True},
+    "Feed Dom. Consumption": {"label": "Feed domestic use", "bold": False},
+    "FSI Consumption":       {"label": "Food, seed, industrial", "bold": False},
+    "Total Dom. Consumption":{"label": "Domestic consumption", "bold": True},
+    "MY Exports":            {"label": "Exports", "bold": False},
+    "Total Use":             {"label": "Total use", "bold": True},
+    "Ending Stocks":         {"label": "Ending stocks", "bold": True},
+    "TY Imports":            {"label": "Imports", "bold": False},
+    "TY Exports":            {"label": "Exports", "bold": False},
+    "Crush":                 {"label": "Crush", "bold": False},
+    "Extr. Rate, 999.9999":  {"label": "Extraction rate", "bold": False},
+    "Dom. Cons., Use":       {"label": "Domestic consumption", "bold": True},
+}
+
+def fetch_psd_year(commodity_code, market_year, retries=3, delay=10):
+    """Fetch PSD data for one commodity and one marketing year."""
+    url = f"{PSD_BASE}?commodityCode={commodity_code}&marketYear={market_year}"
+    for attempt in range(1, retries + 1):
+        try:
+            req = urllib.request.Request(url, headers=HEADERS)
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                return data
+        except Exception as e:
+            if attempt < retries:
+                time.sleep(delay * attempt)
+            else:
+                print(f"    PSD fetch failed for {commodity_code}/{market_year}: {e}")
+    return None
+
+
+def parse_psd_commodity(commodity_id, commodity_info, year_range):
+    """Fetch and parse PSD data for one commodity across all years."""
+    code = commodity_info["code"]
+    label = commodity_info["label"]
+    key_countries = KEY_COUNTRIES.get(commodity_id, [])
+    
+    print(f"\n  PSD: {label} ({code})")
+    
+    # Collect all data: {year: {country: {attr_desc: value}}}
+    all_data = {}
+    for yr in year_range:
+        records = fetch_psd_year(code, yr)
+        if not records:
+            continue
+        year_data = {}
+        for rec in records:
+            country = rec.get("countryDescription", "Unknown")
+            attr = rec.get("attributeDescription", "")
+            val = rec.get("value")
+            if country not in year_data:
+                year_data[country] = {}
+            year_data[country][attr] = val
+        all_data[yr] = year_data
+        # Small delay to be polite to the API
+        time.sleep(0.3)
+    
+    if not all_data:
+        print(f"    No PSD data retrieved")
+        return None
+    
+    years_with_data = sorted(all_data.keys())
+    years = [psd_my_label(y) for y in years_with_data]
+    print(f"    Years: {years[0]} to {years[-1]} ({len(years)} years)")
+    
+    # Discover available attributes from first year with data
+    sample_year = years_with_data[-1]
+    sample_countries = all_data[sample_year]
+    # Get attributes from "World" or first available country
+    sample_attrs = set()
+    for country_data in sample_countries.values():
+        sample_attrs.update(country_data.keys())
+    print(f"    Available attributes: {sorted(sample_attrs)[:15]}...")
+    
+    # Build world total rows
+    # PSD has a "World" country entry for most commodities
+    world_rows = []
+    # Define which attributes to show for world total
+    world_attrs_order = [
+        "Area Harvested", "Beginning Stocks", "Production", 
+        "MY Imports", "TY Imports",
+        "Total Supply",
+        "Feed Dom. Consumption", "FSI Consumption", "Crush",
+        "Total Dom. Consumption", "Dom. Cons., Use",
+        "MY Exports", "TY Exports",
+        "Total Use",
+        "Ending Stocks"
+    ]
+    
+    for attr_name in world_attrs_order:
+        if attr_name not in sample_attrs:
+            continue
+        info = ATTR_MAP.get(attr_name, {"label": attr_name, "bold": False})
+        values = []
+        for yr in years_with_data:
+            world_data = all_data[yr].get("World", {})
+            v = world_data.get(attr_name)
+            # PSD values in 1000 MT/HA; convert to million MT/HA for display
+            values.append(r1(v / 1000) if v is not None else None)
+        # Skip if all None
+        if all(v is None for v in values):
+            continue
+        row = {"label": info["label"], "values": values}
+        if info["bold"]:
+            row["bold"] = True
+        world_rows.append(row)
+    
+    # Add stocks/use ratio
+    es_row = next((r for r in world_rows if r["label"] == "Ending stocks"), None)
+    tu_row = next((r for r in world_rows if r["label"] in ("Total use", "Domestic consumption")), None)
+    if es_row and tu_row:
+        world_rows.append({
+            "label": "Stocks/use (%)",
+            "values": [pct(es_row["values"][i], tu_row["values"][i]) for i in range(len(years))],
+            "bold": True, "pct": True
+        })
+    
+    print(f"    World rows: {len(world_rows)}")
+    
+    # Build country data
+    countries = []
+    for country_name in key_countries:
+        country_rows = []
+        # Country-level attributes
+        country_attrs = [
+            "Area Harvested", "Beginning Stocks", "Production",
+            "MY Imports", "TY Imports",
+            "Total Supply",
+            "Feed Dom. Consumption", "FSI Consumption", "Crush",
+            "Total Dom. Consumption", "Dom. Cons., Use",
+            "MY Exports", "TY Exports",
+            "Ending Stocks"
+        ]
+        for attr_name in country_attrs:
+            if attr_name not in sample_attrs:
+                continue
+            info = ATTR_MAP.get(attr_name, {"label": attr_name, "bold": False})
+            values = []
+            for yr in years_with_data:
+                cd = all_data[yr].get(country_name, {})
+                v = cd.get(attr_name)
+                values.append(r1(v / 1000) if v is not None else None)
+            if all(v is None for v in values):
+                continue
+            row = {"label": info["label"], "values": values}
+            if info["bold"]:
+                row["bold"] = True
+            country_rows.append(row)
+        
+        if country_rows:
+            countries.append({"label": country_name, "rows": country_rows})
+    
+    print(f"    Countries: {len(countries)}")
+    
+    # Determine unit based on commodity
+    unit_map = {
+        "corn": "million metric tons / million hectares",
+        "soybeans": "million metric tons / million hectares", 
+        "soybean_meal": "million metric tons",
+        "soybean_oil": "million metric tons",
+        "wheat": "million metric tons / million hectares",
+    }
+    
+    return {
+        "id": commodity_id,
+        "label": label,
+        "years": years,
+        "sections": [{"header": "World total", "unit": unit_map.get(commodity_id, "1,000 metric tons"), "rows": world_rows}],
+        "countries": countries,
+    }
+
+
+def fetch_psd_world_data():
+    """Fetch world data for all commodities from PSD API."""
+    import datetime
+    # Marketing year range: last 25 years
+    current_year = datetime.datetime.now().year
+    # PSD uses start year of MY (2024 = 2024/25)
+    end_year = current_year  # current MY
+    start_year = end_year - 24  # 25 years of data
+    year_range = list(range(start_year, end_year + 1))
+    
+    print(f"\nFetching PSD world data: {psd_my_label(start_year)} to {psd_my_label(end_year)}")
+    
+    world = {}
+    for cid, cinfo in PSD_COMMODITIES.items():
+        result = parse_psd_commodity(cid, cinfo, year_range)
+        if result:
+            world[cid] = result
+    
+    return world
+
+
 def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     output_file = os.path.join(OUTPUT_DIR, "wasde.json")
@@ -682,6 +916,23 @@ def main():
         for s in d["sections"]:
             for r in s["rows"][:5]:
                 print(f"    {r['label']}: ...{r['values'][-3:]}")
+
+    # ── PSD World Data ──
+    print("\n── PSD WORLD DATA ──")
+    try:
+        world_data = fetch_psd_world_data()
+        if world_data:
+            result["world"] = world_data
+            print(f"  World data: {len(world_data)} commodities")
+        else:
+            print("  No world data — preserving existing")
+            if existing.get("world"):
+                result["world"] = existing["world"]
+    except Exception as e:
+        print(f"  PSD world error: {e}")
+        if existing.get("world"):
+            result["world"] = existing["world"]
+            print("  Preserved existing world data")
 
     print(f"\nWriting {output_file}")
     with open(output_file, "w") as f:

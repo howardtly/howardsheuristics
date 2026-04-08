@@ -1,8 +1,7 @@
 name: Fetch WASDE Data
-
 on:
   schedule:
-    - cron: '0 23 12 * *'
+    - cron: '0 17 9-12 * *'  # 9th-12th of month at 12:00 PM ET (USDA WASDE release window)
   workflow_dispatch:
 
 permissions:
@@ -21,16 +20,17 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install openpyxl requests pandas python-calamine
+        run: pip install openpyxl requests
 
       - name: Fetch WASDE data
         run: python commodity-markets-deploy_2/scripts/fetch_wasde.py
 
       - name: Commit and push
         run: |
+          cd commodity-markets-deploy_2
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add .
+          git add data/
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else

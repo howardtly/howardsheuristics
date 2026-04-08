@@ -1,15 +1,19 @@
-name: Fetch World Balance Sheets
+name: Fetch WASDE Data
 
 on:
   schedule:
-    - cron: '0 0 13 * *'  # 13th of month at midnight UTC (after WASDE)
+    # Tier 1: WASDE report day — 12:15 PM ET (15 min after release)
+    # Runs 9th-12th of each month to catch the release window
+    - cron: '15 17 9-12 * *'
+    # Tier 2: ERS yearbook refresh — 1st of month (yearbooks update on their own schedule)
+    - cron: '0 12 1 * *'
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  fetch-world:
+  fetch-wasde:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -20,19 +24,21 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Fetch PSD world data
-        env:
-          PSD_API_KEY: ${{ secrets.PSD_API_KEY }}
-        run: python commodity-markets-deploy_2/scripts/fetch_psd_world.py
+      - name: Install dependencies
+        run: pip install openpyxl requests
+
+      - name: Fetch WASDE data
+        run: python commodity-markets-deploy_2/scripts/fetch_wasde.py
 
       - name: Commit and push
         run: |
+          cd commodity-markets-deploy_2
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add .
+          git add data/
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "Update world balance sheets $(date -u +%Y-%m-%d)"
+            git commit -m "Update WASDE data $(date -u +%Y-%m-%d)"
             git push
           fi

@@ -5,7 +5,7 @@ WASDE Data Fetch v11
 - Oil crops: tries current URL, falls back to cached data
 """
 
-import json, os, sys, urllib.request, urllib.error, zipfile
+import json, os, sys, time, urllib.request, urllib.error, zipfile
 from io import BytesIO
 from datetime import datetime
 
@@ -24,17 +24,25 @@ OILCROPS_URLS = [
 WHEAT_URL = "https://www.ers.usda.gov/media/5706/wheat-data-all-years.xlsx?v=53976"
 
 
-def fetch_url(url, timeout=60):
-    print(f"  Trying: {url[:90]}...")
-    try:
-        req = urllib.request.Request(url, headers=HEADERS)
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = resp.read()
-            print(f"  OK: {len(data):,} bytes")
-            return data
-    except Exception as e:
-        print(f"  FAILED: {e}")
-        return None
+def fetch_url(url, timeout=60, retries=3, delay=30):
+    """Fetch URL with retry logic. Retries on failure with increasing delay."""
+    import time as _time
+    for attempt in range(1, retries + 1):
+        print(f"  Attempt {attempt}/{retries}: {url[:90]}...")
+        try:
+            req = urllib.request.Request(url, headers=HEADERS)
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                data = resp.read()
+                print(f"  OK: {len(data):,} bytes")
+                return data
+        except Exception as e:
+            print(f"  FAILED: {e}")
+            if attempt < retries:
+                wait = delay * attempt  # 30s, 60s, 90s
+                print(f"  Retrying in {wait}s...")
+                _time.sleep(wait)
+    print(f"  All {retries} attempts failed for {url[:90]}")
+    return None
 
 def fetch_with_fallbacks(urls, timeout=60):
     for url in urls:
@@ -102,39 +110,6 @@ def parse_corn(wb_data):
             sd_data.append({label: to_float(row[2 + ci]) for ci, label in enumerate(col_labels)})
     print(f"  Corn S&D: {len(sd_years)} years")
 
-    # --- Ethanol from Table31 ---
-    # Table31: Corn FSI detail. Quarterly format like Table04.
-    # Headers: Market year, Quarter, HFCS, Glucose/dextrose, Starch, Alcohol for fuel, Alcohol for beverages, Cereals/other, Seed, Total FSI
-    ethanol_data = {}
-    try:
-        ws31 = wb["FGYearbookTable31"]
-        rows31 = list(ws31.iter_rows(values_only=True))
-        h31 = rows31[1]
-        h31_labels = [str(h31[c]).strip().replace("\n", " ") if h31[c] else "" for c in range(2, len(h31))]
-        print(f"  Table31 headers: {h31_labels}")
-        # Find the "Alcohol for fuel" column index
-        ethanol_col = None
-        for ci, lbl in enumerate(h31_labels):
-            if "alcohol for fuel" in lbl.lower() or "fuel" in lbl.lower():
-                ethanol_col = ci
-                break
-        if ethanol_col is not None:
-            print(f"  Ethanol column index: {ethanol_col}")
-            current_my31 = None
-            for i in range(2, len(rows31)):
-                row = rows31[i]
-                if not row or len(row) < 2: continue
-                col0 = str(row[0]).strip() if row[0] else ""
-                if "/" in col0 and len(col0) >= 7: current_my31 = col0
-                quarter = str(row[1]).strip() if row[1] else ""
-                if quarter.startswith("MY") and current_my31:
-                    ethanol_data[current_my31] = to_float(row[2 + ethanol_col])
-            print(f"  Ethanol: {len(ethanol_data)} years")
-        else:
-            print("  Ethanol column not found in Table31")
-    except Exception as e:
-        print(f"  Table31 error: {e}")
-
     years = sd_years
     rows_out = [
         {"label": "Area planted", "values": [r1(area_planted.get(y)) for y in years]},
@@ -142,44 +117,31 @@ def parse_corn(wb_data):
         {"label": "Yield per harvested acre", "values": [r1(yield_per_acre.get(y)) for y in years]},
     ]
 
-    # Helper to get S&D values by column prefix
-    def get_sd(prefix):
+    sd_map = [
+        ("Beginning stocks", "Beginning stocks", True),
+        ("Production", "Production", False),
+        ("Imports", "Imports", False),
+        ("Total supply", "Total supply", True),
+        ("Food, alcohol, and industrial", "Food, alcohol, and industrial use", False),
+        ("Seed use", "Seed use", False),
+        ("Feed and residual", "Feed and residual use", False),
+        ("Total domestic", "Total domestic use", True),
+        ("Exports", "Exports", False),
+        ("Total use", "Total usage", True),
+        ("Ending stocks", "Ending stocks", True),
+    ]
+    for prefix, display, bold in sd_map:
         key = next((k for k in col_labels if k.lower().startswith(prefix.lower())), None)
-        return [ri(sd_data[yi].get(key)) if key else None for yi in range(len(years))]
+        values = [ri(sd_data[yi].get(key)) if key else None for yi in range(len(years))]
+        rd = {"label": display, "values": values}
+        if bold: rd["bold"] = True
+        if display == "Beginning stocks": rd["spaceBefore"] = True
+        rows_out.append(rd)
 
-    # Supply
-    rows_out.append({"label": "Beginning stocks", "values": get_sd("Beginning stocks")})
-    rows_out.append({"label": "Production", "values": get_sd("Production")})
-    rows_out.append({"label": "Imports", "values": get_sd("Imports")})
-    rows_out.append({"label": "Total supply", "values": get_sd("Total supply"), "bold": True})
-
-    # Use — reordered: Feed/residual, FSI (=food/alcohol/industrial + seed), Ethanol (indent), Seed (indent), Total domestic
-    fsi_raw = get_sd("Food, alcohol, and industrial")
-    seed_vals = get_sd("Seed use")
-    # FSI = food/alcohol/industrial + seed
-    fsi_vals = []
-    for i in range(len(years)):
-        f, s = fsi_raw[i], seed_vals[i]
-        if f is not None and s is not None:
-            fsi_vals.append(f + s)
-        elif f is not None:
-            fsi_vals.append(f)
-        else:
-            fsi_vals.append(None)
-
-    rows_out.append({"label": "Feed and residual", "values": get_sd("Feed and residual")})
-    rows_out.append({"label": "Food, seed & industrial", "values": fsi_vals})
-    rows_out.append({"label": "Ethanol", "values": [ri(ethanol_data.get(y)) for y in years], "indent": True})
-    rows_out.append({"label": "Seed", "values": seed_vals, "indent": True})
-    rows_out.append({"label": "Total domestic use", "values": get_sd("Total domestic"), "bold": True})
-    rows_out.append({"label": "Exports", "values": get_sd("Exports")})
-    rows_out.append({"label": "Total usage", "values": get_sd("Total use"), "bold": True})
-
-    # Ending stocks
-    es_vals = get_sd("Ending stocks")
-    tu_vals = get_sd("Total use")
-    rows_out.append({"label": "Ending stocks", "values": es_vals, "bold": True})
-    rows_out.append({"label": "Stocks/use (%)", "values": [pct(es_vals[i], tu_vals[i]) for i in range(len(years))], "bold": True, "pct": True})
+    es = next((r for r in rows_out if r["label"] == "Ending stocks"), None)
+    tu = next((r for r in rows_out if r["label"] == "Total usage"), None)
+    if es and tu:
+        rows_out.append({"label": "Stocks/use (%)", "values": [pct(es["values"][i], tu["values"][i]) for i in range(len(years))], "bold": True, "pct": True})
 
     return {"id": "corn", "label": "Corn", "years": years,
             "sections": [{"header": "Supply and disappearance", "unit": "million bushels", "rows": rows_out}]}
@@ -201,52 +163,26 @@ def find_sheet(wb, *candidates):
 def parse_soybeans(wb):
     # Area: tab02 or Table02
     ws02 = find_sheet(wb, "tab02", "Table02", "Table 02")
-    area_data = {}
     if not ws02:
         print("  Soy area sheet not found")
+        area_data = {}
     else:
         rows02 = list(ws02.iter_rows(values_only=True))
-        print(f"  Soy area sheet: {len(rows02)} rows")
-        # Print first rows for debugging
-        for i in range(min(6, len(rows02))):
-            print(f"    Row {i}: {[str(c)[:25] if c else '' for c in (rows02[i] or [])][:7]}")
-        
-        for i in range(2, len(rows02)):
+        area_data = {}
+        for i in range(4, len(rows02)):
             row = rows02[i]
             if not row: continue
-            year_val = str(row[0]).strip() if row[0] else ""
-            
-            # Try marketing year format first (1980/81)
-            if "/" in year_val and len(year_val) >= 6:
-                my = year_val
-                planted = to_float(row[1])
-                harvested = to_float(row[2])
-                yld = to_float(row[3])
-                # Check units: if planted > 500, it's in 1,000 acres, convert to million
-                if planted and planted > 500:
-                    planted = round(planted / 1000, 1)
-                if harvested and harvested > 500:
-                    harvested = round(harvested / 1000, 1)
-                area_data[my] = {"planted": r1(planted), "harvested": r1(harvested), "yield": r1(yld)}
-            else:
-                # Try calendar year format (1980 -> 1980/81)
-                try:
-                    yr = int(year_val)
-                    my = f"{yr}/{str(yr+1)[-2:]}"
-                    planted = to_float(row[1])
-                    harvested = to_float(row[2])
-                    yld = to_float(row[3])
-                    if planted and planted > 500:
-                        planted = round(planted / 1000, 1)
-                    if harvested and harvested > 500:
-                        harvested = round(harvested / 1000, 1)
-                    area_data[my] = {"planted": r1(planted), "harvested": r1(harvested), "yield": r1(yld)}
-                except (ValueError, TypeError):
-                    continue
+            try: yr = int(str(row[0]).strip())
+            except (ValueError, TypeError): continue
+            my = f"{yr}/{str(yr+1)[-2:]}"
+            planted = to_float(row[1])
+            harvested = to_float(row[2])
+            area_data[my] = {
+                "planted": round(planted / 1000, 1) if planted else None,
+                "harvested": round(harvested / 1000, 1) if harvested else None,
+                "yield": r1(to_float(row[3])),
+            }
     print(f"  Soy area: {len(area_data)} years")
-    if area_data:
-        s = list(area_data.keys())[-1]
-        print(f"    Sample {s}: {area_data[s]}")
 
     # S&D: tab3 or Table03
     ws03 = find_sheet(wb, "tab3", "Table03", "Table 03", "tab03")
@@ -254,36 +190,9 @@ def parse_soybeans(wb):
         print("  Soy S&D sheet not found")
         return None
     rows03 = list(ws03.iter_rows(values_only=True))
-    print(f"  Soy S&D sheet: {len(rows03)} rows")
-    # Print first data rows for format detection
-    for i in range(min(8, len(rows03))):
-        print(f"    Row {i}: {[str(c)[:20] if c else '' for c in (rows03[i] or [])][:11]}")
-
-    # Find first data row (has marketing year in col 0)
-    data_start = None
-    for i in range(len(rows03)):
-        row = rows03[i]
-        if not row: continue
-        val = str(row[0]).strip() if row[0] else ""
-        if "/" in val and len(val) >= 6:
-            try:
-                int(val[:4])
-                data_start = i
-                break
-            except ValueError:
-                pass
-    
-    if data_start is None:
-        print("  Could not find soy S&D data start")
-        return None
-
-    print(f"  Soy S&D data starts row {data_start}")
-    if data_start < len(rows03):
-        fr = rows03[data_start]
-        print(f"    First data: {[str(c)[:15] if c else '' for c in (fr or [])][:12]}")
-
+    sd_labels = ["Beginning stocks", "Production", "Imports", "Total supply", "Crush", "Exports", "Seed, feed, and residual", "Total disappearance", "Ending stocks"]
     years, sd = [], []
-    for i in range(data_start, len(rows03)):
+    for i in range(7, len(rows03)):
         row = rows03[i]
         if not row: continue
         my = str(row[0]).strip() if row[0] else ""
@@ -291,60 +200,26 @@ def parse_soybeans(wb):
         try: int(my[:4])
         except ValueError: continue
         years.append(my)
-        # Hardcoded: Table03 columns B through K (indices 1-10)
-        # B=Beg stocks, C=Production, D=Imports, E=Total supply,
-        # F=Crush, G=Seed use, H=Feed and residual, I=Exports, J=Total usage, K=Ending stocks
-        sd.append([to_float(row[c]) if c < len(row) else None for c in range(1, 11)])
-
+        sd.append([to_float(row[1 + c]) for c in range(len(sd_labels))])
     print(f"  Soy S&D: {len(years)} years")
-
-    # Explicit labels matching columns B through K (indices 1-10)
-    sd_labels = [
-        "Beginning stocks", "Production", "Imports", "Total supply",
-        "Crush", "Seed use", "Feed and residual use", "Exports",
-        "Total usage", "Ending stocks"
-    ]
 
     rows_out = [
         {"label": "Area planted", "values": [area_data.get(y, {}).get("planted") for y in years]},
         {"label": "Area harvested", "values": [area_data.get(y, {}).get("harvested") for y in years]},
         {"label": "Yield per harvested acre", "values": [area_data.get(y, {}).get("yield") for y in years]},
     ]
+    renames = {"Total disappearance": "Total usage"}
+    for ci, label in enumerate(sd_labels):
+        display = renames.get(label, label)
+        rd = {"label": display, "values": [ri(sd[yi][ci]) for yi in range(len(years))]}
+        if "total" in display.lower() or "ending" in display.lower(): rd["bold"] = True
+        if label == "Beginning stocks": rd["spaceBefore"] = True
+        rows_out.append(rd)
 
-    # Build S&D rows with proper spacing and calculated total domestic use
-    # Supply section
-    rows_out.append({"label": "Beginning stocks", "values": [ri(sd[yi][0]) for yi in range(len(years))]})
-    rows_out.append({"label": "Production", "values": [ri(sd[yi][1]) for yi in range(len(years))]})
-    rows_out.append({"label": "Imports", "values": [ri(sd[yi][2]) for yi in range(len(years))]})
-    rows_out.append({"label": "Total supply", "values": [ri(sd[yi][3]) for yi in range(len(years))], "bold": True})
-
-    # Use section
-    crush_vals = [ri(sd[yi][4]) for yi in range(len(years))]
-    seed_vals = [ri(sd[yi][5]) for yi in range(len(years))]
-    feed_vals = [ri(sd[yi][6]) for yi in range(len(years))]
-    # Calculate total domestic use = crush + seed + feed/residual
-    dom_vals = []
-    for yi in range(len(years)):
-        c, s, f = crush_vals[yi], seed_vals[yi], feed_vals[yi]
-        if c is not None and s is not None and f is not None:
-            dom_vals.append(c + s + f)
-        elif c is not None:
-            dom_vals.append(c + (s or 0) + (f or 0))
-        else:
-            dom_vals.append(None)
-
-    rows_out.append({"label": "Crush", "values": crush_vals})
-    rows_out.append({"label": "Seed", "values": seed_vals})
-    rows_out.append({"label": "Feed and residual", "values": feed_vals})
-    rows_out.append({"label": "Total domestic use", "values": dom_vals, "bold": True})
-    rows_out.append({"label": "Exports", "values": [ri(sd[yi][7]) for yi in range(len(years))]})
-    rows_out.append({"label": "Total usage", "values": [ri(sd[yi][8]) for yi in range(len(years))], "bold": True})
-
-    # Ending stocks + stocks/use
-    es_vals = [ri(sd[yi][9]) for yi in range(len(years))]
-    tu_vals = [ri(sd[yi][8]) for yi in range(len(years))]
-    rows_out.append({"label": "Ending stocks", "values": es_vals, "bold": True})
-    rows_out.append({"label": "Stocks/use (%)", "values": [pct(es_vals[i], tu_vals[i]) for i in range(len(years))], "bold": True, "pct": True})
+    es = next((r for r in rows_out if r["label"] == "Ending stocks"), None)
+    tu = next((r for r in rows_out if r["label"] == "Total usage"), None)
+    if es and tu:
+        rows_out.append({"label": "Stocks/use (%)", "values": [pct(es["values"][i], tu["values"][i]) for i in range(len(years))], "bold": True, "pct": True})
 
     return {"id": "soybeans", "label": "Soybeans", "years": years,
             "sections": [{"header": "Supply and disappearance", "unit": "million bushels", "rows": rows_out}]}
@@ -356,32 +231,9 @@ def parse_soymeal(wb):
         print("  Soy meal sheet not found")
         return None
     rows = list(ws.iter_rows(values_only=True))
-    print(f"  Soy meal sheet: {len(rows)} rows")
-    for i in range(min(8, len(rows))):
-        print(f"    Row {i}: {[str(c)[:20] if c else '' for c in (rows[i] or [])][:11]}")
-
-    # Find first data row
-    data_start = None
-    for i in range(len(rows)):
-        row = rows[i]
-        if not row: continue
-        val = str(row[0]).strip() if row[0] else ""
-        if "/" in val and len(val) >= 6:
-            try:
-                int(val[:4])
-                data_start = i
-                break
-            except ValueError: pass
-    if data_start is None:
-        print("  Could not find meal data start")
-        return None
-
-    print(f"  Meal data starts row {data_start}")
-    fr = rows[data_start]
-    print(f"    First: {[str(c)[:15] if c else '' for c in (fr or [])][:11]}")
-
+    labels = ["Beginning stocks", "Production", "Imports", "Total supply", "Domestic use", "Exports", "Total disappearance", "Ending stocks", "Price ($/short ton)"]
     years, sd = [], []
-    for i in range(data_start, len(rows)):
+    for i in range(7, len(rows)):
         row = rows[i]
         if not row: continue
         my = str(row[0]).strip() if row[0] else ""
@@ -389,24 +241,22 @@ def parse_soymeal(wb):
         try: int(my[:4])
         except ValueError: continue
         years.append(my)
-        # Read columns B through J (indices 1-9)
-        sd.append([to_float(row[c]) if c < len(row) else None for c in range(1, 10)])
-    print(f"  Soy meal: {len(years)} years")
+        sd.append([to_float(row[1 + c]) for c in range(len(labels))])
 
-    # Table04 columns: B=Beg stocks, C=Production, D=Imports, E=Total supply,
-    # F=Domestic use, G=Exports, H=Total disappearance(usage), I=Ending stocks, J=Price
+    renames = {"Total disappearance": "Total usage"}
     rows_out = []
-    rows_out.append({"label": "Beginning stocks", "values": [ri(sd[yi][0]) for yi in range(len(years))]})
-    rows_out.append({"label": "Production", "values": [ri(sd[yi][1]) for yi in range(len(years))]})
-    rows_out.append({"label": "Imports", "values": [ri(sd[yi][2]) for yi in range(len(years))]})
-    rows_out.append({"label": "Total supply", "values": [ri(sd[yi][3]) for yi in range(len(years))], "bold": True})
+    for ci, label in enumerate(labels):
+        display = renames.get(label, label)
+        is_price = "price" in label.lower()
+        rd = {"label": display, "values": [sd[yi][ci] if is_price else ri(sd[yi][ci]) for yi in range(len(years))]}
+        if "total" in display.lower() or "ending" in display.lower(): rd["bold"] = True
+        if is_price: rd["price"] = True
+        rows_out.append(rd)
 
-    rows_out.append({"label": "Domestic use", "values": [ri(sd[yi][4]) for yi in range(len(years))]})
-    rows_out.append({"label": "Exports", "values": [ri(sd[yi][5]) for yi in range(len(years))]})
-    rows_out.append({"label": "Total usage", "values": [ri(sd[yi][6]) for yi in range(len(years))], "bold": True})
-
-    es_vals = [ri(sd[yi][7]) for yi in range(len(years))]
-    rows_out.append({"label": "Ending stocks", "values": es_vals, "bold": True})
+    es = next((r for r in rows_out if r["label"] == "Ending stocks"), None)
+    tu = next((r for r in rows_out if r["label"] == "Total usage"), None)
+    if es and tu:
+        rows_out.append({"label": "Stocks/use (%)", "values": [pct(es["values"][i], tu["values"][i]) for i in range(len(years))], "bold": True, "pct": True})
 
     return {"id": "soybean_meal", "label": "Soybean Meal", "years": years,
             "sections": [{"header": "Supply and disappearance", "unit": "1,000 short tons", "rows": rows_out}]}
@@ -418,32 +268,9 @@ def parse_soyoil(wb):
         print("  Soy oil sheet not found")
         return None
     rows = list(ws.iter_rows(values_only=True))
-    print(f"  Soy oil sheet: {len(rows)} rows")
-    for i in range(min(8, len(rows))):
-        print(f"    Row {i}: {[str(c)[:20] if c else '' for c in (rows[i] or [])][:11]}")
-
-    # Find first data row
-    data_start = None
-    for i in range(len(rows)):
-        row = rows[i]
-        if not row: continue
-        val = str(row[0]).strip() if row[0] else ""
-        if "/" in val and len(val) >= 6:
-            try:
-                int(val[:4])
-                data_start = i
-                break
-            except ValueError: pass
-    if data_start is None:
-        print("  Could not find oil data start")
-        return None
-
-    print(f"  Oil data starts row {data_start}")
-    fr = rows[data_start]
-    print(f"    First: {[str(c)[:15] if c else '' for c in (fr or [])][:11]}")
-
+    labels = ["Beginning stocks", "Production", "Imports", "Total supply", "Domestic total", "Biofuel", "Exports", "Total disappearance", "Ending stocks"]
     years, sd = [], []
-    for i in range(data_start, len(rows)):
+    for i in range(6, len(rows)):
         row = rows[i]
         if not row: continue
         my = str(row[0]).strip() if row[0] else ""
@@ -451,26 +278,20 @@ def parse_soyoil(wb):
         try: int(my[:4])
         except ValueError: continue
         years.append(my)
-        # Read columns B through K (indices 1-10)
-        sd.append([to_float(row[c]) if c < len(row) else None for c in range(1, 11)])
-    print(f"  Soy oil: {len(years)} years")
+        sd.append([to_float(row[1 + c]) for c in range(len(labels))])
 
-    # Table05 columns: B=Beg stocks, C=Production, D=Imports, E=Total supply,
-    # F=Domestic total, G=Biofuel, H=Food/feed/other industrial, I=Exports, J=Total disappearance(usage), K=Ending stocks
+    renames = {"Total disappearance": "Total usage"}
     rows_out = []
-    rows_out.append({"label": "Beginning stocks", "values": [ri(sd[yi][0]) for yi in range(len(years))]})
-    rows_out.append({"label": "Production", "values": [ri(sd[yi][1]) for yi in range(len(years))]})
-    rows_out.append({"label": "Imports", "values": [ri(sd[yi][2]) for yi in range(len(years))]})
-    rows_out.append({"label": "Total supply", "values": [ri(sd[yi][3]) for yi in range(len(years))], "bold": True})
+    for ci, label in enumerate(labels):
+        display = renames.get(label, label)
+        rd = {"label": display, "values": [ri(sd[yi][ci]) for yi in range(len(years))]}
+        if "total" in display.lower() or "ending" in display.lower(): rd["bold"] = True
+        rows_out.append(rd)
 
-    rows_out.append({"label": "Domestic total", "values": [ri(sd[yi][4]) for yi in range(len(years))]})
-    rows_out.append({"label": "Biofuel", "values": [ri(sd[yi][5]) for yi in range(len(years))], "indent": True})
-    rows_out.append({"label": "Food, feed, and other industrial", "values": [ri(sd[yi][6]) for yi in range(len(years))], "indent": True})
-    rows_out.append({"label": "Exports", "values": [ri(sd[yi][7]) for yi in range(len(years))]})
-    rows_out.append({"label": "Total usage", "values": [ri(sd[yi][8]) for yi in range(len(years))], "bold": True})
-
-    es_vals = [ri(sd[yi][9]) for yi in range(len(years))]
-    rows_out.append({"label": "Ending stocks", "values": es_vals, "bold": True})
+    es = next((r for r in rows_out if r["label"] == "Ending stocks"), None)
+    tu = next((r for r in rows_out if r["label"] == "Total usage"), None)
+    if es and tu:
+        rows_out.append({"label": "Stocks/use (%)", "values": [pct(es["values"][i], tu["values"][i]) for i in range(len(years))], "bold": True, "pct": True})
 
     return {"id": "soybean_oil", "label": "Soybean Oil", "years": years,
             "sections": [{"header": "Supply and disappearance", "unit": "million pounds", "rows": rows_out}]}
@@ -569,15 +390,13 @@ def parse_wheat(wb_data):
             if "total disappearance" in lower: renames[lbl] = "Total usage"
             elif "total supply" in lower: renames[lbl] = "Total supply"
             elif "total domestic" in lower: renames[lbl] = "Total domestic use"
-            elif lower.strip() == "food use": renames[lbl] = "Food"
-            elif "seed use" in lower: renames[lbl] = "Seed"
-            elif "feed and residual use" in lower: renames[lbl] = "Feed and residual"
 
         for ci, lbl in enumerate(col_labels):
             display = renames.get(lbl, lbl.replace(" 2/", "").replace(" 3/", "").replace(" 4/", "").strip())
             values = [ri(sd_data[yi][ci]) for yi in range(len(years))]
             rd = {"label": display, "values": values}
             if "total" in display.lower() or "ending" in display.lower(): rd["bold"] = True
+            if "beginning" in display.lower(): rd["spaceBefore"] = True
             rows_out.append(rd)
 
         es = next((r for r in rows_out if "ending" in r["label"].lower()), None)

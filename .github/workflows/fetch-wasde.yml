@@ -1,7 +1,12 @@
 name: Fetch WASDE Data
+
 on:
   schedule:
-    - cron: '0 17 9-12 * *'  # 9th-12th of month at 12:00 PM ET (USDA WASDE release window)
+    # Tier 1: WASDE report day — 12:15 PM ET (15 min after release)
+    # Runs 9th-12th of each month to catch the release window
+    - cron: '15 17 9-12 * *'
+    # Tier 2: ERS yearbook refresh — 1st of month (yearbooks update on their own schedule)
+    - cron: '0 12 1 * *'
   workflow_dispatch:
 
 permissions:

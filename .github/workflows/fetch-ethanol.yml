@@ -1,7 +1,7 @@
 name: Fetch Ethanol (Weekly)
 on:
   schedule:
-    - cron: '30 14 * * 3'  # Wednesdays 10:30 AM ET (EIA release time)
+    - cron: '30 14 * * 3'  # Wednesdays 10:30 AM ET (EIA report release time)
   workflow_dispatch:
 
 permissions:
@@ -15,6 +15,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Install dependencies
+        run: pip install xlrd
       - name: Fetch ethanol data
         env:
           EIA_API_KEY: ${{ secrets.EIA_API_KEY }}

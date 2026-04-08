@@ -5714,7 +5714,7 @@ function LivestockWASDEPage() {
           return (<button key={t.id} onClick={function() { setSel(t.id); }} style={{
             padding: "7px 18px", fontSize: 13, fontWeight: active ? 600 : 400,
             border: "1px solid var(--color-border-secondary)", borderRadius: 6, cursor: "pointer",
-            background: active ? "#333" : "transparent",
+            background: active ? "#2563EB" : "transparent",
             color: active ? "#fff" : "var(--color-text-secondary)",
             transition: "all 0.15s",
           }}>{t.label}</button>);
@@ -5735,7 +5735,7 @@ function LivestockWASDEPage() {
     )}
 
     <div style={{ marginTop: 14, fontSize: 11, color: "var(--color-text-tertiary)" }}>
-      Source: {dataLabel}. Units: million lbs (carcass weight). Per capita: lbs (retail weight).
+      Source: {dataLabel}. All supply/use/stocks in million lbs (carcass weight equivalent).
       <br />Marketing years: beef/pork calendar year, broiler/turkey calendar year.
     </div>
   </div>);
@@ -5743,7 +5743,7 @@ function LivestockWASDEPage() {
 
 const PAGES = {
   "wasde": { title: "WASDE balance sheets", component: WASDEPage },
-  "livestock-wasde": { title: "WASDE balance sheets (Livestock)", component: LivestockWASDEPage },
+  "livestock-wasde": { title: "WASDE livestock balance sheets", component: LivestockWASDEPage },
   "crop-progress": { title: "Crop progress & condition", component: CropProgressPage },
   "ethanol": { title: "EIA Ethanol (Weekly)", component: EthanolPage },
   "fats-oils": { title: "USDA Oilseed Crushing (Monthly)", component: FatsOilsPage },

@@ -24,22 +24,25 @@ OILCROPS_URLS = [
 WHEAT_URL = "https://www.ers.usda.gov/media/5706/wheat-data-all-years.xlsx?v=53976"
 
 
-def fetch_url(url, timeout=60, retries=3, delay=30):
+def fetch_url(url, timeout=60, retries=3, delay=10):
     for attempt in range(1, retries + 1):
-        print(f"  Attempt {attempt}/{retries}: {url[:90]}...")
+        print(f"  {'Try' if attempt==1 else 'Retry '+str(attempt)}: {url[:90]}...")
         try:
             req = urllib.request.Request(url, headers=HEADERS)
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 data = resp.read()
                 print(f"  OK: {len(data):,} bytes")
                 return data
-        except Exception as e:
-            print(f"  FAILED: {e}")
+        except urllib.error.HTTPError as e:
+            print(f"  HTTP {e.code}")
+            if e.code in (404, 403, 410):
+                return None  # Not found / forbidden — no point retrying
             if attempt < retries:
-                wait = delay * attempt
-                print(f"  Retrying in {wait}s...")
-                time.sleep(wait)
-    print(f"  All {retries} attempts failed for {url[:90]}")
+                time.sleep(delay)
+        except Exception as e:
+            print(f"  {e}")
+            if attempt < retries:
+                time.sleep(delay)
     return None
 
 def fetch_with_fallbacks(urls, timeout=60):
@@ -892,8 +895,6 @@ def build_wasde_report_urls():
         urls.append(f"https://www.usda.gov/oce/commodity/wasde/wasde{mm}{yy}.xlsx")
         urls.append(f"https://www.usda.gov/sites/default/files/documents/oce-wasde-{yyyy}-{mm}.xlsx")
         urls.append(f"https://usda.library.cornell.edu/apod/wasde{mm}{yy}.xlsx")
-    # Also try a "latest" redirect
-    urls.append("https://www.usda.gov/oce/commodity/wasde/latest.xlsx")
     return urls
 
 

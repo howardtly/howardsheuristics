@@ -1158,6 +1158,7 @@ const NAV_SECTIONS = [
   { id: "livestock", label: "Livestock & meats",
     icon: <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7V5.5L4.5 6.5"/><path d="M7 7V5.5L5.5 6.5"/><path d="M3 7c-.5 0-1 .4-1 1v1.5c0 .4.3.7.7.7H4"/><path d="M4 7h2c.5 0 1 .4 1 1v0"/><rect x="4" y="8" width="12" height="5" rx="1"/><path d="M16 9.5h1.5c.3 0 .5.2.5.5v1c0 .3-.2.5-.5.5H16"/><circle cx="4" cy="7.8" r="0.5" fill="currentColor" stroke="none"/><circle cx="6" cy="7.8" r="0.5" fill="currentColor" stroke="none"/><path d="M5.5 13v2.5M8 13v2.5M12.5 13v2.5M15 13v2.5"/></svg>,
     children: [
+      { id: "livestock-wasde", label: "WASDE balance sheets" },
       { id: "cutout", label: "Boxed beef & pork prices" }, { id: "slaughter", label: "Slaughter" },
       { id: "cold-storage", label: "Cold storage" }, { id: "on-feed", label: "Cattle on feed" },
       { id: "hogs-pigs", label: "Hogs & pigs" },
@@ -5656,8 +5657,93 @@ function ExportSalesPage({ ready }) {
 }
 
 
+
+function LivestockWASDEPage() {
+  var _sel = useState("beef");
+  var sel = _sel[0], setSel = _sel[1];
+  var _live = useState(null);
+  var _lbl = useState("representative data");
+  var liveData = _live[0], setLiveData = _live[1];
+  var dataLabel = _lbl[0], setDataLabel = _lbl[1];
+
+  useEffect(function() {
+    fetch("data/wasde.json?t=" + Date.now())
+      .then(function(r) { if (!r.ok) throw new Error("not found"); return r.json(); })
+      .then(function(data) {
+        if (data && data.us) {
+          var livestock = {};
+          ["beef", "pork", "broiler", "turkey"].forEach(function(sp) {
+            if (data.us[sp]) livestock[sp] = data.us[sp];
+          });
+          if (Object.keys(livestock).length > 0) {
+            setLiveData(livestock);
+            var d = new Date(data.fetched_at);
+            setDataLabel("USDA ERS data, fetched " + d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }));
+          }
+        }
+      })
+      .catch(function() {});
+  }, []);
+
+  var TABS = [
+    { id: "beef", label: "Beef" },
+    { id: "pork", label: "Pork" },
+    { id: "broiler", label: "Broiler" },
+    { id: "turkey", label: "Turkey" },
+  ];
+
+  var commodity = liveData && liveData[sel] ? liveData[sel] : null;
+
+  var dlCSV = function() {
+    if (!commodity) return;
+    var headers = ["Item"].concat(commodity.years);
+    var rows = [];
+    commodity.sections.forEach(function(s) {
+      s.rows.forEach(function(r) {
+        rows.push([r.label].concat(r.values.map(function(v) { return v != null ? v : ""; })));
+      });
+    });
+    downloadCSV("livestock_wasde_" + sel + ".csv", headers, rows);
+  };
+
+  return (<div>
+    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 3 }}>
+        {TABS.map(function(t) {
+          var active = sel === t.id;
+          return (<button key={t.id} onClick={function() { setSel(t.id); }} style={{
+            padding: "7px 18px", fontSize: 13, fontWeight: active ? 600 : 400,
+            border: "1px solid var(--color-border-secondary)", borderRadius: 6, cursor: "pointer",
+            background: active ? "#333" : "transparent",
+            color: active ? "#fff" : "var(--color-text-secondary)",
+            transition: "all 0.15s",
+          }}>{t.label}</button>);
+        })}
+      </div>
+      <div style={{ marginLeft: "auto" }}><DownloadBtn onClick={dlCSV} /></div>
+    </div>
+
+    {commodity ? (
+      <div>
+        <h3 style={{ fontSize: 15, fontWeight: 500, color: "var(--color-text-primary)", margin: "0 0 10px" }}>U.S. {commodity.label} balance sheet</h3>
+        <WASDETable commodity={commodity} />
+      </div>
+    ) : (
+      <div style={{ padding: 40, textAlign: "center", color: "var(--color-text-tertiary)", fontSize: 13 }}>
+        {liveData === null ? "Loading livestock data..." : "No data available for " + sel + ". Run the WASDE fetcher to populate livestock balance sheets."}
+      </div>
+    )}
+
+    <div style={{ marginTop: 14, fontSize: 11, color: "var(--color-text-tertiary)" }}>
+      Source: {dataLabel}. Units: million lbs (carcass weight). Per capita: lbs (retail weight).
+      <br />Marketing years: beef/pork calendar year, broiler/turkey calendar year.
+    </div>
+  </div>);
+}
+
 const PAGES = {
   "wasde": { title: "WASDE balance sheets", component: WASDEPage },
+  "livestock-wasde": { title: "WASDE balance sheets (Livestock)", component: LivestockWASDEPage },
   "crop-progress": { title: "Crop progress & condition", component: CropProgressPage },
   "ethanol": { title: "EIA Ethanol (Weekly)", component: EthanolPage },
   "fats-oils": { title: "USDA Oilseed Crushing (Monthly)", component: FatsOilsPage },

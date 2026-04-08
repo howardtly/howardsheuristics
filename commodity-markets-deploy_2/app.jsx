@@ -1636,7 +1636,7 @@ function CattleOnFeedPage({ ready }) {
   const mkChart = (dk, hid) => (canvas) => {
     const d = CATTLE_ON_FEED[dk];
     new Chart(canvas, { type: "line", data: { labels: CATTLE_ON_FEED.months, datasets: ["2025","2024","5yr"].filter(k => !hid.has(k)).map(k => ({ label: k === "5yr" ? "5-yr avg" : k, data: d[k], ...COF_DS[k] })) },
-      options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false }, plugins: { legend: { display: false } }, scales: { x: { ticks: { font: { size: 11 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } }, y: { ticks: { font: { size: 11 }, callback: v => v.toLocaleString() }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } } } } });
+      options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "nearest", intersect: false }, plugins: { legend: { display: false } }, scales: { x: { ticks: { font: { size: 11 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } }, y: { ticks: { font: { size: 11 }, callback: v => v.toLocaleString() }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } } } } });
   };
   const dlCof = (dk, fn) => () => { const d = CATTLE_ON_FEED[dk]; downloadCSV(fn, ["Month","2025","2024","5-yr avg"], CATTLE_ON_FEED.months.map((m,i) => [m, d["2025"][i], d["2024"][i], d["5yr"][i]])); };
   return (<div>
@@ -1711,7 +1711,7 @@ function CutoutPage({ ready }) {
             fill: true, borderWidth: 2, pointRadius: 0, tension: 0, spanGaps: true,
           }]},
           options: { responsive: true, maintainAspectRatio: false,
-            interaction: { mode: "index", intersect: false },
+            interaction: { mode: "nearest", intersect: false },
             plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `$${c.parsed.y.toFixed(2)}` } } },
             scales: {
               x: { ticks: { autoSkip: true, maxTicksLimit: 12, maxRotation: 45, font: { size: 10 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
@@ -1755,7 +1755,7 @@ function CutoutPage({ ready }) {
       new Chart(canvas, {
         type: "line", data: { labels: displayLabels, datasets: ds },
         options: { responsive: true, maintainAspectRatio: false,
-          interaction: { mode: "index", intersect: false }, plugins: { legend: { display: false }, tooltip: {
+          interaction: { mode: "nearest", intersect: false }, plugins: { legend: { display: false }, tooltip: {
             callbacks: {
               title: (items) => { if (items.length > 0) return labels[items[0].dataIndex]; return ""; },
               label: c => `${c.dataset.label}: $${c.parsed.y.toFixed(2)}`,
@@ -2187,7 +2187,7 @@ function SlaughterPage({ ready }) {
           fill: true, borderWidth: 2, pointRadius: 0, tension: 0, spanGaps: true,
         }]},
         options: { responsive: true, maintainAspectRatio: false,
-          interaction: { mode: "index", intersect: false },
+          interaction: { mode: "nearest", intersect: false },
           plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.parsed.y != null ? c.parsed.y.toLocaleString() + tooltipSuffix : "n/a"}` } } },
           scales: {
             x: { ticks: { autoSkip: true, maxTicksLimit: 12, maxRotation: 45, font: { size: 10 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
@@ -2203,7 +2203,7 @@ function SlaughterPage({ ready }) {
       new Chart(canvas, {
         type: "line", data: { labels: displayLabels, datasets: ds },
         options: { responsive: true, maintainAspectRatio: false,
-          interaction: { mode: "index", intersect: false }, plugins: { legend: { display: false }, tooltip: {
+          interaction: { mode: "nearest", intersect: false }, plugins: { legend: { display: false }, tooltip: {
             callbacks: {
               title: (items) => items.length > 0 ? weekLabels[items[0].dataIndex] : "",
               label: c => `${c.dataset.label}: ${c.parsed.y != null ? c.parsed.y.toLocaleString() + tooltipSuffix : "n/a"}`,
@@ -2326,7 +2326,7 @@ function ColdStoragePage({ ready }) {
     const { yMin, yMax } = niceAxis(data);
     new Chart(canvas, { type: "bar", data: { labels: COLD_STORAGE.months, datasets: [{ data, backgroundColor: color, borderRadius: 3 }] },
       options: { responsive: true, maintainAspectRatio: false,
-        interaction: { mode: "index", intersect: false },
+        interaction: { mode: "nearest", intersect: false },
         plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.parsed.y}M lbs` } } },
         scales: {
           x: { ticks: { font: { size: 11 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
@@ -2768,8 +2768,8 @@ function CropProgressPage({ ready }) {
     if(xMax<=xMin)xMax=365;
     var tks=[];for(var k=0;k<12;k++){if(mB[k]>=xMin&&mB[k]<=xMax)tks.push({value:mB[k]});if(mM[k]>=xMin&&mM[k]<=xMax)tks.push({value:mM[k]});}
     new Chart(canvas,{type:"scatter",data:{datasets:ds},options:{responsive:true,maintainAspectRatio:false,
-      interaction:{mode:"x",intersect:false},
-      plugins:{legend:{display:false},tooltip:{mode:"x",intersect:false,backgroundColor:"rgba(0,0,0,0.6)",titleFont:{size:11},bodyFont:{size:11},
+      interaction:{mode:"nearest",intersect:false},
+      plugins:{legend:{display:false},tooltip:{mode:"nearest",intersect:false,backgroundColor:"rgba(0,0,0,0.6)",titleFont:{size:11},bodyFont:{size:11},
         callbacks:{
           title:function(items){if(!items.length)return"";var doy=items[0].parsed.x;var mi=11;for(var m=0;m<11;m++){if(doy<mB[m+1]){mi=m;break;}}return mN[mi]+" "+(Math.floor(doy-mB[mi])+1);},
           label:function(c2){if(c2.parsed.y==null)return null;return c2.dataset.label+": "+c2.parsed.y+"%";}
@@ -3108,8 +3108,8 @@ function EthanolPage({ ready }) {
       var tks = []; for (var k = 0; k < 12; k++) { tks.push({ value: mktB[k] }); tks.push({ value: mktM[k] }); }
       new Chart(canvas, { type: "scatter", data: { datasets: ds }, options: {
         responsive: true, maintainAspectRatio: false,
-        interaction: { mode: "x", intersect: false },
-        plugins: { legend: { display: false }, tooltip: { mode: "x", intersect: false, backgroundColor: "rgba(0,0,0,0.6)", titleFont: { size: 11 }, bodyFont: { size: 11 },
+        interaction: { mode: "nearest", intersect: false },
+        plugins: { legend: { display: false }, tooltip: { mode: "nearest", intersect: false, backgroundColor: "rgba(0,0,0,0.6)", titleFont: { size: 11 }, bodyFont: { size: 11 },
           callbacks: { title: function(items) { if (!items.length) return ""; var doy = items[0].parsed.x; var mi = 11; for (var m = 0; m < 11; m++) { if (doy < mktB[m + 1]) { mi = m; break; } } return mktN[mi] + " " + (Math.floor(doy - mktB[mi]) + 1); },
             label: function(c2) { return c2.parsed.y == null ? null : c2.dataset.label + ": " + c2.parsed.y.toLocaleString(); } } } },
         scales: { x: { type: "linear", min: 0, max: 365, ticks: { callback: function(v) { var idx = mktM.indexOf(v); return idx >= 0 ? mktN[idx] : ""; }, autoSkip: false, maxRotation: 0, font: { size: 10 } }, afterBuildTicks: function(ax) { ax.ticks = tks; }, grid: { color: function(ctx) { var v = ctx.tick.value; if (v > 0 && mktB.indexOf(v) >= 0) return "rgba(0,0,0,0.12)"; return "transparent"; }, lineWidth: 0.75 } },
@@ -3417,8 +3417,8 @@ function FatsOilsPage({ ready }) {
       var yd = yDecimals || 0;
       new Chart(canvas, { type: "scatter", data: { datasets: ds }, options: {
         responsive: true, maintainAspectRatio: false,
-        interaction: { mode: "x", intersect: false },
-        plugins: { legend: { display: false }, tooltip: { mode: "x", intersect: false, backgroundColor: "rgba(0,0,0,0.6)", titleFont: { size: 11 }, bodyFont: { size: 11 },
+        interaction: { mode: "nearest", intersect: false },
+        plugins: { legend: { display: false }, tooltip: { mode: "nearest", intersect: false, backgroundColor: "rgba(0,0,0,0.6)", titleFont: { size: 11 }, bodyFont: { size: 11 },
           callbacks: { title: function(items) { if (!items.length) return ""; return axisN[Math.round(items[0].parsed.x)] || ""; },
             label: function(c2) { return c2.parsed.y == null ? null : c2.dataset.label + ": " + c2.parsed.y.toLocaleString(undefined, {minimumFractionDigits:yd,maximumFractionDigits:yd}); } } } },
         scales: { x: { type: "linear", min: -0.5, max: 11.5, afterBuildTicks: function(ax) { var t = []; for (var i = 0; i < 12; i++) t.push({value: i}); ax.ticks = t; }, ticks: { callback: function(v) { return v >= 0 && v < 12 ? axisN[Math.round(v)] : ""; }, autoSkip: false, maxRotation: 0, font: { size: 10 } }, grid: { color: "rgba(0,0,0,0.06)" } },
@@ -3602,7 +3602,7 @@ function HogsPigsPage({ ready }) {
           fill: true, borderWidth: 2, pointRadius: 0, tension: 0, spanGaps: true,
         }]},
         options: { responsive: true, maintainAspectRatio: false,
-          interaction: { mode: "index", intersect: false },
+          interaction: { mode: "nearest", intersect: false },
           plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.parsed.y != null ? c.parsed.y.toLocaleString() : "n/a"}` } } },
           scales: {
             x: { ticks: { font: { size: 10 }, maxRotation: 45 }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
@@ -3621,7 +3621,7 @@ function HogsPigsPage({ ready }) {
     new Chart(canvas, {
       type: "line", data: { labels: HOGS_PIGS_QUARTERS, datasets: ds },
       options: { responsive: true, maintainAspectRatio: false,
-        interaction: { mode: "index", intersect: false }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.parsed.y != null ? c.parsed.y.toLocaleString() : "n/a"}` } } },
+        interaction: { mode: "nearest", intersect: false }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.parsed.y != null ? c.parsed.y.toLocaleString() : "n/a"}` } } },
         scales: {
           x: { ticks: { font: { size: 11 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
           y: { min: yMin, max: yMax, title: { display: true, text: "thousand head", font: { size: 11 } }, ticks: { font: { size: 11 }, callback: v => (v / 1000).toFixed(0) + "M" }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
@@ -3885,7 +3885,7 @@ function COTDetailPage({ ready, commodityId }) {
     new Chart(canvas, {
       type: "line", data: { labels: COT_WEEKS, datasets: visible.map(c => ({ label: c.key, data: c.data, ...catDS[c.key] })) },
       options: { responsive: true, maintainAspectRatio: false,
-        interaction: { mode: "index", intersect: false },
+        interaction: { mode: "nearest", intersect: false },
         plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.parsed.y > 0 ? "+" : ""}${c.parsed.y.toLocaleString()}` } } },
         scales: {
           x: { ticks: { autoSkip: true, maxTicksLimit: 10, maxRotation: 45, font: { size: 10 } }, grid: { color: "rgba(0,0,0,0.08)", lineWidth: 0.5 } },
@@ -3905,7 +3905,7 @@ function COTDetailPage({ ready, commodityId }) {
         borderWidth: 1, borderRadius: 2,
       }]},
       options: { responsive: true, maintainAspectRatio: false,
-        interaction: { mode: "index", intersect: false },
+        interaction: { mode: "nearest", intersect: false },
         plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `MM Net: ${c.parsed.y > 0 ? "+" : ""}${c.parsed.y.toLocaleString()}` } } },
         scales: {
           x: { ticks: { autoSkip: true, maxTicksLimit: 10, maxRotation: 45, font: { size: 10 } }, grid: { color: "rgba(0,0,0,0.08)", lineWidth: 0.5 } },
@@ -3920,7 +3920,7 @@ function COTDetailPage({ ready, commodityId }) {
     new Chart(canvas, {
       type: "line", data: { labels: COT_WEEKS, datasets: [{ label: "Open interest", data: d.oi.net, borderColor: "#534AB7", backgroundColor: "rgba(83,74,183,0.06)", fill: true, borderWidth: 2, pointRadius: 0, tension: 0 }] },
       options: { responsive: true, maintainAspectRatio: false,
-        interaction: { mode: "index", intersect: false },
+        interaction: { mode: "nearest", intersect: false },
         plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `OI: ${c.parsed.y.toLocaleString()}` } } },
         scales: {
           x: { ticks: { autoSkip: true, maxTicksLimit: 10, maxRotation: 45, font: { size: 10 } }, grid: { color: "rgba(0,0,0,0.08)", lineWidth: 0.5 } },
@@ -4369,7 +4369,7 @@ function EnergyChartPage({ ready, dataKey }) {
           fill: true, borderWidth: 2, pointRadius: 0, tension: 0, spanGaps: true,
         }]},
         options: { responsive: true, maintainAspectRatio: false,
-          interaction: { mode: "index", intersect: false },
+          interaction: { mode: "nearest", intersect: false },
           plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.parsed.y} ${d.unit}` } } },
           scales: {
             x: { ticks: { autoSkip: true, maxTicksLimit: 12, maxRotation: 45, font: { size: 10 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
@@ -4385,7 +4385,7 @@ function EnergyChartPage({ ready, dataKey }) {
       new Chart(canvas, {
         type: "line", data: { labels: ENERGY_WEEKS, datasets: ds },
         options: { responsive: true, maintainAspectRatio: false,
-          interaction: { mode: "index", intersect: false },
+          interaction: { mode: "nearest", intersect: false },
           plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.parsed.y} ${d.unit}` } } },
           scales: {
             x: { ticks: { autoSkip: true, maxTicksLimit: 10, maxRotation: 45, font: { size: 11 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
@@ -4479,7 +4479,7 @@ function NGInjWdPage({ ready }) {
     new Chart(canvas, {
       data: { labels: ENERGY_WEEKS, datasets },
       options: { responsive: true, maintainAspectRatio: false,
-        interaction: { mode: "index", intersect: false },
+        interaction: { mode: "nearest", intersect: false },
         plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.parsed.y > 0 ? "+" : ""}${c.parsed.y} Bcf` } } },
         scales: {
           x: { ticks: { autoSkip: true, maxTicksLimit: 10, maxRotation: 45, font: { size: 11 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
@@ -4556,7 +4556,7 @@ function FXCurrenciesPage({ ready }) {
         fill: true, borderWidth: 2, pointRadius: 0, tension: 0,
       }]},
       options: { responsive: true, maintainAspectRatio: false,
-        interaction: { mode: "index", intersect: false },
+        interaction: { mode: "nearest", intersect: false },
         plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${d.label}: ${fmt(c.parsed.y, d.format)}` } } },
         scales: {
           x: { ticks: { autoSkip: true, maxTicksLimit: 10, maxRotation: 45, font: { size: 11 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
@@ -4587,7 +4587,7 @@ function FXCurrenciesPage({ ready }) {
     new Chart(canvas, {
       type: "line", data: { labels: FX_WEEKS, datasets },
       options: { responsive: true, maintainAspectRatio: false,
-        interaction: { mode: "index", intersect: false },
+        interaction: { mode: "nearest", intersect: false },
         plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.parsed.y.toFixed(1)}` } } },
         scales: {
           x: { ticks: { font: { size: 11 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
@@ -4749,7 +4749,7 @@ function FXChartWidget({ defaultId, ready, fmt, niceAxis }) {
         fill: true, borderWidth: 2, pointRadius: 0, tension: 0, spanGaps: true,
       }]},
       options: { responsive: true, maintainAspectRatio: false,
-        interaction: { mode: "index", intersect: false },
+        interaction: { mode: "nearest", intersect: false },
         plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${base}/${quote}: ${fmtVal(c.parsed.y)}` } } },
         scales: {
           x: { ticks: { autoSkip: true, maxTicksLimit: 10, maxRotation: 45, font: { size: 11 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
@@ -5266,8 +5266,8 @@ function ExportInspectionsPage({ ready }) {
     var tks = []; for (var k = 0; k < 12; k++) { tks.push({value: mktBounds[k]}); tks.push({value: mktMids[k]}); }
     new Chart(canvas, { type: "scatter", data: { datasets: ds }, options: {
       responsive: true, maintainAspectRatio: false,
-      interaction: { mode: "x", intersect: false },
-      plugins: { legend: { display: false }, tooltip: { mode: "x", intersect: false, backgroundColor: "rgba(0,0,0,0.6)", titleFont: { size: 11 }, bodyFont: { size: 11 },
+      interaction: { mode: "nearest", intersect: false },
+      plugins: { legend: { display: false }, tooltip: { mode: "nearest", intersect: false, backgroundColor: "rgba(0,0,0,0.6)", titleFont: { size: 11 }, bodyFont: { size: 11 },
         callbacks: { title: function(items) { if (!items.length) return ""; var doy = items[0].parsed.x; var mi = 11; for (var m = 0; m < 11; m++) { if (doy < mktBounds[m+1]) { mi = m; break; } } return cfg.mktN[mi] + " " + (Math.floor(doy - mktBounds[mi]) + 1); },
           label: function(c2) { return c2.parsed.y == null ? null : c2.dataset.label + ": " + c2.parsed.y.toLocaleString(); } } } },
       scales: { x: { type: "linear", min: 0, max: 365, afterBuildTicks: function(ax) { ax.ticks = tks; }, ticks: { callback: function(v) { var idx = mktMids.indexOf(v); return idx >= 0 ? cfg.mktN[idx] : ""; }, autoSkip: false, maxRotation: 0, font: { size: 10 } }, grid: { color: function(ctx) { var v = ctx.tick.value; if (v > 0 && mktBounds.indexOf(v) >= 0) return "rgba(0,0,0,0.12)"; return "transparent"; }, lineWidth: 0.75 } },
@@ -5563,8 +5563,8 @@ function ExportSalesPage({ ready }) {
     var tks = []; for (var k = 0; k < 12; k++) { tks.push({value: mktBounds[k]}); tks.push({value: mktMids[k]}); }
     new Chart(canvas, { type: "scatter", data: { datasets: ds }, options: {
       responsive: true, maintainAspectRatio: false,
-      interaction: { mode: "x", intersect: false },
-      plugins: { legend: { display: false }, tooltip: { mode: "x", intersect: false, backgroundColor: "rgba(0,0,0,0.6)", titleFont: { size: 11 }, bodyFont: { size: 11 },
+      interaction: { mode: "nearest", intersect: false },
+      plugins: { legend: { display: false }, tooltip: { mode: "nearest", intersect: false, backgroundColor: "rgba(0,0,0,0.6)", titleFont: { size: 11 }, bodyFont: { size: 11 },
         callbacks: { title: function(items) { if (!items.length) return ""; var doy = items[0].parsed.x; var mi = 11; for (var m = 0; m < 11; m++) { if (doy < mktBounds[m+1]) { mi = m; break; } } return cfg.mktN[mi] + " " + (Math.floor(doy - mktBounds[mi]) + 1); },
           label: function(c2) { return c2.parsed.y == null ? null : c2.dataset.label + ": " + c2.parsed.y.toLocaleString(); } } } },
       scales: { x: { type: "linear", min: 0, max: 365, afterBuildTicks: function(ax) { ax.ticks = tks; }, ticks: { callback: function(v) { var idx = mktMids.indexOf(v); return idx >= 0 ? cfg.mktN[idx] : ""; }, autoSkip: false, maxRotation: 0, font: { size: 10 } }, grid: { color: function(ctx) { var v = ctx.tick.value; if (v > 0 && mktBounds.indexOf(v) >= 0) return "rgba(0,0,0,0.12)"; return "transparent"; }, lineWidth: 0.75 } },

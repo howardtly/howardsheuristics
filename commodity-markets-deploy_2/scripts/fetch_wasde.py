@@ -620,53 +620,55 @@ MEAT_SDP_URL = "https://www.ers.usda.gov/media/5531/meat-supply-and-disappearanc
 
 def parse_meat_sdp_sheet(ws, species_label, min_year=1990):
     """Parse an ERS Meat S&D sheet. Annual rows only (Yr Jan-Dec).
-    Columns: Year | Qtr | CommercialProd | FarmProd | TotalProd | _ | BegStocks | Imports | TotalSupply | Exports | EndStocks | TotalDisappearance
-    For poultry: Year | Qtr | FedInspected | Condemnation | NetRTC | _ | BegStocks | Imports | TotalSupply | Exports | EndStocks | TotalDisappearance
+    Cols: 0=Year, 1=Qtr, 2=CommProd, 3=FarmProd, 4=TotalProd, 5=_, 
+          6=BegStocks, 7=Imports, 8=TotalSupply, 9=Exports, 10=EndStocks, 
+          11=TotalDisappearance, 12=Population, 13=PC_carcass, 14=PC_retail
     """
     rows_data = list(ws.iter_rows(values_only=True))
     print(f"  {species_label}: sheet '{ws.title}', {len(rows_data)} rows")
 
-    # Extract annual rows — find "Yr Jan-Dec" or "Yr" pattern in col 1
     current_year = None
     annual_data = []
     
-    for i in range(3, len(rows_data)):  # Skip header rows 0-2
+    for i in range(3, len(rows_data)):
         row = rows_data[i]
         if not row or len(row) < 12: continue
         
-        # Track current year from col 0
         yr_cell = row[0]
         if yr_cell is not None:
             try:
                 current_year = int(float(str(yr_cell).strip()))
             except (ValueError, TypeError):
                 if str(yr_cell).strip().startswith(("1/", "2/", "3/", "Source", "Date")):
-                    break  # Hit footnotes
+                    break
                 continue
         
-        # Check if this is an annual row
         qtr = str(row[1]).strip() if row[1] else ""
         if "Yr" not in qtr:
             continue
-        
         if current_year is None or current_year < min_year or current_year > 2030:
             continue
         
-        # Extract values — column positions are fixed
-        def to_f(v):
+        def to_int(v):
+            if v is None: return None
+            try: return round(float(str(v).replace(',', '').strip()))
+            except: return None
+        
+        def to_1d(v):
             if v is None: return None
             try: return round(float(str(v).replace(',', '').strip()), 1)
             except: return None
         
         annual_data.append({
             "year": current_year,
-            "production": to_f(row[4]),       # Total production (col 4)
-            "beg_stocks": to_f(row[6]),       # Beginning stocks (col 6)
-            "imports": to_f(row[7]),          # Imports (col 7)
-            "total_supply": to_f(row[8]),     # Total supply (col 8)
-            "exports": to_f(row[9]),          # Exports (col 9)
-            "end_stocks": to_f(row[10]),      # Ending stocks (col 10)
-            "total_use": to_f(row[11]),       # Total disappearance (col 11)
+            "production": to_int(row[4]),
+            "beg_stocks": to_int(row[6]),
+            "imports": to_int(row[7]),
+            "total_supply": to_int(row[8]),
+            "exports": to_int(row[9]),
+            "end_stocks": to_int(row[10]),
+            "total_use": to_int(row[11]),
+            "per_capita": to_1d(row[14]) if len(row) > 14 else None,
         })
     
     if not annual_data:
@@ -676,7 +678,6 @@ def parse_meat_sdp_sheet(ws, species_label, min_year=1990):
     years = [str(d["year"]) for d in annual_data]
     print(f"  {species_label}: {len(years)} years ({years[0]}..{years[-1]})")
     
-    # Build S&D rows
     def vals(key):
         return [d[key] for d in annual_data]
     
@@ -688,22 +689,10 @@ def parse_meat_sdp_sheet(ws, species_label, min_year=1990):
         {"label": "Exports", "values": vals("exports")},
         {"label": "Ending stocks", "values": vals("end_stocks"), "bold": True},
         {"label": "Total use", "values": vals("total_use"), "bold": True},
+        {"label": "Per capita disappearance (retail lbs)", "values": vals("per_capita"), "bold": True},
     ]
     
-    # Remove rows that are all None
     rows_out = [r for r in rows_out if any(v is not None for v in r["values"])]
-    
-    # Add stocks/use ratio
-    es = vals("end_stocks")
-    tu = vals("total_use")
-    su = []
-    for i in range(len(es)):
-        if es[i] is not None and tu[i] is not None and tu[i] != 0:
-            su.append(round(es[i] / tu[i] * 100, 1))
-        else:
-            su.append(None)
-    if any(v is not None for v in su):
-        rows_out.append({"label": "Stocks/use (%)", "values": su, "bold": True, "pct": True})
     
     return {
         "id": species_label.lower(),
@@ -780,7 +769,7 @@ def build_wasde_report_urls():
         yy = f"{y % 100:02d}"
         yyyy = str(y)
         urls.append(f"https://www.usda.gov/oce/commodity/wasde/wasde{mm}{yy}.xlsx")
-        urls.append(f"https://www.usda.gov/sites/default/files/documents/oce-wasde-{yyyy}-{mm}.xlsx")
+        # sites/default/files pattern removed — causes 60s timeouts
         urls.append(f"https://usda.library.cornell.edu/apod/wasde{mm}{yy}.xlsx")
     return urls
 
@@ -1207,7 +1196,7 @@ def main():
     wasde_source = None
     
     for url in wasde_urls:
-        data = fetch_url(url)
+        data = fetch_url(url, timeout=15, retries=1)
         if data:
             wasde_data = data
             wasde_source = url
@@ -1316,16 +1305,15 @@ def main():
     for sp in ["beef", "pork", "broiler", "turkey"]:
         if sp in existing.get("us", {}):
             existing_livestock[sp] = existing["us"][sp]
-    try:
-        livestock_results = fetch_livestock_data(fetch_url, fetch_with_fallbacks, existing_livestock)
-        for sp, ldata in livestock_results.items():
-            if sp in result["us"] and len(result["us"][sp].get("years", [])) > len(ldata.get("years", [])):
-                _merge_yearbook_base(result["us"][sp], ldata)
-            else:
-                result["us"][sp] = ldata
-            print(f"  {sp}: {len(result['us'].get(sp, {}).get('years', []))} years")
-    except Exception as e:
-        print(f"  Livestock error: {e}")
+    livestock_results = fetch_livestock_data(fetch_url, fetch_with_fallbacks, existing_livestock)
+    for sp, ldata in livestock_results.items():
+        if sp in result["us"] and len(result["us"][sp].get("years", [])) > len(ldata.get("years", [])):
+            _merge_yearbook_base(result["us"][sp], ldata)
+        else:
+            result["us"][sp] = ldata
+        print(f"  {sp}: {len(result['us'].get(sp, {}).get('years', []))} years")
+    if not livestock_results:
+        print("  WARNING: No livestock data returned!")
 
     # Preserve any commodities that failed entirely
     for cid in ["corn", "soybeans", "soybean_meal", "soybean_oil", "wheat", "beef", "pork", "broiler", "turkey"]:

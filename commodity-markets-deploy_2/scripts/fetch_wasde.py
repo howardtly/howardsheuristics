@@ -614,255 +614,139 @@ def parse_wheat(wb_data):
 # ERS Livestock & Meat Domestic Data (beef, pork)
 # ERS Poultry Yearbook (broiler, turkey)
 # Multiple URL fallbacks since ERS periodically changes paths
-LIVESTOCK_URLS = [
-    "https://www.ers.usda.gov/webdocs/DataFiles/51875/MeatSDPFull.xlsx",
-    "https://www.ers.usda.gov/webdocs/DataFiles/51875/MeatSDPFullHist.xlsx",
-    "https://www.ers.usda.gov/webdocs/DataFiles/51875/MtMeatSDP.xlsx",
-]
-POULTRY_URLS = [
-    "https://www.ers.usda.gov/webdocs/DataFiles/48006/PoultryYearbook.xlsx",
-    "https://www.ers.usda.gov/webdocs/DataFiles/48006/PYAll.xlsx",
-    "https://www.ers.usda.gov/webdocs/DataFiles/48006/PoultryYearbookFull.xlsx",
-]
+# ERS Meat Supply & Disappearance — single file covers beef, pork, broiler, turkey
+MEAT_SDP_URL = "https://www.ers.usda.gov/media/5531/meat-supply-and-disappearance-tables-historical.xlsx?v=84647"
 
 
-def parse_livestock_sheet(wb, sheet_names, species_label, min_year=1990):
-    """Parse an ERS livestock S&D sheet. Tries sheet_names in order.
-    Returns dict with id, label, years, sections or None."""
-    import openpyxl
-    ws = None
-    for name in sheet_names:
-        if name in wb.sheetnames:
-            ws = wb[name]
-            break
-        # Case-insensitive search
-        for sn in wb.sheetnames:
-            if name.lower() in sn.lower():
-                ws = wb[sn]
-                break
-        if ws: break
-
-    if not ws:
-        print(f"  {species_label}: sheet not found (tried {sheet_names})")
-        print(f"  Available sheets: {wb.sheetnames[:15]}")
-        return None
-
+def parse_meat_sdp_sheet(ws, species_label, min_year=1990):
+    """Parse an ERS Meat S&D sheet. Annual rows only (Yr Jan-Dec).
+    Columns: Year | Qtr | CommercialProd | FarmProd | TotalProd | _ | BegStocks | Imports | TotalSupply | Exports | EndStocks | TotalDisappearance
+    For poultry: Year | Qtr | FedInspected | Condemnation | NetRTC | _ | BegStocks | Imports | TotalSupply | Exports | EndStocks | TotalDisappearance
+    """
     rows_data = list(ws.iter_rows(values_only=True))
     print(f"  {species_label}: sheet '{ws.title}', {len(rows_data)} rows")
 
-    # Print first few rows for debugging column discovery
-    for i in range(min(6, len(rows_data))):
-        cells = [str(c)[:25] if c else '' for c in (rows_data[i] or [])]
-        print(f"    Row {i}: {cells[:12]}")
-
-    # Discover header row — look for row containing "Production" or "Supply"
-    header_row = None
-    header_idx = None
-    for i in range(min(10, len(rows_data))):
+    # Extract annual rows — find "Yr Jan-Dec" or "Yr" pattern in col 1
+    current_year = None
+    annual_data = []
+    
+    for i in range(3, len(rows_data)):  # Skip header rows 0-2
         row = rows_data[i]
-        if not row: continue
-        row_str = ' '.join(str(c).lower() for c in row if c)
-        if 'production' in row_str and ('supply' in row_str or 'stock' in row_str or 'import' in row_str):
-            header_row = row
-            header_idx = i
-            break
-
-    if header_row is None:
-        # Alternative: look for a row with multiple relevant keywords
-        for i in range(min(15, len(rows_data))):
-            row = rows_data[i]
-            if not row: continue
-            labels = [str(c).strip().lower() for c in row if c]
-            matches = sum(1 for l in labels if any(k in l for k in ['begin', 'prod', 'import', 'export', 'stock', 'supply']))
-            if matches >= 3:
-                header_row = row
-                header_idx = i
-                break
-
-    # Column mapping — discover by header labels
-    col_map = {}
-    if header_row:
-        for ci, cell in enumerate(header_row):
-            if not cell: continue
-            label = str(cell).strip().lower()
-            if 'begin' in label and 'stock' in label:
-                col_map['beginning_stocks'] = ci
-            elif 'commercial' in label and 'prod' in label:
-                col_map['production'] = ci
-            elif ('total' in label and 'prod' in label) or (label == 'production'):
-                if 'production' not in col_map:
-                    col_map['production'] = ci
-            elif 'import' in label:
-                col_map['imports'] = ci
-            elif 'total' in label and 'supply' in label:
-                col_map['total_supply'] = ci
-            elif 'export' in label:
-                col_map['exports'] = ci
-            elif 'end' in label and 'stock' in label:
-                col_map['ending_stocks'] = ci
-            elif 'total' in label and ('disappear' in label or 'use' in label):
-                col_map['total_use'] = ci
-            elif 'per capita' in label or 'percapita' in label:
-                col_map['per_capita'] = ci
-            elif label in ('disappearance', 'total disappearance'):
-                col_map['total_use'] = ci
-
-    print(f"  Column map: {col_map}")
-
-    if not col_map or 'production' not in col_map:
-        # Fallback: assume standard column order
-        # Year | Beg Stocks | Production | Imports | Total Supply | Exports | End Stocks | Total Use | Per Capita
-        print(f"  Using fallback column order")
-        col_map = {
-            'beginning_stocks': 1, 'production': 2, 'imports': 3,
-            'total_supply': 4, 'exports': 5, 'ending_stocks': 6,
-            'total_use': 7, 'per_capita': 8
-        }
-        if header_idx is None:
-            header_idx = 0
-
-    # Parse data rows
-    years = []
-    data = {k: [] for k in col_map}
-    data_start = (header_idx + 1) if header_idx is not None else 1
-
-    for i in range(data_start, len(rows_data)):
-        row = rows_data[i]
-        if not row: continue
-        year_val = row[0]
-        if year_val is None: continue
-        # Try to extract year
-        try:
-            yr = int(float(str(year_val).strip().split('.')[0].split('/')[0]))
-        except (ValueError, TypeError):
+        if not row or len(row) < 12: continue
+        
+        # Track current year from col 0
+        yr_cell = row[0]
+        if yr_cell is not None:
+            try:
+                current_year = int(float(str(yr_cell).strip()))
+            except (ValueError, TypeError):
+                if str(yr_cell).strip().startswith(("1/", "2/", "3/", "Source", "Date")):
+                    break  # Hit footnotes
+                continue
+        
+        # Check if this is an annual row
+        qtr = str(row[1]).strip() if row[1] else ""
+        if "Yr" not in qtr:
             continue
-        if yr < min_year or yr > 2030: continue
-
-        years.append(yr)
-        for key, ci in col_map.items():
-            if ci < len(row) and row[ci] is not None:
-                try:
-                    v = float(row[ci])
-                    data[key].append(round(v, 1))
-                except (ValueError, TypeError):
-                    data[key].append(None)
-            else:
-                data[key].append(None)
-
-    if not years:
-        print(f"  {species_label}: no data rows found")
+        
+        if current_year is None or current_year < min_year or current_year > 2030:
+            continue
+        
+        # Extract values — column positions are fixed
+        def to_f(v):
+            if v is None: return None
+            try: return round(float(str(v).replace(',', '').strip()), 1)
+            except: return None
+        
+        annual_data.append({
+            "year": current_year,
+            "production": to_f(row[4]),       # Total production (col 4)
+            "beg_stocks": to_f(row[6]),       # Beginning stocks (col 6)
+            "imports": to_f(row[7]),          # Imports (col 7)
+            "total_supply": to_f(row[8]),     # Total supply (col 8)
+            "exports": to_f(row[9]),          # Exports (col 9)
+            "end_stocks": to_f(row[10]),      # Ending stocks (col 10)
+            "total_use": to_f(row[11]),       # Total disappearance (col 11)
+        })
+    
+    if not annual_data:
+        print(f"  {species_label}: no annual rows found")
         return None
-
+    
+    years = [str(d["year"]) for d in annual_data]
     print(f"  {species_label}: {len(years)} years ({years[0]}..{years[-1]})")
-
-    # Build output rows
-    label_map = [
-        ('beginning_stocks', 'Beginning stocks', False),
-        ('production', 'Production', False),
-        ('imports', 'Imports', False),
-        ('total_supply', 'Total supply', True),
-        ('exports', 'Exports', False),
-        ('ending_stocks', 'Ending stocks', True),
-        ('total_use', 'Total use', True),
-        ('per_capita', 'Per capita disappearance (lbs)', False),
+    
+    # Build S&D rows
+    def vals(key):
+        return [d[key] for d in annual_data]
+    
+    rows_out = [
+        {"label": "Beginning stocks", "values": vals("beg_stocks")},
+        {"label": "Production", "values": vals("production")},
+        {"label": "Imports", "values": vals("imports")},
+        {"label": "Total supply", "values": vals("total_supply"), "bold": True},
+        {"label": "Exports", "values": vals("exports")},
+        {"label": "Ending stocks", "values": vals("end_stocks"), "bold": True},
+        {"label": "Total use", "values": vals("total_use"), "bold": True},
     ]
-
-    rows_out = []
-    for key, label, bold in label_map:
-        if key not in data or all(v is None for v in data[key]):
-            continue
-        rd = {"label": label, "values": data[key]}
-        if bold: rd["bold"] = True
-        rows_out.append(rd)
-
-    # Calculate stocks/use if we have the data
-    es = data.get('ending_stocks', [])
-    tu = data.get('total_use', [])
-    if es and tu and len(es) == len(tu):
-        su = []
-        for i in range(len(es)):
-            if es[i] is not None and tu[i] is not None and tu[i] != 0:
-                su.append(round(es[i] / tu[i] * 100, 1))
-            else:
-                su.append(None)
-        if not all(v is None for v in su):
-            rows_out.append({"label": "Stocks/use (%)", "values": su, "bold": True, "pct": True})
-
-    year_labels = [str(y) for y in years]
-
+    
+    # Remove rows that are all None
+    rows_out = [r for r in rows_out if any(v is not None for v in r["values"])]
+    
+    # Add stocks/use ratio
+    es = vals("end_stocks")
+    tu = vals("total_use")
+    su = []
+    for i in range(len(es)):
+        if es[i] is not None and tu[i] is not None and tu[i] != 0:
+            su.append(round(es[i] / tu[i] * 100, 1))
+        else:
+            su.append(None)
+    if any(v is not None for v in su):
+        rows_out.append({"label": "Stocks/use (%)", "values": su, "bold": True, "pct": True})
+    
     return {
-        "id": species_label.lower().replace(" ", "_"),
+        "id": species_label.lower(),
         "label": species_label,
-        "years": year_labels,
+        "years": years,
         "sections": [{"header": "Supply and disappearance", "unit": "million lbs (carcass weight)", "rows": rows_out}],
     }
 
 
 def fetch_livestock_data(fetch_url_fn, fetch_fallbacks_fn, existing):
-    """Fetch and parse all livestock species. Returns dict of results."""
+    """Fetch and parse all livestock species from ERS Meat S&D file."""
     import openpyxl
     from io import BytesIO
     results = {}
 
-    # Red meat (beef, pork)
-    print("\n-- RED MEAT --")
-    data = fetch_fallbacks_fn(LIVESTOCK_URLS) if hasattr(fetch_fallbacks_fn, '__call__') else None
-    if not data:
-        # Try individual URLs
-        for url in LIVESTOCK_URLS:
-            data = fetch_url_fn(url)
-            if data: break
-
+    print("\n  Fetching ERS Meat Supply & Disappearance...")
+    data = fetch_url_fn(MEAT_SDP_URL)
+    
     if data:
         try:
             wb = openpyxl.load_workbook(BytesIO(data), read_only=True, data_only=True)
-            print(f"  Sheets: {wb.sheetnames[:20]}")
+            print(f"  Sheets: {wb.sheetnames[:12]}")
 
-            # Beef
-            beef = parse_livestock_sheet(wb,
-                ["Beef SDP", "BeefSDP", "Beef", "beef", "BfSDP", "Table5"],
-                "Beef")
-            if beef: results["beef"] = beef
-
-            # Pork
-            pork = parse_livestock_sheet(wb,
-                ["Pork SDP", "PorkSDP", "Pork", "pork", "PkSDP", "Table20"],
-                "Pork")
-            if pork: results["pork"] = pork
-
-        except Exception as e:
-            print(f"  Red meat parse error: {e}")
-    else:
-        print("  Red meat: all URLs failed")
-
-    # Poultry (broiler, turkey)
-    print("\n-- POULTRY --")
-    data = None
-    for url in POULTRY_URLS:
-        data = fetch_url_fn(url)
-        if data: break
-
-    if data:
-        try:
-            wb = openpyxl.load_workbook(BytesIO(data), read_only=True, data_only=True)
-            print(f"  Sheets: {wb.sheetnames[:20]}")
-
-            # Broiler
-            broiler = parse_livestock_sheet(wb,
-                ["Broiler SDP", "BroilerSDP", "Broiler", "broiler", "BrSDP"],
-                "Broiler")
-            if broiler: results["broiler"] = broiler
-
-            # Turkey
-            turkey = parse_livestock_sheet(wb,
-                ["Turkey SDP", "TurkeySDP", "Turkey", "turkey", "TkSDP"],
-                "Turkey")
-            if turkey: results["turkey"] = turkey
+            sheet_map = {
+                "beef":    ("WASDE_Beef-Full", "Beef"),
+                "pork":    ("WASDE_Pork-Full", "Pork"),
+                "broiler": ("WASDE_Broiler-Full", "Broiler"),
+                "turkey":  ("WASDE_Turkey-Full", "Turkey"),
+            }
+            
+            for species_id, (sheet_name, label) in sheet_map.items():
+                if sheet_name in wb.sheetnames:
+                    r = parse_meat_sdp_sheet(wb[sheet_name], label)
+                    if r:
+                        results[species_id] = r
+                else:
+                    print(f"  {label}: sheet '{sheet_name}' not found")
 
         except Exception as e:
-            print(f"  Poultry parse error: {e}")
+            print(f"  Meat S&D parse error: {e}")
+            import traceback; traceback.print_exc()
     else:
-        print("  Poultry: all URLs failed")
+        print("  Meat S&D download failed")
 
     # Preserve existing data for any species that failed
     for species in ["beef", "pork", "broiler", "turkey"]:
@@ -872,408 +756,6 @@ def fetch_livestock_data(fetch_url_fn, fetch_fallbacks_fn, existing):
 
     return results
 
-
-# ══════════════════════════════════════════════════════════════
-# TIER 1: Monthly WASDE Report (USDA OCE)
-# Released ~noon ET on the 9th-12th of each month
-# Contains latest 2-3 MY estimates for all commodities
-# ══════════════════════════════════════════════════════════════
-
-import datetime
-
-def build_wasde_report_urls():
-    """Generate URL candidates for the current month's WASDE report."""
-    now = datetime.datetime.utcnow()
-    urls = []
-    # Try current month and previous month
-    for delta in [0, -1]:
-        d = now.replace(day=1) + datetime.timedelta(days=32 * delta)
-        mm = f"{d.month:02d}"
-        yy = f"{d.year % 100:02d}"
-        yyyy = str(d.year)
-        # Multiple URL patterns USDA has used
-        urls.append(f"https://www.usda.gov/oce/commodity/wasde/wasde{mm}{yy}.xlsx")
-        urls.append(f"https://www.usda.gov/sites/default/files/documents/oce-wasde-{yyyy}-{mm}.xlsx")
-        urls.append(f"https://usda.library.cornell.edu/apod/wasde{mm}{yy}.xlsx")
-    return urls
-
-
-def parse_wasde_report(wb_data):
-    """Parse the monthly WASDE report Excel file.
-    Returns dict: {commodity_id: {years: [...], rows: [...]}}
-    """
-    import openpyxl
-    from io import BytesIO
-    wb = openpyxl.load_workbook(BytesIO(wb_data), read_only=True, data_only=True)
-    
-    print(f"  WASDE report sheets: {wb.sheetnames[:20]}")
-    
-    results = {}
-    
-    # Map commodity searches to their parsers
-    # Each entry: (commodity_id, search_keywords_in_title, row_label_mapping)
-    COMMODITY_CONFIGS = {
-        "corn": {
-            "title_keywords": ["corn", "feed grain"],
-            "section_marker": "corn",  # Look for "Corn" section within feed grains table
-            "labels": [
-                ("Area planted", ["area planted"]),
-                ("Area harvested", ["area harvested"]),
-                ("Yield per harvested acre", ["yield"]),
-                ("Beginning stocks", ["beginning stocks", "beg. stocks"]),
-                ("Production", ["production"]),
-                ("Imports", ["imports"]),
-                ("Total supply", ["supply, total", "total supply"]),
-                ("Feed and residual", ["feed and residual"]),
-                ("Food, seed & industrial", ["food, seed", "food,seed", "food, seed, and ind"]),
-                ("Ethanol", ["ethanol"]),
-                ("Seed", ["seed"]),
-                ("Total domestic use", ["domestic, total", "total domestic"]),
-                ("Exports", ["exports"]),
-                ("Total use", ["use, total", "total use"]),
-                ("Ending stocks", ["ending stocks"]),
-            ],
-            "bold_rows": ["Total supply", "Total domestic use", "Total use", "Ending stocks"],
-            "indent_rows": ["Ethanol", "Seed"],
-        },
-        "soybeans": {
-            "title_keywords": ["soybean"],
-            "section_marker": None,
-            "labels": [
-                ("Area planted", ["area planted"]),
-                ("Area harvested", ["area harvested"]),
-                ("Yield per harvested acre", ["yield"]),
-                ("Beginning stocks", ["beginning stocks", "beg. stocks"]),
-                ("Production", ["production"]),
-                ("Imports", ["imports"]),
-                ("Total supply", ["supply, total", "total supply"]),
-                ("Crush", ["crushings", "crush"]),
-                ("Exports", ["exports"]),
-                ("Seed", ["seed"]),
-                ("Residual", ["residual"]),
-                ("Total use", ["use, total", "total use", "total disappearance"]),
-                ("Ending stocks", ["ending stocks"]),
-            ],
-            "bold_rows": ["Total supply", "Total use", "Ending stocks"],
-            "indent_rows": [],
-        },
-        "wheat": {
-            "title_keywords": ["wheat"],
-            "section_marker": "all wheat",
-            "labels": [
-                ("Area planted", ["area planted"]),
-                ("Area harvested", ["area harvested"]),
-                ("Yield per harvested acre", ["yield"]),
-                ("Beginning stocks", ["beginning stocks", "beg. stocks"]),
-                ("Production", ["production"]),
-                ("Imports", ["imports"]),
-                ("Total supply", ["supply, total", "total supply"]),
-                ("Food", ["food"]),
-                ("Seed", ["seed"]),
-                ("Feed and residual", ["feed and residual"]),
-                ("Total domestic use", ["domestic, total", "total domestic"]),
-                ("Exports", ["exports"]),
-                ("Total use", ["use, total", "total use"]),
-                ("Ending stocks", ["ending stocks"]),
-            ],
-            "bold_rows": ["Total supply", "Total domestic use", "Total use", "Ending stocks"],
-            "indent_rows": [],
-        },
-        "beef": {
-            "title_keywords": ["beef"],
-            "section_marker": None,
-            "labels": [
-                ("Beginning stocks", ["beginning", "beg."]),
-                ("Production", ["production", "total production", "commercial prod"]),
-                ("Imports", ["imports"]),
-                ("Total supply", ["supply, total", "total supply"]),
-                ("Exports", ["exports"]),
-                ("Ending stocks", ["ending"]),
-                ("Total use", ["use, total", "total use", "total disappearance"]),
-                ("Per capita disappearance (lbs)", ["per capita"]),
-            ],
-            "bold_rows": ["Total supply", "Total use", "Ending stocks"],
-            "indent_rows": [],
-        },
-        "pork": {
-            "title_keywords": ["pork"],
-            "section_marker": None,
-            "labels": [
-                ("Beginning stocks", ["beginning", "beg."]),
-                ("Production", ["production", "total production", "commercial prod"]),
-                ("Imports", ["imports"]),
-                ("Total supply", ["supply, total", "total supply"]),
-                ("Exports", ["exports"]),
-                ("Ending stocks", ["ending"]),
-                ("Total use", ["use, total", "total use", "total disappearance"]),
-                ("Per capita disappearance (lbs)", ["per capita"]),
-            ],
-            "bold_rows": ["Total supply", "Total use", "Ending stocks"],
-            "indent_rows": [],
-        },
-        "broiler": {
-            "title_keywords": ["broiler"],
-            "section_marker": None,
-            "labels": [
-                ("Beginning stocks", ["beginning", "beg."]),
-                ("Production", ["production"]),
-                ("Imports", ["imports"]),
-                ("Total supply", ["supply, total", "total supply"]),
-                ("Exports", ["exports"]),
-                ("Ending stocks", ["ending"]),
-                ("Total use", ["use, total", "total use", "total disappearance"]),
-                ("Per capita disappearance (lbs)", ["per capita"]),
-            ],
-            "bold_rows": ["Total supply", "Total use", "Ending stocks"],
-            "indent_rows": [],
-        },
-        "turkey": {
-            "title_keywords": ["turkey"],
-            "section_marker": None,
-            "labels": [
-                ("Beginning stocks", ["beginning", "beg."]),
-                ("Production", ["production"]),
-                ("Imports", ["imports"]),
-                ("Total supply", ["supply, total", "total supply"]),
-                ("Exports", ["exports"]),
-                ("Ending stocks", ["ending"]),
-                ("Total use", ["use, total", "total use", "total disappearance"]),
-                ("Per capita disappearance (lbs)", ["per capita"]),
-            ],
-            "bold_rows": ["Total supply", "Total use", "Ending stocks"],
-            "indent_rows": [],
-        },
-    }
-    
-    for comm_id, config in COMMODITY_CONFIGS.items():
-        parsed = _parse_wasde_commodity(wb, config, comm_id)
-        if parsed:
-            results[comm_id] = parsed
-    
-    return results
-
-
-def _find_wasde_sheet(wb, keywords):
-    """Find a worksheet whose content matches the given keywords."""
-    for ws in wb.worksheets:
-        # Check first 15 rows for keyword matches
-        try:
-            rows = []
-            for i, row in enumerate(ws.iter_rows(values_only=True)):
-                if i >= 15: break
-                rows.append(row)
-            
-            text = ' '.join(str(c).lower() for row in rows for c in row if c)
-            if all(kw.lower() in text for kw in keywords):
-                return ws, rows
-        except:
-            continue
-    return None, None
-
-
-def _parse_wasde_commodity(wb, config, comm_id):
-    """Parse a single commodity from the WASDE report."""
-    ws, preview_rows = _find_wasde_sheet(wb, config["title_keywords"])
-    if not ws:
-        print(f"  {comm_id}: sheet not found")
-        return None
-    
-    print(f"  {comm_id}: found sheet '{ws.title}'")
-    
-    # Read all rows
-    all_rows = list(ws.iter_rows(values_only=True))
-    
-    # Find the header row with marketing year labels (e.g., "2024/25", "2025/26")
-    header_row_idx = None
-    year_cols = {}  # {col_index: year_label}
-    
-    for i, row in enumerate(all_rows):
-        if not row: continue
-        for ci, cell in enumerate(row):
-            if cell is None: continue
-            s = str(cell).strip()
-            # Look for marketing year patterns: "2024/25" or "2024-25" or "2024/2025"
-            if '/' in s and len(s) >= 5:
-                try:
-                    parts = s.replace(" ", "").split('/')
-                    yr = int(parts[0][:4])
-                    if 1990 <= yr <= 2030:
-                        year_cols[ci] = s.split('\n')[0].strip()  # Remove any Est./Proj. suffix from newlines
-                except (ValueError, IndexError):
-                    pass
-        if len(year_cols) >= 2:
-            header_row_idx = i
-            break
-    
-    if header_row_idx is None or not year_cols:
-        print(f"  {comm_id}: no year headers found")
-        # Debug: print first 10 rows
-        for i in range(min(10, len(all_rows))):
-            cells = [str(c)[:30] if c else '' for c in (all_rows[i] or [])]
-            print(f"    Row {i}: {cells[:8]}")
-        return None
-    
-    # Clean year labels - extract just the MY part
-    clean_years = {}
-    for ci, raw in sorted(year_cols.items()):
-        # Extract "YYYY/YY" from strings like "2024/25 Est." or "2025/26\nApr"
-        parts = raw.replace('\n', ' ').split()
-        my = parts[0] if parts else raw
-        # Normalize: "2024/25" stays, "2024/2025" -> "2024/25"
-        if len(my) > 7 and '/' in my:
-            yr1 = my.split('/')[0]
-            yr2 = my.split('/')[1][-2:]
-            my = f"{yr1}/{yr2}"
-        clean_years[ci] = my
-    
-    sorted_cols = sorted(clean_years.keys())
-    years = [clean_years[ci] for ci in sorted_cols]
-    print(f"  {comm_id}: years = {years} (cols {sorted_cols})")
-    
-    # Parse data rows after the header
-    rows_out = []
-    in_section = config["section_marker"] is None  # If no section marker, parse everything
-    
-    for i in range(header_row_idx + 1, len(all_rows)):
-        row = all_rows[i]
-        if not row: continue
-        
-        # Get the row label (usually column 0 or 1)
-        label = None
-        for ci in range(min(3, len(row))):
-            if row[ci] is not None:
-                label = str(row[ci]).strip()
-                if label and len(label) > 1:
-                    break
-        if not label: continue
-        
-        label_lower = label.lower().replace('\n', ' ')
-        
-        # Section detection for multi-commodity sheets (e.g., feed grains has corn + sorghum)
-        if config["section_marker"] and not in_section:
-            if config["section_marker"].lower() in label_lower:
-                in_section = True
-            continue
-        
-        # Stop at next section header or blank region
-        if in_section and config["section_marker"]:
-            # Check if we've hit a new section (e.g., "Sorghum" after "Corn")
-            if label_lower and not any(kw in label_lower for pair in config["labels"] for kw in pair[1]):
-                # Could be a section break - check if it looks like a header
-                if all(row[ci] is None for ci in sorted_cols if ci < len(row)):
-                    if any(c and str(c).strip() for c in row[:3]):
-                        # Non-data row with no values in year columns - might be new section
-                        pass  # Continue looking
-        
-        # Try to match this row to one of our target labels
-        for out_label, search_terms in config["labels"]:
-            if any(term in label_lower for term in search_terms):
-                # Extract values from year columns
-                values = []
-                for ci in sorted_cols:
-                    if ci < len(row) and row[ci] is not None:
-                        try:
-                            v = float(str(row[ci]).replace(',', '').strip())
-                            values.append(round(v, 1))
-                        except (ValueError, TypeError):
-                            values.append(None)
-                    else:
-                        values.append(None)
-                
-                if any(v is not None for v in values):
-                    rd = {"label": out_label, "values": values}
-                    if out_label in config.get("bold_rows", []):
-                        rd["bold"] = True
-                    if out_label in config.get("indent_rows", []):
-                        rd["indent"] = True
-                    # Avoid duplicates
-                    if not any(r["label"] == out_label for r in rows_out):
-                        rows_out.append(rd)
-                break
-    
-    if not rows_out:
-        print(f"  {comm_id}: no data rows matched")
-        return None
-    
-    # Add stocks/use ratio
-    es = next((r for r in rows_out if r["label"] == "Ending stocks"), None)
-    tu = next((r for r in rows_out if r["label"] in ("Total use",)), None)
-    if es and tu:
-        su = []
-        for i in range(len(years)):
-            e = es["values"][i] if i < len(es["values"]) else None
-            t = tu["values"][i] if i < len(tu["values"]) else None
-            if e is not None and t is not None and t != 0:
-                su.append(round(e / t * 100, 1))
-            else:
-                su.append(None)
-        rows_out.append({"label": "Stocks/use (%)", "values": su, "bold": True, "pct": True})
-    
-    print(f"  {comm_id}: {len(rows_out)} rows, {len(years)} years")
-    for r in rows_out:
-        print(f"    {r['label']}: {r['values']}")
-    
-    # Determine unit
-    is_livestock = comm_id in ("beef", "pork", "broiler", "turkey")
-    unit = "million lbs" if is_livestock else "million bushels / million acres"
-    
-    return {
-        "years": years,
-        "rows": rows_out,
-        "unit": unit,
-    }
-
-
-def merge_wasde_into_existing(existing_commodity, wasde_data, comm_id):
-    """Merge WASDE report data (2-3 years) into existing yearbook data (full history).
-    WASDE data overwrites matching years; non-matching years preserved."""
-    if not existing_commodity or not wasde_data:
-        return existing_commodity
-    
-    ex_years = existing_commodity.get("years", [])
-    ex_sections = existing_commodity.get("sections", [])
-    if not ex_years or not ex_sections:
-        return existing_commodity
-    
-    wasde_years = wasde_data["years"]
-    wasde_rows = wasde_data["rows"]
-    
-    # Build a map of label -> wasde row data
-    wasde_map = {}
-    for wr in wasde_rows:
-        wasde_map[wr["label"]] = wr
-    
-    # For each year in WASDE data, find or append it in existing
-    for wi, wy in enumerate(wasde_years):
-        if wy in ex_years:
-            # Overwrite existing values
-            yi = ex_years.index(wy)
-            for section in ex_sections:
-                for row in section.get("rows", []):
-                    if row["label"] in wasde_map:
-                        wr = wasde_map[row["label"]]
-                        if wi < len(wr["values"]) and wr["values"][wi] is not None:
-                            while len(row["values"]) <= yi:
-                                row["values"].append(None)
-                            row["values"][yi] = wr["values"][wi]
-        else:
-            # Append new year
-            ex_years.append(wy)
-            yi = len(ex_years) - 1
-            for section in ex_sections:
-                for row in section.get("rows", []):
-                    if row["label"] in wasde_map:
-                        wr = wasde_map[row["label"]]
-                        val = wr["values"][wi] if wi < len(wr["values"]) else None
-                    else:
-                        val = None
-                    while len(row["values"]) < yi:
-                        row["values"].append(None)
-                    row["values"].append(val)
-    
-    existing_commodity["years"] = ex_years
-    print(f"  {comm_id}: merged WASDE data, now {len(ex_years)} years")
-    return existing_commodity
 
 
 def main():

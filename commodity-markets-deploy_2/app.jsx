@@ -5699,6 +5699,7 @@ function LivestockWASDEPage() {
     var headers = ["Item"].concat(commodity.years);
     var rows = [];
     commodity.sections.forEach(function(s) {
+      rows.push(["--- " + s.header + " ---"]);
       s.rows.forEach(function(r) {
         rows.push([r.label].concat(r.values.map(function(v) { return v != null ? v : ""; })));
       });
@@ -5725,8 +5726,22 @@ function LivestockWASDEPage() {
 
     {commodity ? (
       <div>
-        <h3 style={{ fontSize: 15, fontWeight: 500, color: "var(--color-text-primary)", margin: "0 0 10px" }}>U.S. {commodity.label} balance sheet</h3>
-        <WASDETable commodity={commodity} />
+        {commodity.sections.map(function(section, si) {
+          var sectionYears = section.years || commodity.years;
+          var isAnnual = si === 0;
+          var pseudoCommodity = {
+            id: commodity.id + "_" + si,
+            label: commodity.label,
+            years: sectionYears,
+            sections: [section],
+          };
+          return (<div key={si}>
+            <h3 style={{ fontSize: isAnnual ? 15 : 14, fontWeight: 500, color: "var(--color-text-primary)", margin: isAnnual ? "0 0 10px" : "28px 0 10px" }}>
+              {isAnnual ? "U.S. " + commodity.label + " balance sheet" : section.header}
+            </h3>
+            <WASDETable commodity={pseudoCommodity} />
+          </div>);
+        })}
       </div>
     ) : (
       <div style={{ padding: 40, textAlign: "center", color: "var(--color-text-tertiary)", fontSize: 13 }}>
@@ -5736,14 +5751,15 @@ function LivestockWASDEPage() {
 
     <div style={{ marginTop: 14, fontSize: 11, color: "var(--color-text-tertiary)" }}>
       Source: {dataLabel}. All supply/use/stocks in million lbs (carcass weight equivalent).
-      <br />Marketing years: beef/pork calendar year, broiler/turkey calendar year.
+      <br />Marketing years: calendar year (Jan-Dec). Quarterly data where available.
     </div>
   </div>);
 }
 
+
 const PAGES = {
-  "wasde": { title: "WASDE balance sheets", component: WASDEPage },
-  "livestock-wasde": { title: "WASDE livestock balance sheets", component: LivestockWASDEPage },
+  "wasde": { title: "USDA WASDE balance sheets (Grains & Oilseeds)", component: WASDEPage },
+  "livestock-wasde": { title: "USDA WASDE balance sheets (Livestock)", component: LivestockWASDEPage },
   "crop-progress": { title: "Crop progress & condition", component: CropProgressPage },
   "ethanol": { title: "EIA Ethanol (Weekly)", component: EthanolPage },
   "fats-oils": { title: "USDA Oilseed Crushing (Monthly)", component: FatsOilsPage },

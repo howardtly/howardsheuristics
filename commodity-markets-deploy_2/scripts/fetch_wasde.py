@@ -1008,6 +1008,14 @@ def _parse_grain_page(ws, comm_id, section_marker=None):
         label_raw = str(row[0]).strip() if row[0] else ""
         if not label_raw or label_raw == "Filler": continue
         label_lower = label_raw.lower().strip()
+        label_upper = label_raw.upper().strip()
+
+        # Stop at section boundaries
+        if label_upper.startswith("SOYBEAN OIL") or label_upper.startswith("SOYBEAN MEAL"):
+            if comm_id == "soybeans":
+                break
+        if label_upper == "TOTAL" and section_marker:
+            break
 
         matched_label = None
         for key, display in LABEL_MAP.items():
@@ -1175,12 +1183,34 @@ def merge_wasde_into_existing(existing_commodity, wasde_data, comm_id):
     
     wasde_years = wasde_data["years"]
     wasde_rows = wasde_data["rows"]
-    wasde_map = {wr["label"]: wr for wr in wasde_rows}
+    # Normalize WASDE labels to match yearbook conventions
+    WASDE_TO_YEARBOOK = {
+        "Total use": "Total usage",
+        "Domestic disappearance": "Domestic total",
+        "Food, feed, other industrial": "Food, feed, and other industrial",
+        "Residual": "Feed and residual",
+    }
+    # Also build reverse map for meal/oil where yearbook has different labels
+    WASDE_TO_YEARBOOK_MEAL = {
+        "Domestic disappearance": "Domestic use",
+    }
+
+    wasde_map = {}
+    for wr in wasde_rows:
+        wasde_map[wr["label"]] = wr
+        # Also add normalized versions
+        if wr["label"] in WASDE_TO_YEARBOOK:
+            wasde_map[WASDE_TO_YEARBOOK[wr["label"]]] = wr
+        if comm_id in ("soybean_meal",) and wr["label"] in WASDE_TO_YEARBOOK_MEAL:
+            wasde_map[WASDE_TO_YEARBOOK_MEAL[wr["label"]]] = wr
     
     for wi, wy in enumerate(wasde_years):
         if wy in ex_years:
             yi = ex_years.index(wy)
             for section in ex_sections:
+                # Only update annual section, not quarterly (WASDE doesn't have quarterly livestock)
+                if section.get("header", "").lower() in ("jan-mar", "apr-jun", "jul-sep", "oct-dec"):
+                    continue
                 for row in section.get("rows", []):
                     if row["label"] in wasde_map:
                         wr = wasde_map[row["label"]]
@@ -1192,6 +1222,8 @@ def merge_wasde_into_existing(existing_commodity, wasde_data, comm_id):
             ex_years.append(wy)
             yi = len(ex_years) - 1
             for section in ex_sections:
+                if section.get("header", "").lower() in ("jan-mar", "apr-jun", "jul-sep", "oct-dec"):
+                    continue
                 for row in section.get("rows", []):
                     wr = wasde_map.get(row["label"])
                     val = wr["values"][wi] if wr and wi < len(wr["values"]) else None

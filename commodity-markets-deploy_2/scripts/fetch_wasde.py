@@ -878,6 +878,91 @@ def merge_ldpo_into_livestock(result, ldpo_data):
                             else:
                                 row["values"].append(None)
 
+    # ── Compute beginning stocks and total supply for quarterly 2026 ──
+    for species_id in ["beef", "pork", "broiler", "turkey"]:
+        if species_id not in result.get("us", {}):
+            continue
+        entry = result["us"][species_id]
+        sections = entry.get("sections", [])
+
+        # Get annual beginning stocks for 2026 from the annual section
+        annual_section = next((s for s in sections if s.get("header", "").lower() in ("annual", "supply and disappearance")), None)
+        annual_years = entry.get("years", [])
+        annual_beg_2026 = None
+        if annual_section and "2026" in annual_years:
+            yi_2026 = annual_years.index("2026")
+            beg_row = next((r for r in annual_section.get("rows", []) if r["label"] == "Beginning stocks"), None)
+            if beg_row and yi_2026 < len(beg_row["values"]):
+                annual_beg_2026 = beg_row["values"][yi_2026]
+
+        # Also try to get Q4 ending stocks from previous year as fallback
+        q4_section = next((s for s in sections if s.get("header") == "Oct-Dec"), None)
+        q4_end_stocks_prev = None
+        if q4_section:
+            q4_years = q4_section.get("years", entry.get("years", []))
+            if "2025" in q4_years:
+                yi_q4 = q4_years.index("2025")
+                es_row = next((r for r in q4_section.get("rows", []) if r["label"] == "Ending stocks"), None)
+                if es_row and yi_q4 < len(es_row["values"]):
+                    q4_end_stocks_prev = es_row["values"][yi_q4]
+
+        # Q1 beginning stocks = annual 2026 beginning stocks (or Q4 2025 ending stocks)
+        q1_beg = annual_beg_2026 if annual_beg_2026 is not None else q4_end_stocks_prev
+
+        # Walk through quarters, carrying ending stocks forward as next quarter's beginning
+        QTR_ORDER = ["Jan-Mar", "Apr-Jun", "Jul-Sep", "Oct-Dec"]
+        prev_end_stocks = q1_beg
+
+        for qi, qtr_header in enumerate(QTR_ORDER):
+            qtr_section = next((s for s in sections if s.get("header") == qtr_header), None)
+            if not qtr_section:
+                continue
+
+            sec_years = qtr_section.get("years", entry.get("years", []))
+            if "2026" not in sec_years:
+                continue
+            yi = sec_years.index("2026")
+
+            # Set beginning stocks
+            if prev_end_stocks is not None:
+                beg_row = next((r for r in qtr_section.get("rows", []) if r["label"] == "Beginning stocks"), None)
+                if beg_row:
+                    while len(beg_row["values"]) <= yi:
+                        beg_row["values"].append(None)
+                    beg_row["values"][yi] = round(prev_end_stocks)
+
+            # Compute total supply = beg + prod + imports
+            beg_val = None
+            prod_val = None
+            imp_val = None
+            for row in qtr_section.get("rows", []):
+                if row["label"] == "Beginning stocks" and yi < len(row["values"]):
+                    beg_val = row["values"][yi]
+                elif row["label"] == "Production" and yi < len(row["values"]):
+                    prod_val = row["values"][yi]
+                elif row["label"] == "Imports" and yi < len(row["values"]):
+                    imp_val = row["values"][yi]
+
+            if beg_val is not None and prod_val is not None:
+                total_supply = round(beg_val + prod_val + (imp_val or 0))
+                ts_row = next((r for r in qtr_section.get("rows", []) if r["label"] == "Total supply"), None)
+                if ts_row:
+                    while len(ts_row["values"]) <= yi:
+                        ts_row["values"].append(None)
+                    ts_row["values"][yi] = total_supply
+
+            # For now, ending stocks are unknown (need cold storage data)
+            # Set prev_end_stocks to None so subsequent quarters show None for beg stocks
+            # until cold storage is wired up
+            es_row = next((r for r in qtr_section.get("rows", []) if r["label"] == "Ending stocks"), None)
+            if es_row and yi < len(es_row["values"]) and es_row["values"][yi] is not None:
+                prev_end_stocks = es_row["values"][yi]
+            else:
+                prev_end_stocks = None
+
+        if q1_beg is not None:
+            print(f"  {species_id}: Q1 2026 beg stocks = {q1_beg}, computed total supply for available quarters")
+
     print(f"  LDPO merge complete")
 
 
@@ -1470,6 +1555,8 @@ def main():
             result["wasde_report_source"] = wasde_source
             result["wasde_report_fetched_at"] = datetime.now().isoformat() + "Z"
             result["_wasde_updated"] = list(wasde_parsed.keys())
+            result["_wasde_livestock"] = {k: v for k, v in wasde_parsed.items() 
+                                          if k in ("beef", "pork", "broiler", "turkey")}
         except Exception as e:
             print(f"  WASDE report parse error: {e}")
             import traceback; traceback.print_exc()
@@ -1543,13 +1630,17 @@ def main():
             existing_livestock[sp] = existing["us"][sp]
     livestock_results = fetch_livestock_data(fetch_url, fetch_with_fallbacks, existing_livestock)
     for sp, ldata in livestock_results.items():
-        if sp in result.get("_wasde_updated", []):
-            _merge_yearbook_base(result["us"][sp], ldata)
-        else:
-            result["us"][sp] = ldata
+        # Always use fresh yearbook data for livestock (avoids stale quarterly data)
+        result["us"][sp] = ldata
         print(f"  {sp}: {len(result['us'].get(sp, {}).get('years', []))} years")
     if not livestock_results:
         print("  WARNING: No livestock data returned!")
+
+    # ── Re-apply WASDE annual livestock data after yearbook rebuild ──
+    wasde_livestock = result.pop("_wasde_livestock", {})
+    for sp, wdata in wasde_livestock.items():
+        if sp in result["us"]:
+            merge_wasde_into_existing(result["us"][sp], wdata, sp)
 
     # ── LDPO Quarterly Forecasts ──
     print("\n-- LDPO QUARTERLY FORECASTS --")
@@ -1581,6 +1672,7 @@ def main():
         print(f"  {cid}: {len(yrs)} years ({yrs[0] if yrs else '?'}..{yrs[-1] if yrs else '?'}), {total} rows")
 
     result.pop("_wasde_updated", None)
+    result.pop("_wasde_livestock", None)
     print(f"\nWriting {output_file}")
     with open(output_file, "w") as f:
         json.dump(result, f)

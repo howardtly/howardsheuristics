@@ -797,19 +797,63 @@ def build_wasde_report_urls():
         mm = f"{m:02d}"
         yy = f"{y % 100:02d}"
         yyyy = str(y)
-        urls.append(f"https://www.usda.gov/oce/commodity/wasde/wasde{mm}{yy}.xlsx")
-        # sites/default/files pattern removed — causes 60s timeouts
-        urls.append(f"https://usda.library.cornell.edu/apod/wasde{mm}{yy}.xlsx")
+        urls.append(f"https://www.usda.gov/oce/commodity/wasde/wasde{mm}{yy}.xls")
+        urls.append(f"https://usda.library.cornell.edu/apod/wasde{mm}{yy}.xls")
     return urls
 
 
+
+class XlrdWrapper:
+    """Minimal wrapper around xlrd workbook to match openpyxl interface."""
+    def __init__(self, xls_wb):
+        self._wb = xls_wb
+        self.sheetnames = xls_wb.sheet_names()
+        self._sheets = {}
+        for name in self.sheetnames:
+            self._sheets[name] = XlrdSheetWrapper(xls_wb.sheet_by_name(name))
+        self.worksheets = [self._sheets[n] for n in self.sheetnames]
+    def __getitem__(self, name):
+        return self._sheets[name]
+
+class XlrdSheetWrapper:
+    """Minimal wrapper around xlrd sheet."""
+    def __init__(self, sheet):
+        self._sheet = sheet
+        self.title = sheet.name
+    def iter_rows(self, values_only=False):
+        for i in range(self._sheet.nrows):
+            row = []
+            for j in range(self._sheet.ncols):
+                cell = self._sheet.cell(i, j)
+                val = cell.value
+                if val == '': val = None
+                row.append(val)
+            yield tuple(row)
+
 def parse_wasde_report(wb_data):
-    """Parse the monthly WASDE report Excel file.
+    """Parse the monthly WASDE report Excel file (.xls or .xlsx).
     Returns dict: {commodity_id: {years: [...], rows: [...]}}
     """
-    import openpyxl
     from io import BytesIO
-    wb = openpyxl.load_workbook(BytesIO(wb_data), read_only=True, data_only=True)
+    wb = None
+    # Try openpyxl first (handles .xlsx and some .xls)
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(BytesIO(wb_data), read_only=True, data_only=True)
+        print(f"  Opened with openpyxl")
+    except Exception:
+        pass
+    # Fall back to xlrd for true .xls format
+    if wb is None:
+        try:
+            import xlrd
+            xls_wb = xlrd.open_workbook(file_contents=wb_data)
+            # Wrap xlrd workbook in an openpyxl-like interface
+            wb = XlrdWrapper(xls_wb)
+            print(f"  Opened with xlrd")
+        except Exception as e:
+            print(f"  Could not open WASDE report: {e}")
+            return {}
     
     print(f"  WASDE report sheets: {wb.sheetnames[:20]}")
     

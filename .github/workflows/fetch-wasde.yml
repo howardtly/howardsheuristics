@@ -25,7 +25,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install openpyxl requests
+        run: pip install openpyxl xlrd requests
 
       - name: Fetch WASDE data
         run: python commodity-markets-deploy_2/scripts/fetch_wasde.py

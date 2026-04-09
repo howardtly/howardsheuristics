@@ -1319,6 +1319,7 @@ def main():
             
             result["wasde_report_source"] = wasde_source
             result["wasde_report_fetched_at"] = datetime.now().isoformat() + "Z"
+            result["_wasde_updated"] = list(wasde_parsed.keys())
         except Exception as e:
             print(f"  WASDE report parse error: {e}")
             import traceback; traceback.print_exc()
@@ -1338,8 +1339,8 @@ def main():
     if data:
         r = parse_corn(data)
         if r:
-            if "corn" in result["us"] and len(result["us"]["corn"].get("years", [])) > len(r["years"]):
-                # Existing data (with WASDE overlay) has more years — merge yearbook as base
+            if "corn" in result.get("_wasde_updated", []):
+                # WASDE already updated — merge yearbook as base, preserving WASDE values
                 _merge_yearbook_base(result["us"]["corn"], r)
             else:
                 result["us"]["corn"] = r
@@ -1365,7 +1366,7 @@ def main():
                 for fn, parser in [("soybeans", parse_soybeans), ("soybean_meal", parse_soymeal), ("soybean_oil", parse_soyoil)]:
                     r = parser(wb)
                     if r:
-                        if fn in result["us"] and len(result["us"][fn].get("years", [])) > len(r["years"]):
+                        if fn in result.get("_wasde_updated", []):
                             _merge_yearbook_base(result["us"][fn], r)
                         else:
                             result["us"][fn] = r
@@ -1379,7 +1380,7 @@ def main():
     if data:
         r = parse_wheat(data)
         if r:
-            if "wheat" in result["us"] and len(result["us"]["wheat"].get("years", [])) > len(r["years"]):
+            if "wheat" in result.get("_wasde_updated", []):
                 _merge_yearbook_base(result["us"]["wheat"], r)
             else:
                 result["us"]["wheat"] = r
@@ -1392,7 +1393,7 @@ def main():
             existing_livestock[sp] = existing["us"][sp]
     livestock_results = fetch_livestock_data(fetch_url, fetch_with_fallbacks, existing_livestock)
     for sp, ldata in livestock_results.items():
-        if sp in result["us"] and len(result["us"][sp].get("years", [])) > len(ldata.get("years", [])):
+        if sp in result.get("_wasde_updated", []):
             _merge_yearbook_base(result["us"][sp], ldata)
         else:
             result["us"][sp] = ldata
@@ -1416,6 +1417,7 @@ def main():
         total = sum(len(s.get("rows", [])) for s in d.get("sections", []))
         print(f"  {cid}: {len(yrs)} years ({yrs[0] if yrs else '?'}..{yrs[-1] if yrs else '?'}), {total} rows")
 
+    result.pop("_wasde_updated", None)
     print(f"\nWriting {output_file}")
     with open(output_file, "w") as f:
         json.dump(result, f)

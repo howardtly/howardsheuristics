@@ -1,119 +1,68 @@
 #!/usr/bin/env python3
-"""Request specific sections with date filter to get actual price data."""
-import json, os, sys, urllib.request, urllib.error, urllib.parse
+"""Map all section fields using allSections=true."""
+import json, os, sys, urllib.request, urllib.error
 
 API_KEY = os.environ.get("AMS_API_KEY", "")
 BASE = "https://mpr.datamart.ams.usda.gov/services/v1.1/reports"
 
-def fetch_raw(url):
+def fetch_json(url):
     headers = {"Authorization": API_KEY, "Accept": "application/json"}
     try:
         req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            return resp.read().decode("utf-8")
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return json.loads(resp.read().decode("utf-8"))
     except Exception as e:
         print(f"  ERR: {e}")
         return None
 
+SKIP_FIELDS = {"report_title","slug_name","slug_id","office_name","office_code",
+               "office_city","office_state","market_location_name","market_location_city",
+               "market_location_state","market_type","market_type_category","is_correction",
+               "narrative","trend","published_date","report_date"}
+
+def show_sections(data, label):
+    print(f"\n{'='*60}")
+    print(f"  {label}")
+    print(f"{'='*60}")
+    if not isinstance(data, list):
+        data = [data]
+    for block in data:
+        section = block.get("reportSection", "?")
+        results = block.get("results", [])
+        if not results: continue
+        rec = results[0]
+        fields = {k: v for k, v in rec.items() if v is not None and str(v).strip() and k not in SKIP_FIELDS}
+        print(f"\n  --- {section} ({len(results)} records) ---")
+        for k, v in fields.items():
+            print(f"    {k:40s} = {str(v)[:80]}")
+        # If many records (cuts), show first 5
+        if len(results) > 1:
+            print(f"    ... ({len(results)} total records)")
+            for rec2 in results[1:min(6, len(results))]:
+                f2 = {k: v for k, v in rec2.items() if v is not None and str(v).strip() and k not in SKIP_FIELDS}
+                compact = ", ".join(f"{k}={v}" for k, v in list(f2.items())[:8])
+                print(f"    [{compact[:150]}]")
+
 print("=" * 60)
-print("Section + Date Filter Combos")
+print("Full Section Field Map")
 print("=" * 60)
 
-# BEEF 2453: try each section with date filter
-BEEF_SECTIONS = [
-    "Current Cutout Values",
-    "Composite Primal Values", 
-    "Choice Cuts",
-    "Current Volume",
-    "Beef Trimmings",
-]
+# BEEF DAILY PM (2453) — single date
+print("\n\nFetching Beef Daily PM 2453...")
+data = fetch_json(f"{BASE}/2453?q=report_date=04/09/2026&allSections=true")
+if data: show_sections(data, "BEEF DAILY PM (2453) — 04/09/2026")
 
-for section in BEEF_SECTIONS:
-    enc_section = urllib.parse.quote(section)
-    url = f"{BASE}/2453?q=report_date=04/09/2026&sections={enc_section}"
-    print(f"\n--- Beef: {section} ---")
-    print(f"  {url[:120]}")
-    raw = fetch_raw(url)
-    if raw:
-        print(f"  {len(raw)} bytes")
-        try:
-            j = json.loads(raw)
-            results = j.get("results", [])
-            if results:
-                rec = results[0]
-                # Print ALL non-null keys
-                for k, v in rec.items():
-                    if v is not None and str(v).strip():
-                        print(f"    {k:35s} = {str(v)[:80]}")
-        except:
-            print(f"  {raw[:500]}")
+# PORK DAILY PM (2498) — single date
+print("\n\nFetching Pork Daily PM 2498...")
+data = fetch_json(f"{BASE}/2498?q=report_date=04/09/2026&allSections=true")
+if data: show_sections(data, "PORK DAILY PM (2498) — 04/09/2026")
 
-# PORK 2498: try key sections
-PORK_SECTIONS = [
-    "Cutout and Primal Values",
-    "Loin Cuts",
-    "Belly Cuts",
-    "Current Volume",
-]
+# BEEF WEEKLY COMP (2465) — single date
+print("\n\nFetching Beef Weekly Comp 2465...")
+data = fetch_json(f"{BASE}/2465?q=report_date=04/06/2026&allSections=true")
+if data: show_sections(data, "BEEF WEEKLY COMP (2465) — 04/06/2026")
 
-for section in PORK_SECTIONS:
-    enc_section = urllib.parse.quote(section)
-    url = f"{BASE}/2498?q=report_date=04/09/2026&sections={enc_section}"
-    print(f"\n--- Pork: {section} ---")
-    raw = fetch_raw(url)
-    if raw:
-        print(f"  {len(raw)} bytes")
-        try:
-            j = json.loads(raw)
-            results = j.get("results", [])
-            if results:
-                rec = results[0]
-                for k, v in rec.items():
-                    if v is not None and str(v).strip():
-                        print(f"    {k:35s} = {str(v)[:80]}")
-        except:
-            print(f"  {raw[:500]}")
-
-# BEEF WEEKLY 2465: try Cuts section with date (this report had loads data)
-print(f"\n--- Beef Weekly 2465: Cuts section ---")
-url = f"{BASE}/2465?q=report_date=04/06/2026&sections={urllib.parse.quote('Cuts')}"
-raw = fetch_raw(url)
-if raw:
-    print(f"  {len(raw)} bytes")
-    try:
-        j = json.loads(raw)
-        results = j.get("results", [])
-        print(f"  {len(results)} records")
-        if results:
-            for k, v in results[0].items():
-                if v is not None and str(v).strip():
-                    print(f"    {k:35s} = {str(v)[:80]}")
-            if len(results) > 1:
-                print(f"\n  Record 2:")
-                for k, v in results[1].items():
-                    if v is not None and str(v).strip():
-                        print(f"    {k:35s} = {str(v)[:80]}")
-    except:
-        print(raw[:1000])
-
-# Also try: maybe we need allSections=true
-print(f"\n\n--- Beef 2453: allSections=true ---")
-url = f"{BASE}/2453?q=report_date=04/09/2026&allSections=true"
-raw = fetch_raw(url)
-if raw:
-    print(f"  {len(raw)} bytes")
-    try:
-        j = json.loads(raw)
-        results = j.get("results", [])
-        print(f"  {len(results)} records")
-        if results:
-            # Print all records since different sections may have different fields
-            for i, rec in enumerate(results[:15]):
-                non_meta = {k: v for k, v in rec.items() 
-                           if v is not None and str(v).strip() 
-                           and k not in ("report_title","slug_name","slug_id","office_name","office_code",
-                                        "office_city","office_state","market_location_name","market_location_city",
-                                        "market_location_state","market_type","market_type_category","is_correction","narrative")}
-                print(f"  [{i}] {json.dumps(non_meta, default=str)[:250]}")
-    except:
-        print(raw[:2000])
+# PORK WEEKLY COMP (2680) — single date
+print("\n\nFetching Pork Weekly Comp 2680...")
+data = fetch_json(f"{BASE}/2680?q=report_date=04/06/2026&allSections=true")
+if data: show_sections(data, "PORK WEEKLY COMP (2680) — 04/06/2026")

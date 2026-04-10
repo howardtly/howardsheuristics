@@ -1,78 +1,95 @@
 #!/usr/bin/env python3
-"""Dig into report section structure for beef/pork + search wider range for poultry."""
+"""Try different API approaches to extract actual price data."""
 import json, os, sys, urllib.request, urllib.error
 
 API_KEY = os.environ.get("AMS_API_KEY", "")
 BASE = "https://mpr.datamart.ams.usda.gov/services/v1.1/reports"
 
-def fetch(slug, params=""):
-    url = f"{BASE}/{slug}" + (f"?{params}" if params else "")
+def fetch_raw(url):
     headers = {"Authorization": API_KEY, "Accept": "application/json"}
     try:
         req = urllib.request.Request(url, headers=headers)
         with urllib.request.urlopen(req, timeout=30) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+            return resp.read().decode("utf-8")
     except Exception as e:
-        print(f"  ERR {slug}: {e}")
+        print(f"  ERR: {e}")
         return None
 
 print("=" * 60)
-print("Deep Dive: Report Sections + Poultry Search")
+print("Extract Actual Price Data")
 print("=" * 60)
 
-# === Deep dive into key reports — explore reportSections ===
-for rid, label in [("2453", "Beef Daily PM"), ("2465", "Beef Weekly Comp"), 
-                    ("2498", "Pork Daily PM"), ("2680", "Pork Weekly Comp")]:
-    print(f"\n\n{'='*60}")
-    print(f"  REPORT {rid}: {label}")
-    print(f"{'='*60}")
-    
-    data = fetch(rid)
-    if not data: continue
-    
-    # Show reportSections
-    sections = data.get("reportSections", [])
-    print(f"  Sections: {sections}")
-    
-    results = data.get("results", [])
-    print(f"  Results: {len(results)} records")
-    
-    if results:
-        # Show ALL fields of the first record
-        print(f"\n  First record (ALL fields):")
-        for k, v in results[0].items():
-            print(f"    {k:35s} = {str(v)[:100]}")
-        
-        # Show next 2 records compactly
-        for i, rec in enumerate(results[1:4], 2):
-            non_null = {k: v for k, v in rec.items() if v is not None and str(v).strip()}
-            print(f"\n  Record {i}: {json.dumps(non_null, default=str)[:250]}")
+# Try 1: Filter to single date to limit response, dump FULL raw JSON
+print("\n=== BEEF 2453 — single date, full JSON ===")
+for param in [
+    "filter={\"filters\":[{\"fieldName\":\"report_date\",\"operatorType\":\"EQUAL\",\"values\":[\"04/09/2026\"]}]}",
+    "q=report_date=04/09/2026",
+    "allSections=true&filter={\"filters\":[{\"fieldName\":\"report_date\",\"operatorType\":\"EQUAL\",\"values\":[\"04/09/2026\"]}]}",
+]:
+    url = f"{BASE}/2453?{param}"
+    print(f"\n  URL: {url[:120]}...")
+    raw = fetch_raw(url)
+    if raw:
+        print(f"  Size: {len(raw)} bytes")
+        # Pretty print first 3000 chars
+        try:
+            j = json.loads(raw)
+            pretty = json.dumps(j, indent=2, default=str)
+            print(pretty[:3000])
+            if len(pretty) > 3000:
+                print(f"  ... ({len(pretty)} total chars)")
+        except:
+            print(raw[:3000])
+        break
 
-    # Also try with section filter
-    for section in sections[:3]:
-        print(f"\n  --- Section: '{section}' ---")
-        data2 = fetch(rid, f"sections={section.replace(' ', '%20')}")
-        if data2:
-            results2 = data2.get("results", [])
-            print(f"  {len(results2)} records")
-            if results2:
-                # Show first record's non-null fields
-                for k, v in results2[0].items():
-                    if v is not None and str(v).strip():
-                        print(f"    {k:35s} = {str(v)[:100]}")
+# Try 2: Pork 2498 same approach
+print("\n\n=== PORK 2498 — single date ===")
+for param in [
+    "filter={\"filters\":[{\"fieldName\":\"report_date\",\"operatorType\":\"EQUAL\",\"values\":[\"04/09/2026\"]}]}",
+    "q=report_date=04/09/2026",
+]:
+    url = f"{BASE}/2498?{param}"
+    raw = fetch_raw(url)
+    if raw:
+        print(f"  Size: {len(raw)} bytes")
+        try:
+            j = json.loads(raw)
+            pretty = json.dumps(j, indent=2, default=str)
+            print(pretty[:3000])
+        except:
+            print(raw[:3000])
+        break
 
-# === Poultry search: wider range 2700-2900, 2900-3100, 3100-3300 ===
-print(f"\n\n{'='*60}")
-print("  POULTRY SEARCH (ranges 2700-3300)")
-print(f"{'='*60}")
-for rid in list(range(2705, 2750)) + list(range(2900, 2960)) + list(range(3000, 3060)) + list(range(3100, 3160)):
-    data = fetch(str(rid))
-    if not data or not isinstance(data, dict): continue
-    results = data.get("results", [])
-    if not results: continue
-    title = results[0].get("report_title", "")
-    text = title.lower()
-    if any(k in text for k in ["poultry", "chicken", "broiler", "turkey", "egg"]):
-        date = results[0].get("report_date", "")
-        total = data.get("stats", {}).get("totalRows:", 0)
-        print(f"  {rid:4d} | {total:>6} | {date:10s} | {title[:90]}")
+# Try 3: Beef Weekly Comp 2465 — this one had loads data, maybe sections have prices
+print("\n\n=== BEEF WEEKLY 2465 — Cuts section, single date ===")
+url = f"{BASE}/2465?sections=Cuts&filter={{\"filters\":[{{\"fieldName\":\"report_date\",\"operatorType\":\"EQUAL\",\"values\":[\"04/06/2026\"]}}]}}"
+raw = fetch_raw(url)
+if raw:
+    print(f"  Size: {len(raw)} bytes")
+    try:
+        j = json.loads(raw)
+        pretty = json.dumps(j, indent=2, default=str)
+        print(pretty[:4000])
+    except:
+        print(raw[:4000])
+
+# Try 4: Different API version v1.2
+print("\n\n=== v1.2 API ===")
+for slug in ["2453", "2498"]:
+    url = f"https://mpr.datamart.ams.usda.gov/services/v1.2/reports/{slug}"
+    raw = fetch_raw(url)
+    if raw:
+        print(f"  v1.2 {slug}: {len(raw)} bytes")
+        try:
+            j = json.loads(raw)
+            if isinstance(j, dict):
+                print(f"  Keys: {list(j.keys())}")
+                results = j.get("results", [])
+                if results:
+                    print(f"  First record keys: {list(results[0].keys())[:20]}")
+                    # Print any key that looks price-related
+                    for k, v in results[0].items():
+                        if v and any(p in k.lower() for p in ["price", "cutout", "value", "total", "load", "weight", "avg"]):
+                            print(f"    {k} = {v}")
+        except:
+            print(raw[:500])

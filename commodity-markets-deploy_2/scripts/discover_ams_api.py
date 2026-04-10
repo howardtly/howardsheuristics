@@ -1,104 +1,83 @@
 #!/usr/bin/env python3
-"""
-Discover USDA AMS MyMarketNews (MARS) API endpoints for boxed beef and pork cutout data.
-API docs: https://marsapi.ams.usda.gov
-"""
+"""Discover USDA AMS MARS API — try multiple auth methods."""
 import json, os, sys, urllib.request, urllib.error, urllib.parse
 
-API_KEY = os.environ.get("AMS_API_KEY", "N/KUHW09nFBAU2t+zT+LF049q6BNTxIl")
+API_KEY = os.environ.get("AMS_API_KEY", "")
 BASE = "https://marsapi.ams.usda.gov/services/v1.2/reports"
 
-def fetch_api(path, params=None):
-    """Fetch from MARS API with auth."""
-    url = f"{BASE}/{path}" if path else BASE
-    if params:
-        url += "?" + urllib.parse.urlencode(params)
-    headers = {
-        "Authorization": API_KEY,
-        "Accept": "application/json",
-    }
-    print(f"\n  GET {url[:120]}...")
+def try_request(label, url, headers):
+    print(f"\n  [{label}] GET {url[:100]}...")
+    print(f"    Headers: { {k: v[:30]+'...' if len(v)>30 else v for k,v in headers.items()} }")
     try:
         req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=15) as resp:
             data = resp.read().decode("utf-8")
-            print(f"  OK: {len(data):,} bytes")
-            return json.loads(data)
+            print(f"    ✓ OK: {len(data):,} bytes")
+            j = json.loads(data)
+            if isinstance(j, list):
+                print(f"    {len(j)} records")
+                if j: print(f"    Sample: {json.dumps(j[0], default=str)[:200]}")
+            elif isinstance(j, dict):
+                print(f"    Keys: {list(j.keys())[:10]}")
+            return True
     except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", errors="replace")[:300]
-        print(f"  HTTP {e.code}: {body}")
-        return None
+        body = e.read().decode("utf-8", errors="replace")[:200]
+        print(f"    ✗ HTTP {e.code}: {body}")
     except Exception as e:
-        print(f"  ERROR: {e}")
-        return None
-
+        print(f"    ✗ {e}")
+    return False
 
 print("=" * 60)
-print("USDA AMS MARS API Discovery")
+print("USDA AMS MARS API — Auth Method Discovery")
+print(f"API key length: {len(API_KEY)}, starts with: {API_KEY[:8]}...")
 print("=" * 60)
 
-# 1. List available reports
-print("\n\n=== ALL AVAILABLE REPORTS ===")
-reports = fetch_api("")
-if reports:
-    if isinstance(reports, list):
-        print(f"  {len(reports)} reports")
-        # Filter for beef/pork related
-        for r in reports:
-            name = str(r) if isinstance(r, str) else json.dumps(r)[:120]
-            name_lower = name.lower()
-            if any(k in name_lower for k in ["beef", "pork", "cutout", "boxed", "lm_xb", "lm_pk", "lm_bf"]):
-                print(f"    {name}")
-    elif isinstance(reports, dict):
-        print(f"  Keys: {list(reports.keys())[:20]}")
-        for k, v in list(reports.items())[:5]:
-            print(f"    {k}: {str(v)[:200]}")
+# Test a known report slug
+test_url = f"{BASE}/LM_XB459"
 
-# 2. Try specific known report slugs
-REPORT_SLUGS = [
-    "2457",      # LM_XB459 - National Daily Boxed Beef Cutout
-    "2461",      # LM_BF100 - maybe?
-    "2498",      # LM_PK602 - Pork cutout
-    "LM_XB459",  # Try slug-based access
-    "LM_BF100",
-    "LM_PK602",
+# Method 1: Authorization header (raw key)
+try_request("Auth: raw key", test_url, {"Authorization": API_KEY, "Accept": "application/json"})
+
+# Method 2: Authorization: Bearer
+try_request("Auth: Bearer", test_url, {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"})
+
+# Method 3: Authorization: Basic
+import base64
+b64key = base64.b64encode(API_KEY.encode()).decode()
+try_request("Auth: Basic", test_url, {"Authorization": f"Basic {b64key}", "Accept": "application/json"})
+
+# Method 4: API key in query parameter
+test_url_param = f"{BASE}/LM_XB459?api_key={urllib.parse.quote(API_KEY)}"
+try_request("Query: api_key", test_url_param, {"Accept": "application/json"})
+
+# Method 5: Custom header names
+try_request("Header: X-Api-Key", test_url, {"X-Api-Key": API_KEY, "Accept": "application/json"})
+try_request("Header: ApiKey", test_url, {"ApiKey": API_KEY, "Accept": "application/json"})
+try_request("Header: api_key", test_url, {"api_key": API_KEY, "Accept": "application/json"})
+
+# Method 6: No auth (maybe public?)
+try_request("No auth", test_url, {"Accept": "application/json"})
+
+# Method 7: Try different API base URLs
+alt_bases = [
+    "https://marsapi.ams.usda.gov/services/v1.1/reports/LM_XB459",
+    "https://marsapi.ams.usda.gov/services/v1/reports/LM_XB459",
+    "https://marketnews.usda.gov/mnp/ls-landing",
+    "https://mpr.datamart.ams.usda.gov/services/v1.1/reports/LM_XB459",
 ]
+for alt_url in alt_bases:
+    try_request(f"Alt URL", alt_url, {"Authorization": API_KEY, "Accept": "application/json"})
 
-print("\n\n=== TRYING KNOWN REPORT SLUGS ===")
-for slug in REPORT_SLUGS:
-    data = fetch_api(slug)
-    if data:
-        if isinstance(data, list) and len(data) > 0:
-            print(f"  {slug}: {len(data)} records")
-            sample = data[0]
-            if isinstance(sample, dict):
-                print(f"  Keys: {list(sample.keys())[:15]}")
-                for k, v in list(sample.items())[:8]:
-                    print(f"    {k} = {str(v)[:80]}")
-        elif isinstance(data, dict):
-            print(f"  {slug}: dict keys = {list(data.keys())[:15]}")
-
-# 3. Try with filters
-print("\n\n=== BEEF CUTOUT WITH DATE FILTER ===")
-for slug in ["2457", "LM_XB459"]:
-    data = fetch_api(slug, {"filter": '{"report_date":"04/08/2026"}'})
-    if not data:
-        data = fetch_api(slug, {"q": "report_date=04/08/2026"})
-    if data and isinstance(data, list) and len(data) > 0:
-        print(f"\n  {slug}: {len(data)} records for date filter")
-        for rec in data[:3]:
-            print(f"    {json.dumps(rec, default=str)[:200]}")
-        break
-
-# 4. Try pork
-print("\n\n=== PORK CUTOUT ===")
-for slug in ["2498", "LM_PK602"]:
-    data = fetch_api(slug)
-    if data and isinstance(data, list) and len(data) > 0:
-        print(f"\n  {slug}: {len(data)} records")
-        sample = data[0]
-        if isinstance(sample, dict):
-            print(f"  Keys: {list(sample.keys())[:15]}")
-            for k, v in list(sample.items())[:10]:
-                print(f"    {k} = {str(v)[:80]}")
-        break
+# Method 8: Try the datamart API specifically
+print("\n\n=== MPR Datamart API ===")
+dm_base = "https://mpr.datamart.ams.usda.gov/services/v1.1/reports"
+for slug in ["LM_XB459", "2457"]:
+    for auth_style in [
+        {"Authorization": API_KEY},
+        {"Authorization": f"Bearer {API_KEY}"},
+        {},  # no auth
+    ]:
+        headers = {**auth_style, "Accept": "application/json"}
+        if try_request(f"Datamart {slug}", f"{dm_base}/{slug}", headers):
+            # If successful, get some data
+            break

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Try different API approaches to extract actual price data."""
-import json, os, sys, urllib.request, urllib.error
+"""Request specific sections with date filter to get actual price data."""
+import json, os, sys, urllib.request, urllib.error, urllib.parse
 
 API_KEY = os.environ.get("AMS_API_KEY", "")
 BASE = "https://mpr.datamart.ams.usda.gov/services/v1.1/reports"
@@ -16,80 +16,104 @@ def fetch_raw(url):
         return None
 
 print("=" * 60)
-print("Extract Actual Price Data")
+print("Section + Date Filter Combos")
 print("=" * 60)
 
-# Try 1: Filter to single date to limit response, dump FULL raw JSON
-print("\n=== BEEF 2453 — single date, full JSON ===")
-for param in [
-    "filter={\"filters\":[{\"fieldName\":\"report_date\",\"operatorType\":\"EQUAL\",\"values\":[\"04/09/2026\"]}]}",
-    "q=report_date=04/09/2026",
-    "allSections=true&filter={\"filters\":[{\"fieldName\":\"report_date\",\"operatorType\":\"EQUAL\",\"values\":[\"04/09/2026\"]}]}",
-]:
-    url = f"{BASE}/2453?{param}"
-    print(f"\n  URL: {url[:120]}...")
+# BEEF 2453: try each section with date filter
+BEEF_SECTIONS = [
+    "Current Cutout Values",
+    "Composite Primal Values", 
+    "Choice Cuts",
+    "Current Volume",
+    "Beef Trimmings",
+]
+
+for section in BEEF_SECTIONS:
+    enc_section = urllib.parse.quote(section)
+    url = f"{BASE}/2453?q=report_date=04/09/2026&sections={enc_section}"
+    print(f"\n--- Beef: {section} ---")
+    print(f"  {url[:120]}")
     raw = fetch_raw(url)
     if raw:
-        print(f"  Size: {len(raw)} bytes")
-        # Pretty print first 3000 chars
+        print(f"  {len(raw)} bytes")
         try:
             j = json.loads(raw)
-            pretty = json.dumps(j, indent=2, default=str)
-            print(pretty[:3000])
-            if len(pretty) > 3000:
-                print(f"  ... ({len(pretty)} total chars)")
+            results = j.get("results", [])
+            if results:
+                rec = results[0]
+                # Print ALL non-null keys
+                for k, v in rec.items():
+                    if v is not None and str(v).strip():
+                        print(f"    {k:35s} = {str(v)[:80]}")
         except:
-            print(raw[:3000])
-        break
+            print(f"  {raw[:500]}")
 
-# Try 2: Pork 2498 same approach
-print("\n\n=== PORK 2498 — single date ===")
-for param in [
-    "filter={\"filters\":[{\"fieldName\":\"report_date\",\"operatorType\":\"EQUAL\",\"values\":[\"04/09/2026\"]}]}",
-    "q=report_date=04/09/2026",
-]:
-    url = f"{BASE}/2498?{param}"
+# PORK 2498: try key sections
+PORK_SECTIONS = [
+    "Cutout and Primal Values",
+    "Loin Cuts",
+    "Belly Cuts",
+    "Current Volume",
+]
+
+for section in PORK_SECTIONS:
+    enc_section = urllib.parse.quote(section)
+    url = f"{BASE}/2498?q=report_date=04/09/2026&sections={enc_section}"
+    print(f"\n--- Pork: {section} ---")
     raw = fetch_raw(url)
     if raw:
-        print(f"  Size: {len(raw)} bytes")
+        print(f"  {len(raw)} bytes")
         try:
             j = json.loads(raw)
-            pretty = json.dumps(j, indent=2, default=str)
-            print(pretty[:3000])
+            results = j.get("results", [])
+            if results:
+                rec = results[0]
+                for k, v in rec.items():
+                    if v is not None and str(v).strip():
+                        print(f"    {k:35s} = {str(v)[:80]}")
         except:
-            print(raw[:3000])
-        break
+            print(f"  {raw[:500]}")
 
-# Try 3: Beef Weekly Comp 2465 — this one had loads data, maybe sections have prices
-print("\n\n=== BEEF WEEKLY 2465 — Cuts section, single date ===")
-url = f"{BASE}/2465?sections=Cuts&filter={{\"filters\":[{{\"fieldName\":\"report_date\",\"operatorType\":\"EQUAL\",\"values\":[\"04/06/2026\"]}}]}}"
+# BEEF WEEKLY 2465: try Cuts section with date (this report had loads data)
+print(f"\n--- Beef Weekly 2465: Cuts section ---")
+url = f"{BASE}/2465?q=report_date=04/06/2026&sections={urllib.parse.quote('Cuts')}"
 raw = fetch_raw(url)
 if raw:
-    print(f"  Size: {len(raw)} bytes")
+    print(f"  {len(raw)} bytes")
     try:
         j = json.loads(raw)
-        pretty = json.dumps(j, indent=2, default=str)
-        print(pretty[:4000])
+        results = j.get("results", [])
+        print(f"  {len(results)} records")
+        if results:
+            for k, v in results[0].items():
+                if v is not None and str(v).strip():
+                    print(f"    {k:35s} = {str(v)[:80]}")
+            if len(results) > 1:
+                print(f"\n  Record 2:")
+                for k, v in results[1].items():
+                    if v is not None and str(v).strip():
+                        print(f"    {k:35s} = {str(v)[:80]}")
     except:
-        print(raw[:4000])
+        print(raw[:1000])
 
-# Try 4: Different API version v1.2
-print("\n\n=== v1.2 API ===")
-for slug in ["2453", "2498"]:
-    url = f"https://mpr.datamart.ams.usda.gov/services/v1.2/reports/{slug}"
-    raw = fetch_raw(url)
-    if raw:
-        print(f"  v1.2 {slug}: {len(raw)} bytes")
-        try:
-            j = json.loads(raw)
-            if isinstance(j, dict):
-                print(f"  Keys: {list(j.keys())}")
-                results = j.get("results", [])
-                if results:
-                    print(f"  First record keys: {list(results[0].keys())[:20]}")
-                    # Print any key that looks price-related
-                    for k, v in results[0].items():
-                        if v and any(p in k.lower() for p in ["price", "cutout", "value", "total", "load", "weight", "avg"]):
-                            print(f"    {k} = {v}")
-        except:
-            print(raw[:500])
+# Also try: maybe we need allSections=true
+print(f"\n\n--- Beef 2453: allSections=true ---")
+url = f"{BASE}/2453?q=report_date=04/09/2026&allSections=true"
+raw = fetch_raw(url)
+if raw:
+    print(f"  {len(raw)} bytes")
+    try:
+        j = json.loads(raw)
+        results = j.get("results", [])
+        print(f"  {len(results)} records")
+        if results:
+            # Print all records since different sections may have different fields
+            for i, rec in enumerate(results[:15]):
+                non_meta = {k: v for k, v in rec.items() 
+                           if v is not None and str(v).strip() 
+                           and k not in ("report_title","slug_name","slug_id","office_name","office_code",
+                                        "office_city","office_state","market_location_name","market_location_city",
+                                        "market_location_state","market_type","market_type_category","is_correction","narrative")}
+                print(f"  [{i}] {json.dumps(non_meta, default=str)[:250]}")
+    except:
+        print(raw[:2000])

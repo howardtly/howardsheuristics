@@ -1699,7 +1699,11 @@ function CutoutPage({ ready }) {
 
     if (curYr) {
       curYearLabel = String(curYr.year);
+      // Use the longest dates array (full year) for x-axis labels
       liveDates = curYr.dates || BEEF_DAILY_DATES;
+      if (prevYr && prevYr.dates && prevYr.dates.length > liveDates.length) {
+        liveDates = prevYr.dates;
+      }
 
       beefChoiceByKey = {
         "2025": curYr.beef_choice || [],
@@ -1968,7 +1972,7 @@ function CutoutPage({ ready }) {
       </div>
       <SectionTitle right={<ChartModeToggle mode={chartMode} setMode={setChartMode} />}>Choice cutout</SectionTitle>
       {chartMode === "seasonal" && <InteractiveLegend items={seasonLegend} hidden={hCutout} onToggle={tCutout} />}
-      {ready && <ChartBox id={`cut_choice_${period}_${chartMode}`} renderChart={mkSeasonalChart(cutoutView, hCutout)} deps={`${period}_${chartMode}_${[...hCutout].join()}`} />}
+      {ready && <ChartBox id={`cut_choice_${period}_${chartMode}`} renderChart={mkSeasonalChart(cutoutView, hCutout)} deps={`${period}_${chartMode}_${[...hCutout].join()}_${meatData ? "live" : "syn"}`} />}
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 28, marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
         <div>
@@ -2090,7 +2094,7 @@ function CutoutPage({ ready }) {
       </div>
       <SectionTitle right={<ChartModeToggle mode={chartMode} setMode={setChartMode} />}>Pork cutout</SectionTitle>
       {chartMode === "seasonal" && <InteractiveLegend items={seasonLegend} hidden={hPorkCutout} onToggle={tPorkCutout} />}
-      {ready && <ChartBox id={`cut_pork_${period}_${chartMode}`} renderChart={mkSeasonalChart(porkCutoutView, hPorkCutout)} deps={`${period}_${chartMode}_${[...hPorkCutout].join()}`} />}
+      {ready && <ChartBox id={`cut_pork_${period}_${chartMode}`} renderChart={mkSeasonalChart(porkCutoutView, hPorkCutout)} deps={`${period}_${chartMode}_${[...hPorkCutout].join()}_${meatData ? "live" : "syn"}`} />}
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 28, marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
         <div>

@@ -871,9 +871,10 @@ const BEEF_PRIMAL_SEASONAL = BEEF_PRIMALS_DAILY.map((p, i) => ({
   "5yr":  genDaily(p.daily[0] - 18 - i * 0.9, scaleDrift(i % 2 === 0 ? DRIFT_A : DRIFT_B, 0.25 + i * 0.015)),
 }));
 
-function getSeasonalView(series2025, series2024, series5yr, period) {
+function getSeasonalView(series2025, series2024, series5yr, period, customLabels) {
+  var dailyLabels = customLabels || BEEF_DAILY_DATES;
   if (period === "daily") {
-    return { labels: BEEF_DAILY_DATES, "2025": series2025, "2024": series2024, "5yr": series5yr };
+    return { labels: dailyLabels, "2025": series2025, "2024": series2024, "5yr": series5yr };
   } else if (period === "weekly") {
     return {
       labels: BEEF_WEEK_RANGES.map(w => w.label),
@@ -1750,17 +1751,17 @@ function CutoutPage({ ready }) {
   const chgLabel = period === "daily" ? "D/D" : period === "weekly" ? "W/W" : "M/M";
 
   const seasonLegend = [
+    { label: prevYearLabel, color: "#1D9E75", key: "2024" },
     { label: curYearLabel, color: "#333", key: "2025" },
-    { label: prevYearLabel, color: "#1D9E75", key: "2024", dash: "dashed" },
     { label: "5-yr avg", color: "#999", key: "5yr", dash: "dotted" },
   ];
   const seasonDS = {
     "2025": { borderColor: "#333", borderWidth: 2.5, pointRadius: 0, tension: 0 },
-    "2024": { borderColor: "#1D9E75", borderWidth: 1.5, pointRadius: 0, tension: 0, borderDash: [5,3] },
+    "2024": { borderColor: "#1D9E75", borderWidth: 1.8, pointRadius: 0, tension: 0 },
     "5yr":  { borderColor: "#999", borderWidth: 1.5, pointRadius: 0, tension: 0, borderDash: [2,3] },
   };
 
-  const cutoutView = getSeasonalView(liveBeefChoice["cur"] || [], liveBeefChoice["prev"] || [], liveBeefChoice["5yr"] || [], period);
+  const cutoutView = getSeasonalView(liveBeefChoice["cur"] || [], liveBeefChoice["prev"] || [], liveBeefChoice["5yr"] || [], period, liveDates);
   const productViews = (liveBeefProducts || BEEF_PRODUCT_SEASONAL).map(p => getProductView(p, period));
   const productSeasonalViews = (liveBeefProducts || BEEF_PRODUCT_SEASONAL).map(function(p) { return getSeasonalView(p.daily, p[prevYearLabel] || p["2024"] || [], p["5yr"] || [], period); });
 
@@ -1802,7 +1803,7 @@ function CutoutPage({ ready }) {
         });
         return;
       }
-      const keys = ["2025","2024","5yr"].filter(function(k) { return !hidden.has(k); });
+      const keys = ["5yr","2024","2025"].filter(function(k) { return !hidden.has(k); });
       const ds = keys.map(k => ({ label: k === "5yr" ? "5-yr avg" : k, data: view[k], ...seasonDS[k], spanGaps: true }));
       const allVals = keys.flatMap(k => (view[k] || []).filter(v => v != null));
       const { yMin, yMax } = niceAxis(allVals);
@@ -1880,7 +1881,7 @@ function CutoutPage({ ready }) {
   // Pork seasonal views
   const [selectedPorkProduct, setSelectedPorkProduct] = useState(null);
   const [hPorkCutout, tPorkCutout] = useToggle();
-  const porkCutoutView = getSeasonalView(livePorkCutout["cur"] || [], livePorkCutout["prev"] || [], livePorkCutout["5yr"] || [], period);
+  const porkCutoutView = getSeasonalView(livePorkCutout["cur"] || [], livePorkCutout["prev"] || [], livePorkCutout["5yr"] || [], period, liveDates);
   const porkProductViews = PORK_PRODUCTS_DAILY.map(p => getProductView(p, period));
   const porkProductSeasonalViews = PORK_PRODUCT_SEASONAL.map(function(p) { return getSeasonalView(p.daily, p[prevYearLabel] || p["2024"] || [], p["5yr"] || [], period); });
 
@@ -2222,13 +2223,13 @@ function SlaughterPage({ ready }) {
   const [hHog, tHog] = useToggle();
 
   const seasonLegend = [
+    { label: prevYearLabel, color: "#1D9E75", key: "2024" },
     { label: curYearLabel, color: "#333", key: "2025" },
-    { label: prevYearLabel, color: "#1D9E75", key: "2024", dash: "dashed" },
     { label: "5-yr avg", color: "#999", key: "5yr", dash: "dotted" },
   ];
   const seasonDS = {
     "2025": { borderColor: "#333", borderWidth: 2.5, pointRadius: 0, tension: 0 },
-    "2024": { borderColor: "#1D9E75", borderWidth: 1.5, pointRadius: 0, tension: 0, borderDash: [5,3] },
+    "2024": { borderColor: "#1D9E75", borderWidth: 1.8, pointRadius: 0, tension: 0 },
     "5yr":  { borderColor: "#999", borderWidth: 1.5, pointRadius: 0, tension: 0, borderDash: [2,3] },
   };
 
@@ -2277,7 +2278,7 @@ function SlaughterPage({ ready }) {
         },
       });
     } else {
-      const keys = ["2025","2024","5yr"].filter(function(k) { return !hidden.has(k); });
+      const keys = ["5yr","2024","2025"].filter(function(k) { return !hidden.has(k); });
       const ds = keys.map(k => ({ label: k === "5yr" ? "5-yr avg" : k, data: data[k], ...seasonDS[k], spanGaps: true }));
       const allVals = keys.flatMap(k => (data[k] || []).filter(v => v != null));
       const { yMin, yMax } = niceAxis(allVals);
@@ -4406,13 +4407,13 @@ function EnergyChartPage({ ready, dataKey }) {
   const [chartMode, setChartMode] = useState("seasonal");
 
   const seasonLegend = [
+    { label: prevYearLabel, color: "#1D9E75", key: "2024" },
     { label: curYearLabel, color: "#333", key: "2025" },
-    { label: prevYearLabel, color: "#1D9E75", key: "2024", dash: "dashed" },
     { label: "5-yr avg", color: "#999", key: "5yr", dash: "dotted" },
   ];
   const seasonDS = {
     "2025": { borderColor: "#333", borderWidth: 2.5, pointRadius: 0, tension: 0 },
-    "2024": { borderColor: "#1D9E75", borderWidth: 1.5, pointRadius: 0, tension: 0, borderDash: [5,3] },
+    "2024": { borderColor: "#1D9E75", borderWidth: 1.8, pointRadius: 0, tension: 0 },
     "5yr":  { borderColor: "#999", borderWidth: 1.5, pointRadius: 0, tension: 0, borderDash: [2,3] },
   };
 

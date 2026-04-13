@@ -34,6 +34,7 @@ def parse_beef_cutout(data):
     blocks = data if isinstance(data, list) else [data]
     result = {}
     for block in blocks:
+        if not isinstance(block, dict): continue
         section = block.get("reportSection", "")
         results = block.get("results", [])
         if not results: continue
@@ -125,6 +126,7 @@ def parse_beef_trimmings(data):
     blocks = data if isinstance(data, list) else [data]
     result = {}
     for block in blocks:
+        if not isinstance(block, dict): continue
         section = block.get("reportSection", "")
         results = block.get("results", [])
         if section == "National":
@@ -150,6 +152,7 @@ def parse_pork_cutout(data):
     blocks = data if isinstance(data, list) else [data]
     result = {}
     for block in blocks:
+        if not isinstance(block, dict): continue
         section = block.get("reportSection", "")
         results = block.get("results", [])
         if not results: continue
@@ -220,7 +223,7 @@ def fetch_date(date_str):
     pork_parsed = parse_pork_cutout(pork)
 
     if not beef_parsed and not pork_parsed:
-        print("no data")
+        print("no data (holiday?)")
         return None
 
     record = {"date": date_str}
@@ -303,10 +306,13 @@ def main():
     daily = existing.get("daily", [])
     new_count = 0
     for ds in dates_to_fetch:
-        record = fetch_date(ds)
-        if record:
-            daily.append(record)
-            new_count += 1
+        try:
+            record = fetch_date(ds)
+            if record:
+                daily.append(record)
+                new_count += 1
+        except Exception as e:
+            print(f"  ERROR on {ds}: {e}")
         time.sleep(0.5)  # Rate limit
 
     # Sort by date

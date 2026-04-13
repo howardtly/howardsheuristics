@@ -1759,8 +1759,8 @@ function CutoutPage({ ready }) {
   };
 
   const cutoutView = getSeasonalView(beefChoiceByKey["2025"], beefChoiceByKey["2024"], beefChoiceByKey["5yr"], period, liveDates);
-  const productViews = (liveBeefProducts || BEEF_PRODUCT_SEASONAL).map(p => getProductView(p, period));
-  const productSeasonalViews = (liveBeefProducts || BEEF_PRODUCT_SEASONAL).map(function(p) { return getSeasonalView(p.daily, p[prevYearLabel] || p["2024"] || [], p["5yr"] || [], period); });
+  const productViews = BEEF_PRODUCT_SEASONAL.map(p => getProductView(p, period));
+  const productSeasonalViews = BEEF_PRODUCT_SEASONAL.map(function(p) { return getSeasonalView(p.daily, p["2024"] || [], p["5yr"] || [], period); });
 
   function niceAxis(allVals) {
     if (allVals.length === 0) return { yMin: 0, yMax: 100 };

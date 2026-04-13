@@ -1674,77 +1674,74 @@ function CutoutPage({ ready }) {
       .catch(function() {});
   }, []);
 
-  // Build chart data from fetched JSON (overrides synthetic data)
-  var liveBeefChoice = BOXED_BEEF_CHOICE_DAILY;
-  var liveBeefSelect = BOXED_BEEF_SELECT_DAILY;
+  // ── Build chart data from JSON or fall back to synthetic ──
+  var curYearLabel = "2026";
+  var prevYearLabel = "2025";
+  var liveDates = BEEF_DAILY_DATES;
   var liveBeefChoiceLatest = BOXED_BEEF_CHOICE_LATEST;
   var liveBeefSelectLatest = BOXED_BEEF_SELECT_LATEST;
-  var livePorkCutout = PORK_CUTOUT_DAILY;
   var livePorkLatest = PORK_CUTOUT_LATEST;
-  var liveBeefPrimals = BEEF_PRIMAL_SEASONAL;
-  var livePorkPrimals = PORK_PRIMALS_DAILY;
-  var liveDates = BEEF_DAILY_DATES;
-  var liveBeefProducts = BEEF_PRODUCT_SEASONAL;
   var liveLatest = null;
 
-  if (meatData && meatData.seasonal && meatData.seasonal.years && meatData.seasonal.years.length >= 2) {
-    var s = meatData.seasonal;
-    var numYears = s.years.filter(function(y) { return typeof y.year === "number"; });
-    numYears.sort(function(a, b) { return b.year - a.year; });
-    var curYr = numYears[0];
-    var prevYr = numYears.length > 1 ? numYears[1] : null;
-    var avgYr = s.years.find(function(y) { return y.year === "5yr_avg"; });
+  // Chart data keyed as "2025"=cur, "2024"=prev, "5yr"=avg for seasonDS compatibility
+  var beefChoiceByKey = { "2025": BOXED_BEEF_CHOICE_DAILY["2025"], "2024": BOXED_BEEF_CHOICE_DAILY["2024"], "5yr": BOXED_BEEF_CHOICE_DAILY["5yr"] };
+  var beefSelectByKey = { "2025": BOXED_BEEF_SELECT_DAILY["2025"] };
+  var porkCutoutByKey = { "2025": PORK_CUTOUT_DAILY["2025"], "2024": PORK_CUTOUT_DAILY["2024"], "5yr": PORK_CUTOUT_DAILY["5yr"] };
+  var liveBeefPrimals = BEEF_PRIMAL_SEASONAL;
+  var livePorkPrimals = PORK_PRIMALS_DAILY;
+
+  if (meatData && meatData.seasonal && meatData.seasonal.years) {
+    var sy = meatData.seasonal.years;
+    var numYrs = sy.filter(function(y) { return typeof y.year === "number"; }).sort(function(a,b) { return b.year - a.year; });
+    var curYr = numYrs[0] || null;
+    var prevYr = numYrs[1] || null;
+    var avgYr = sy.find(function(y) { return y.year === "5yr_avg"; }) || null;
 
     if (curYr) {
-      liveDates = curYr.dates || [];
-      var cy = String(curYr.year);
-      var py = prevYr ? String(prevYr.year) : "prev";
+      curYearLabel = String(curYr.year);
+      liveDates = curYr.dates || BEEF_DAILY_DATES;
 
-      liveBeefChoice = {};
-      liveBeefChoice["cur"] = curYr.beef_choice || [];
-      if (prevYr) liveBeefChoice["prev"] = prevYr.beef_choice || [];
-      if (avgYr) liveBeefChoice["5yr"] = avgYr.beef_choice || [];
-
-      liveBeefSelect = {};
-      liveBeefSelect["cur"] = curYr.beef_select || [];
-
-      livePorkCutout = {};
-      livePorkCutout["cur"] = curYr.pork_carcass || [];
-      if (prevYr) livePorkCutout["prev"] = prevYr.pork_carcass || [];
-      if (avgYr) livePorkCutout["5yr"] = avgYr.pork_carcass || [];
+      beefChoiceByKey = {
+        "2025": curYr.beef_choice || [],
+        "2024": prevYr ? prevYr.beef_choice || [] : [],
+        "5yr": avgYr ? avgYr.beef_choice || [] : [],
+      };
+      beefSelectByKey = { "2025": curYr.beef_select || [] };
+      porkCutoutByKey = {
+        "2025": curYr.pork_carcass || [],
+        "2024": prevYr ? prevYr.pork_carcass || [] : [],
+        "5yr": avgYr ? avgYr.pork_carcass || [] : [],
+      };
 
       // Beef primals
-      var beefPrimalNames = ["Rib", "Chuck", "Loin", "Round", "Brisket", "Plate", "Flank"];
-      liveBeefPrimals = beefPrimalNames.map(function(name) {
-        var key = "beef_" + name.toLowerCase();
-        var obj = { name: name, daily: curYr[key] || [] };
-        if (prevYr) obj["2024"] = prevYr[key] || [];
-        if (avgYr) obj["5yr"] = avgYr[key] || [];
+      var bpNames = ["Rib","Chuck","Loin","Round","Brisket","Plate","Flank"];
+      liveBeefPrimals = bpNames.map(function(name) {
+        var k = "beef_" + name.toLowerCase();
+        var obj = { name: name, daily: curYr[k] || [] };
+        obj["2024"] = prevYr ? prevYr[k] || [] : [];
+        obj["5yr"] = avgYr ? avgYr[k] || [] : [];
         return obj;
       });
 
       // Pork primals
-      var porkPrimalNames = ["loin", "butt", "ham", "belly", "rib", "picnic"];
-      livePorkPrimals = porkPrimalNames.map(function(name) {
-        var key = "pork_" + name;
-        return { name: name.charAt(0).toUpperCase() + name.slice(1), daily: curYr[key] || [] };
+      var ppNames = ["loin","butt","ham","belly","rib","picnic"];
+      livePorkPrimals = ppNames.map(function(name) {
+        var k = "pork_" + name;
+        return { name: name.charAt(0).toUpperCase() + name.slice(1), daily: curYr[k] || [] };
       });
+    }
+    if (prevYr) prevYearLabel = String(prevYr.year);
 
-      // Latest values
-      if (meatData.latest) {
-        var lb = meatData.latest.beef || {};
-        var lp = meatData.latest.pork || {};
-        liveBeefChoiceLatest = lb.choice || liveBeefChoiceLatest;
-        liveBeefSelectLatest = lb.select || liveBeefSelectLatest;
-        livePorkLatest = lp.carcass || livePorkLatest;
-        liveLatest = meatData.latest;
-      }
+    // Latest values from JSON
+    if (meatData.latest) {
+      var lb = meatData.latest.beef || {};
+      var lp = meatData.latest.pork || {};
+      liveBeefChoiceLatest = lb.choice || liveBeefChoiceLatest;
+      liveBeefSelectLatest = lb.select || liveBeefSelectLatest;
+      livePorkLatest = lp.carcass || livePorkLatest;
+      liveLatest = meatData.latest;
     }
   }
-
-  // Override seasonal legend with actual years
-  var curYearLabel = liveDates.length > 0 && meatData ? String(meatData.seasonal.years.filter(function(y) { return typeof y.year === "number"; }).sort(function(a,b) { return b.year - a.year; })[0].year) : "2025";
-  var prevYearLabel = meatData && meatData.seasonal ? (function() { var ny = meatData.seasonal.years.filter(function(y) { return typeof y.year === "number"; }).sort(function(a,b) { return b.year - a.year; }); return ny.length > 1 ? String(ny[1].year) : "2024"; })() : "2024";
 
   const periodLabels = { daily: "day", weekly: "week", monthly: "month" };
   const prevLabel = `Prev ${periodLabels[period]}`;
@@ -1761,7 +1758,7 @@ function CutoutPage({ ready }) {
     "5yr":  { borderColor: "#999", borderWidth: 1.5, pointRadius: 0, tension: 0, borderDash: [2,3] },
   };
 
-  const cutoutView = getSeasonalView(liveBeefChoice["cur"] || [], liveBeefChoice["prev"] || [], liveBeefChoice["5yr"] || [], period, liveDates);
+  const cutoutView = getSeasonalView(beefChoiceByKey["2025"], beefChoiceByKey["2024"], beefChoiceByKey["5yr"], period, liveDates);
   const productViews = (liveBeefProducts || BEEF_PRODUCT_SEASONAL).map(p => getProductView(p, period));
   const productSeasonalViews = (liveBeefProducts || BEEF_PRODUCT_SEASONAL).map(function(p) { return getSeasonalView(p.daily, p[prevYearLabel] || p["2024"] || [], p["5yr"] || [], period); });
 
@@ -1881,7 +1878,7 @@ function CutoutPage({ ready }) {
   // Pork seasonal views
   const [selectedPorkProduct, setSelectedPorkProduct] = useState(null);
   const [hPorkCutout, tPorkCutout] = useToggle();
-  const porkCutoutView = getSeasonalView(livePorkCutout["cur"] || [], livePorkCutout["prev"] || [], livePorkCutout["5yr"] || [], period, liveDates);
+  const porkCutoutView = getSeasonalView(porkCutoutByKey["2025"], porkCutoutByKey["2024"], porkCutoutByKey["5yr"], period, liveDates);
   const porkProductViews = PORK_PRODUCTS_DAILY.map(p => getProductView(p, period));
   const porkProductSeasonalViews = PORK_PRODUCT_SEASONAL.map(function(p) { return getSeasonalView(p.daily, p[prevYearLabel] || p["2024"] || [], p["5yr"] || [], period); });
 
@@ -1908,8 +1905,8 @@ function CutoutPage({ ready }) {
   const chL = liveBeefChoiceLatest; const seL = liveBeefSelectLatest;
 
   // Period-aware comparisons for cutout cards
-  const choiceView2025 = getProductView({ daily: liveBeefChoice["cur"] || BOXED_BEEF_CHOICE_DAILY["2025"] || [] }, period);
-  const selectView2025 = getProductView({ daily: liveBeefSelect["cur"] || BOXED_BEEF_SELECT_DAILY["2025"] || [] }, period);
+  const choiceView2025 = getProductView({ daily: beefChoiceByKey["2025"] || [] }, period);
+  const selectView2025 = getProductView({ daily: beefSelectByKey["2025"] || [] }, period);
   const chVals = choiceView2025.values.filter(v => v != null);
   const seVals = selectView2025.values.filter(v => v != null);
   const chCur = chVals.length > 0 ? chVals[chVals.length - 1] : null;
@@ -1991,7 +1988,7 @@ function CutoutPage({ ready }) {
                 const pi = BEEF_PRODUCTS_DAILY.indexOf(p);
                 const v25 = productViews[pi].values;
                 const ps = BEEF_PRODUCT_SEASONAL[pi];
-                const v24 = ps ? getProductView({ daily: ps["prev"] || ps["2024"] || [] }, period).values : v25.map(function() { return ""; });
+                const v24 = ps ? getProductView({ daily: ps["2024"] || [] }, period).values : v25.map(function() { return ""; });
                 rows.push(["  " + p.name, p.item, ...v24.map(v => v != null ? v : ""), ...v25.map(v => v != null ? v : "")]);
               });
             });
@@ -2113,7 +2110,7 @@ function CutoutPage({ ready }) {
                 const pi = PORK_PRODUCTS_DAILY.indexOf(p);
                 const v25 = porkProductViews[pi].values;
                 const ps = PORK_PRODUCT_SEASONAL[pi];
-                const v24 = ps ? getProductView({ daily: ps["prev"] || ps["2024"] || [] }, period).values : v25.map(function() { return ""; });
+                const v24 = ps ? getProductView({ daily: ps["2024"] || [] }, period).values : v25.map(function() { return ""; });
                 rows.push(["  " + p.name, p.item, ...v24.map(v => v != null ? v : ""), ...v25.map(v => v != null ? v : "")]);
               });
             });

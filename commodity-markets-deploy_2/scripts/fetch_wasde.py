@@ -23,7 +23,7 @@ OILCROPS_URLS = [
 ]
 WHEAT_URL = "https://www.ers.usda.gov/media/5706/wheat-data-all-years.xlsx?v=53976"
 
-LDPO_URL = "https://ers.usda.gov/sites/default/files/_laserfiche/outlooks/113957/red-meat-and-poultry-forecasts.xlsx?v=94479"
+
 def fetch_url(url, timeout=60, retries=3, delay=10):
     for attempt in range(1, retries + 1):
         print(f"  {'Try' if attempt==1 else 'Retry '+str(attempt)}: {url[:90]}...")

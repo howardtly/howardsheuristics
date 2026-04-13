@@ -1662,7 +1662,7 @@ function CutoutPage({ ready }) {
   const [tab, setTab] = useState("cattle");
   const [hCutout, tCutout] = useToggle();
   const [selectedProduct, setSelectedProduct] = useState(null);
-  const [period, setPeriod] = useState("weekly");
+  const [period, setPeriod] = useState("daily");
   const [chartMode, setChartMode] = useState("seasonal");
   const [meatData, setMeatData] = useState(null);
 
@@ -1676,10 +1676,10 @@ function CutoutPage({ ready }) {
   // Build chart data from fetched JSON (overrides synthetic data)
   var liveBeefChoice = BOXED_BEEF_CHOICE_DAILY;
   var liveBeefSelect = BOXED_BEEF_SELECT_DAILY;
-  var liveBeefChoiceLatest = liveBeefChoiceLatest;
-  var liveBeefSelectLatest = liveBeefSelectLatest;
+  var liveBeefChoiceLatest = BOXED_BEEF_CHOICE_LATEST;
+  var liveBeefSelectLatest = BOXED_BEEF_SELECT_LATEST;
   var livePorkCutout = PORK_CUTOUT_DAILY;
-  var livePorkLatest = livePorkLatest;
+  var livePorkLatest = PORK_CUTOUT_LATEST;
   var liveBeefPrimals = BEEF_PRIMAL_SEASONAL;
   var livePorkPrimals = PORK_PRIMALS_DAILY;
   var liveDates = BEEF_DAILY_DATES;

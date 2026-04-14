@@ -233,12 +233,22 @@ def parse_beef_comprehensive(data):
                 if key in grades:
                     result["cutout"] = grades[key]["cutout"]
                     break
-            # If no explicit "All", compute weighted avg from Choice loads
+            # If no explicit "All", try common variants
             if "cutout" not in result and grades:
-                # Use the first grade's cutout as fallback, or average
-                vals = [g["cutout"] for g in grades.values() if g["cutout"]]
-                if vals:
-                    result["cutout"] = round(sum(vals) / len(vals), 2)
+                for key in sorted(grades.keys()):
+                    print(f"    Comp grade: {key} = {grades[key].get('cutout')}")
+                # Use a weighted approach: if Choice and Select exist, weight them
+                ch = grades.get("Choice", {}).get("cutout")
+                se = grades.get("Select", {}).get("cutout")
+                if ch and se:
+                    # Approximate comprehensive as ~75% Choice + 25% Select
+                    result["cutout"] = round(ch * 0.75 + se * 0.25, 2)
+                elif ch:
+                    result["cutout"] = ch
+                else:
+                    vals = [g["cutout"] for g in grades.values() if g.get("cutout")]
+                    if vals:
+                        result["cutout"] = round(sum(vals) / len(vals), 2)
 
     return result if result else None
 
@@ -292,7 +302,9 @@ def fetch_date(date_str):
 
     choice = beef_parsed.get("choice") if beef_parsed else None
     carcass = pork_parsed.get("carcass") if pork_parsed else None
-    print(f"beef={choice}, pork={carcass}")
+    comp_val = comp_parsed.get("cutout") if comp_parsed else None
+    comp_str = f", comp={comp_val}" if comp_val else ""
+    print(f"beef={choice}, pork={carcass}{comp_str}")
     return record
 
 
@@ -376,6 +388,45 @@ def main():
         parts = rec["date"].split("/")
         return f"{parts[2]}/{parts[0]}/{parts[1]}"
     daily.sort(key=date_sort_key)
+
+    # Backfill comprehensive cutout (report 2465 is weekly)
+    comp_count = sum(1 for r in daily if r.get("beef_comp") and r["beef_comp"].get("cutout"))
+    print(f"  Comp cutout records before backfill: {comp_count}/{len(daily)}")
+    if comp_count < 50 and len(daily) > 200:
+        print("  Backfilling comprehensive cutout from report 2465 (weekly Fridays)...")
+        # Build date->record lookup
+        date_lookup = {r["date"]: r for r in daily}
+        # Generate Friday dates across full data range
+        comp_fetched = 0
+        first_parts = daily[0]["date"].split("/")
+        last_parts = daily[-1]["date"].split("/")
+        d = datetime(int(first_parts[2]), int(first_parts[0]), int(first_parts[1]))
+        d_end = datetime(int(last_parts[2]), int(last_parts[0]), int(last_parts[1]))
+        while d <= d_end:
+            if d.weekday() in (0, 4):  # Monday and Friday (2465 publishes Mon, try both)
+                ds = d.strftime("%m/%d/%Y")
+                rec = date_lookup.get(ds)
+                if rec and not (rec.get("beef_comp") and rec["beef_comp"].get("cutout")):
+                    try:
+                        comp = fetch_report("2465", ds)
+                        comp_parsed = parse_beef_comprehensive(comp) if comp else None
+                        if comp_parsed and comp_parsed.get("cutout"):
+                            rec["beef_comp"] = comp_parsed
+                            comp_fetched += 1
+                            if comp_fetched % 20 == 0:
+                                print(f"    ...{comp_fetched} comp records fetched")
+                    except: pass
+                    time.sleep(0.2)
+            d += timedelta(days=1)
+        print(f"  Comp backfill: {comp_fetched} weekly records")
+
+    # Forward-fill weekly comprehensive cutout (fills gaps between weekly reports)
+    last_comp = None
+    for rec in daily:
+        if rec.get("beef_comp") and rec["beef_comp"].get("cutout"):
+            last_comp = rec["beef_comp"]
+        elif last_comp and not rec.get("beef_comp"):
+            rec["beef_comp"] = last_comp
 
     # Build seasonal data for charts (pre-computed by year)
     seasonal = build_seasonal_data(daily)

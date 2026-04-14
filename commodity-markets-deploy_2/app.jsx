@@ -1710,7 +1710,7 @@ function CutoutPage({ ready }) {
         "2024": prevYr ? prevYr.beef_choice || [] : [],
         "5yr": avgYr ? avgYr.beef_choice || [] : [],
       };
-      beefSelectByKey = { "2025": curYr.beef_select || [] };
+      beefSelectByKey = { "2025": curYr.beef_select || [], "2024": prevYr ? prevYr.beef_select || [] : [] };
       porkCutoutByKey = {
         "2025": curYr.pork_carcass || [],
         "2024": prevYr ? prevYr.pork_carcass || [] : [],
@@ -1754,15 +1754,14 @@ function CutoutPage({ ready }) {
   const seasonLegend = [
     { label: prevYearLabel, color: "#1D9E75", key: "2024" },
     { label: curYearLabel, color: "#333", key: "2025" },
-    { label: "5-yr avg", color: "#999", key: "5yr", dash: "dotted" },
   ];
   const seasonDS = {
     "2025": { borderColor: "#333", borderWidth: 2.5, pointRadius: 0, tension: 0 },
     "2024": { borderColor: "#1D9E75", borderWidth: 1.8, pointRadius: 0, tension: 0 },
-    "5yr":  { borderColor: "#999", borderWidth: 1.5, pointRadius: 0, tension: 0, borderDash: [2,3] },
   };
 
   const cutoutView = getSeasonalView(beefChoiceByKey["2025"], beefChoiceByKey["2024"], beefChoiceByKey["5yr"], period, liveDates);
+  const selectCutoutView = getSeasonalView(beefSelectByKey["2025"], beefSelectByKey["2024"] || [], beefSelectByKey["5yr"] || [], period, liveDates);
   const productViews = BEEF_PRODUCT_SEASONAL.map(p => getProductView(p, period));
   const productSeasonalViews = BEEF_PRODUCT_SEASONAL.map(function(p) { return getSeasonalView(p.daily, p["2024"] || [], p["5yr"] || [], period); });
 
@@ -1776,6 +1775,34 @@ function CutoutPage({ ready }) {
     const niceNorm = norm <= 1.5 ? 1 : norm <= 3.5 ? 2 : norm <= 7.5 ? 5 : 10;
     const step = niceNorm * mag;
     return { yMin: Math.floor((dataMin - pad) / step) * step, yMax: Math.ceil((dataMax + pad) / step) * step };
+  }
+
+  function mkComprehensiveChart(choiceView, selectView) {
+    return function(canvas) {
+      var choiceData = choiceView["2025"] || [];
+      var selectData = selectView["2025"] || [];
+      var labels = choiceView.labels || liveDates;
+      var allVals = choiceData.concat(selectData).filter(function(v) { return v != null; });
+      var ax = niceAxis(allVals);
+      var monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+      var ma = buildMonthAxis(labels);
+      new Chart(canvas, {
+        type: "line",
+        data: { labels: ma.displayLabels, datasets: [
+          { label: "Choice", data: choiceData, borderColor: "#333", borderWidth: 2.5, pointRadius: 0, tension: 0, spanGaps: true },
+          { label: "Select", data: selectData, borderColor: "#1D9E75", borderWidth: 1.8, pointRadius: 0, tension: 0, spanGaps: true },
+        ]},
+        options: { responsive: true, maintainAspectRatio: false,
+          interaction: { mode: "nearest", intersect: false },
+          plugins: { legend: { display: true, position: "top", labels: { boxWidth: 12, padding: 8, font: { size: 11 } } },
+            tooltip: { callbacks: { label: function(c2) { return c2.dataset.label + ": $" + c2.parsed.y.toFixed(2); } } } },
+          scales: {
+            x: { ticks: { autoSkip: true, maxTicksLimit: 12, maxRotation: 0, font: { size: 10 } }, grid: { color: ma.gridColors } },
+            y: { min: ax.yMin, max: ax.yMax, title: { display: true, text: "$/cwt", font: { size: 11 } }, ticks: { font: { size: 10 }, callback: function(v) { return "$" + v; } }, grid: { color: "rgba(0,0,0,0.06)" } },
+          },
+        },
+      });
+    };
   }
 
   function mkSeasonalChart(view, hidden) {
@@ -1804,7 +1831,7 @@ function CutoutPage({ ready }) {
         });
         return;
       }
-      const keys = ["5yr","2024","2025"].filter(function(k) { return !hidden.has(k); });
+      const keys = ["2024","2025"].filter(function(k) { return !hidden.has(k); });
       const ds = keys.map(k => ({ label: k === "5yr" ? "5-yr avg" : k, data: view[k], ...seasonDS[k], spanGaps: true }));
       const allVals = keys.flatMap(k => (view[k] || []).filter(v => v != null));
       const { yMin, yMax } = niceAxis(allVals);
@@ -1941,28 +1968,35 @@ function CutoutPage({ ready }) {
 
   const tabs = [{ id: "cattle", label: "Beef" }, { id: "hogs", label: "Pork" }];
 
+  var dlCutoutCSV = function() {
+    var labels = cutoutView.labels || liveDates;
+    var headers = ["Date", "Choice", "Select"];
+    var rows = labels.map(function(l, i) { return [l, (beefChoiceByKey["2025"]||[])[i]||"", (beefSelectByKey["2025"]||[])[i]||""]; });
+    downloadCSV("beef_cutout_" + period + ".csv", headers, rows);
+  };
+
   return (<div>
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
-      <div style={{ display: "flex", gap: 0 }}>
-        {tabs.map(t => (
-          <button key={t.id} onClick={() => { setTab(t.id); setSelectedProduct(null); }} style={{ padding: "6px 16px", fontSize: 13, cursor: "pointer", background: tab === t.id ? "#333" : "transparent", border: "none", borderRadius: 6, color: tab === t.id ? "#fff" : "var(--color-text-tertiary)", fontWeight: 500, transition: "all 0.15s" }}>
-            {t.label}
-          </button>
-        ))}
-      </div>
-      {(tab === "cattle" || tab === "hogs") && (
-        <div style={{ display: "flex", borderRadius: "var(--border-radius-md)", border: "0.5px solid var(--color-border-secondary)", overflow: "hidden", marginBottom: -1 }}>
-          {[{ id: "daily", label: "Daily" }, { id: "weekly", label: "Weekly" }, { id: "monthly", label: "Monthly" }].map(u => (
-            <button key={u.id} onClick={() => { setPeriod(u.id); setSelectedProduct(null); }} style={{
-              padding: "5px 12px", fontSize: 12, cursor: "pointer", border: "none",
-              borderRight: u.id !== "monthly" ? "0.5px solid var(--color-border-secondary)" : "none",
-              background: period === u.id ? "#333" : "transparent",
-              color: period === u.id ? "#fff" : "var(--color-text-tertiary)",
-              fontWeight: 500, transition: "all 0.15s",
-            }}>{u.label}</button>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 3 }}>
+          {tabs.map(t => (
+            <button key={t.id} onClick={() => { setTab(t.id); setSelectedProduct(null); }} style={{ padding: "7px 18px", fontSize: 13, cursor: "pointer", border: "1px solid var(--color-border-secondary)", borderRadius: 6, background: tab === t.id ? "#2563EB" : "transparent", color: tab === t.id ? "#fff" : "var(--color-text-secondary)", fontWeight: tab === t.id ? 600 : 400, transition: "all 0.15s" }}>
+              {t.label}
+            </button>
           ))}
         </div>
-      )}
+        <div style={{ display: "flex", borderRadius: 6, border: "1px solid var(--color-border-secondary)", overflow: "hidden" }}>
+          {[{ id: "daily", label: "Daily" }, { id: "weekly", label: "Weekly" }, { id: "monthly", label: "Monthly" }].map(u => (
+            <button key={u.id} onClick={() => { setPeriod(u.id); setSelectedProduct(null); }} style={{ padding: "6px 14px", fontSize: 12, cursor: "pointer", border: "none", borderRight: u.id !== "monthly" ? "1px solid var(--color-border-secondary)" : "none", background: period === u.id ? "#2563EB" : "transparent", color: period === u.id ? "#fff" : "var(--color-text-tertiary)", fontWeight: 500, transition: "all 0.15s" }}>{u.label}</button>
+          ))}
+        </div>
+        <div style={{ display: "flex", borderRadius: 6, border: "1px solid var(--color-border-secondary)", overflow: "hidden" }}>
+          {[{ id: "seasonal", label: "Seasonal" }, { id: "contiguous", label: "Contiguous" }].map(u => (
+            <button key={u.id} onClick={() => setChartMode(u.id)} style={{ padding: "6px 14px", fontSize: 12, cursor: "pointer", border: "none", borderRight: u.id !== "contiguous" ? "1px solid var(--color-border-secondary)" : "none", background: chartMode === u.id ? "#2563EB" : "transparent", color: chartMode === u.id ? "#fff" : "var(--color-text-tertiary)", fontWeight: 500, transition: "all 0.15s" }}>{u.label}</button>
+          ))}
+        </div>
+      </div>
+      <DownloadBtn onClick={dlCutoutCSV} />
     </div>
     {tab === "cattle" && (<div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10, marginBottom: 8 }}>
@@ -1970,9 +2004,18 @@ function CutoutPage({ ready }) {
         <CutoutCard label="Select cutout" cur={seCur} prev={sePrev} chg={seChg} />
         <CutoutCard label="Choice–select spread" cur={spreadCur} prev={spreadPrev} chg={spreadChg} />
       </div>
-      <SectionTitle right={<ChartModeToggle mode={chartMode} setMode={setChartMode} />}>Choice cutout</SectionTitle>
-      {chartMode === "seasonal" && <InteractiveLegend items={seasonLegend} hidden={hCutout} onToggle={tCutout} />}
-      {ready && <ChartBox id={`cut_choice_${period}_${chartMode}`} renderChart={mkSeasonalChart(cutoutView, hCutout)} deps={`${period}_${chartMode}_${[...hCutout].join()}_${meatData ? "live" : "syn"}`} />}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+        <div>
+          <h3 style={{ fontSize: 15, fontWeight: 500, color: "var(--color-text-primary)", margin: "0 0 2px" }}>Choice cutout</h3>
+          {chartMode === "seasonal" && <InteractiveLegend items={seasonLegend} hidden={hCutout} onToggle={tCutout} />}
+          {ready && <ChartBox id={`cut_choice_${period}_${chartMode}`} renderChart={mkSeasonalChart(cutoutView, hCutout)} deps={`${period}_${chartMode}_${[...hCutout].join()}_${meatData ? "live" : "syn"}`} />}
+        </div>
+        <div>
+          <h3 style={{ fontSize: 15, fontWeight: 500, color: "var(--color-text-primary)", margin: "0 0 2px" }}>Comprehensive cutout</h3>
+          <div style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginBottom: 4 }}>Choice vs. Select ({curYearLabel})</div>
+          {ready && <ChartBox id={`cut_comp_${period}_${meatData ? "L" : "S"}`} renderChart={mkComprehensiveChart(cutoutView, selectCutoutView)} deps={`comp_${period}_${meatData ? "live" : "syn"}`} />}
+        </div>
+      </div>
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 28, marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
         <div>
@@ -2226,12 +2269,10 @@ function SlaughterPage({ ready }) {
   const seasonLegend = [
     { label: prevYearLabel, color: "#1D9E75", key: "2024" },
     { label: curYearLabel, color: "#333", key: "2025" },
-    { label: "5-yr avg", color: "#999", key: "5yr", dash: "dotted" },
   ];
   const seasonDS = {
     "2025": { borderColor: "#333", borderWidth: 2.5, pointRadius: 0, tension: 0 },
     "2024": { borderColor: "#1D9E75", borderWidth: 1.8, pointRadius: 0, tension: 0 },
-    "5yr":  { borderColor: "#999", borderWidth: 1.5, pointRadius: 0, tension: 0, borderDash: [2,3] },
   };
 
   const weekLabels = BEEF_WEEK_RANGES.map(w => w.label);
@@ -2279,7 +2320,7 @@ function SlaughterPage({ ready }) {
         },
       });
     } else {
-      const keys = ["5yr","2024","2025"].filter(function(k) { return !hidden.has(k); });
+      const keys = ["2024","2025"].filter(function(k) { return !hidden.has(k); });
       const ds = keys.map(k => ({ label: k === "5yr" ? "5-yr avg" : k, data: data[k], ...seasonDS[k], spanGaps: true }));
       const allVals = keys.flatMap(k => (data[k] || []).filter(v => v != null));
       const { yMin, yMax } = niceAxis(allVals);
@@ -4410,12 +4451,10 @@ function EnergyChartPage({ ready, dataKey }) {
   const seasonLegend = [
     { label: prevYearLabel, color: "#1D9E75", key: "2024" },
     { label: curYearLabel, color: "#333", key: "2025" },
-    { label: "5-yr avg", color: "#999", key: "5yr", dash: "dotted" },
   ];
   const seasonDS = {
     "2025": { borderColor: "#333", borderWidth: 2.5, pointRadius: 0, tension: 0 },
     "2024": { borderColor: "#1D9E75", borderWidth: 1.8, pointRadius: 0, tension: 0 },
-    "5yr":  { borderColor: "#999", borderWidth: 1.5, pointRadius: 0, tension: 0, borderDash: [2,3] },
   };
 
   function niceAxis(allVals) {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check report 2461 (weekly negotiated cutout) for historical cutout values."""
+"""Check reports 2461, 2643, and 2465 for comprehensive cutout history."""
 import json, os, urllib.request
 
 API_KEY = os.environ.get("AMS_API_KEY", "")
@@ -16,33 +16,40 @@ SKIP = {"report_title","slug_name","slug_id","office_name","office_code",
         "market_location_state","market_type","market_type_category","is_correction",
         "narrative","trend","published_date"}
 
-print("=" * 60)
-print("Report 2461 (LM_XB459) — Weekly Negotiated Cutout")
-print("=" * 60)
+for rid, label in [("2643", "Unknown 2643"), ("2461", "Weekly Negotiated"), ("2465", "Weekly Comprehensive")]:
+    print(f"\n{'='*60}")
+    print(f"  Report {rid}: {label}")
+    print(f"{'='*60}")
 
-# Single date with allSections
-data = fetch_json(f"{BASE}/2461?q=report_date=04/03/2026&allSections=true")
-if isinstance(data, list):
-    for block in data:
-        section = block.get("reportSection", "?")
-        results = block.get("results", [])
-        if not results: continue
-        print(f"\n  --- {section} ({len(results)} records) ---")
-        for i, rec in enumerate(results[:6]):
-            fields = {k: v for k, v in rec.items() if v is not None and str(v).strip() and k not in SKIP}
-            print(f"    [{i}] {json.dumps(fields, default=str)[:200]}")
-
-# Date range check
-print(f"\n\n{'='*60}")
-print("Date range for 2461 vs 2465")
-print(f"{'='*60}")
-
-for rid, label in [("2461", "Weekly Negotiated"), ("2465", "Weekly Comprehensive")]:
+    # Get stats and date range (no date filter)
     data = fetch_json(f"{BASE}/{rid}")
     if isinstance(data, dict):
         results = data.get("results", [])
         stats = data.get("stats", {})
-        dates = sorted(set(r.get("report_date", "") for r in results))
-        print(f"\n  {rid} ({label}): {stats}")
+        sections = data.get("reportSections", [])
+        title = results[0].get("report_title", "?") if results else "?"
+        dates = sorted(set(r.get("report_date", "") for r in results if r.get("report_date")))
+        print(f"  Title: {title[:100]}")
+        print(f"  Stats: {stats}")
+        print(f"  Sections: {sections}")
         if dates:
-            print(f"    Date range: {dates[0]} to {dates[-1]} ({len(dates)} dates)")
+            print(f"  Date range: {dates[0]} to {dates[-1]} ({len(dates)} unique dates)")
+
+    # Single recent date with allSections
+    print(f"\n  --- allSections for most recent date ---")
+    try:
+        data2 = fetch_json(f"{BASE}/{rid}?q=report_date=04/06/2026&allSections=true")
+        if not data2:
+            data2 = fetch_json(f"{BASE}/{rid}?q=report_date=04/03/2026&allSections=true")
+        blocks = data2 if isinstance(data2, list) else [data2]
+        for block in blocks:
+            if not isinstance(block, dict): continue
+            section = block.get("reportSection", "?")
+            results = block.get("results", [])
+            if not results: continue
+            print(f"\n  --- {section} ({len(results)} records) ---")
+            for i, rec in enumerate(results[:5]):
+                fields = {k: v for k, v in rec.items() if v is not None and str(v).strip() and k not in SKIP}
+                print(f"    [{i}] {json.dumps(fields, default=str)[:220]}")
+    except Exception as e:
+        print(f"  Error: {e}")

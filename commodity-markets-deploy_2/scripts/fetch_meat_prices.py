@@ -193,6 +193,56 @@ def parse_pork_cutout(data):
     return result if result else None
 
 
+
+def parse_beef_comprehensive(data):
+    """Parse beef comprehensive weekly report 2465 response."""
+    if not data: return None
+    blocks = data if isinstance(data, list) else [data]
+    result = {}
+    for block in blocks:
+        if not isinstance(block, dict): continue
+        section = block.get("reportSection", "")
+        results = block.get("results", [])
+
+        if section == "Summary":
+            if results:
+                rec = results[0]
+                result["total_loads"] = _i(rec.get("total_loads"))
+                result["choice_loads"] = _i(rec.get("choice_loads"))
+                result["select_loads"] = _i(rec.get("select_loads"))
+                result["prime_loads"] = _i(rec.get("prime_loads"))
+
+        elif section == "Subset Quality":
+            grades = {}
+            for r in results:
+                name = r.get("report_name", "").strip()
+                if name:
+                    grades[name] = {
+                        "cutout": _f(r.get("weekly_cutout_value")),
+                        "rib": _f(r.get("primal_rib")),
+                        "chuck": _f(r.get("primal_chuck")),
+                        "round": _f(r.get("primal_round")),
+                        "loin": _f(r.get("primal_loin")),
+                        "brisket": _f(r.get("primal_brisket")),
+                        "plate": _f(r.get("primal_plate")),
+                        "flank": _f(r.get("primal_flank")),
+                    }
+            result["grades"] = grades
+            # The comprehensive (all-grade) cutout - try different names
+            for key in ["All", "Total", "Comprehensive", "All Fed"]:
+                if key in grades:
+                    result["cutout"] = grades[key]["cutout"]
+                    break
+            # If no explicit "All", compute weighted avg from Choice loads
+            if "cutout" not in result and grades:
+                # Use the first grade's cutout as fallback, or average
+                vals = [g["cutout"] for g in grades.values() if g["cutout"]]
+                if vals:
+                    result["cutout"] = round(sum(vals) / len(vals), 2)
+
+    return result if result else None
+
+
 def _f(v):
     """Parse float from API value."""
     if v is None: return None
@@ -222,6 +272,10 @@ def fetch_date(date_str):
     pork = fetch_report("2498", date_str)
     pork_parsed = parse_pork_cutout(pork)
 
+    # Weekly comprehensive (only on Fridays / report dates)
+    comp = fetch_report("2465", date_str)
+    comp_parsed = parse_beef_comprehensive(comp)
+
     if not beef_parsed and not pork_parsed:
         print("no data (holiday?)")
         return None
@@ -233,6 +287,8 @@ def fetch_date(date_str):
         record["beef_trimmings"] = trims_parsed
     if pork_parsed:
         record["pork"] = pork_parsed
+    if comp_parsed:
+        record["beef_comp"] = comp_parsed
 
     choice = beef_parsed.get("choice") if beef_parsed else None
     carcass = pork_parsed.get("carcass") if pork_parsed else None
@@ -284,9 +340,9 @@ def main():
     # Count records for current year
     cur_year_count = sum(1 for d in existing_dates if d.endswith(f"/{current_year}"))
 
-    if cur_year_count < 200:
+    if cur_year_count < 200 or len(existing.get("daily", [])) < 1000:
         # Backfill: fetch from Jan 1 of the current year and prior year
-        start = datetime(current_year - 1, 1, 2)
+        start = datetime(current_year - 4, 1, 2)
         print(f"\n  Backfill mode: fetching from {start.strftime('%m/%d/%Y')}")
     else:
         # Incremental: just last 5 trading days
@@ -313,7 +369,7 @@ def main():
                 new_count += 1
         except Exception as e:
             print(f"  ERROR on {ds}: {e}")
-        time.sleep(0.5)  # Rate limit
+        time.sleep(0.3)  # Rate limit
 
     # Sort by date
     def date_sort_key(rec):
@@ -392,6 +448,9 @@ def build_seasonal_data(daily):
             "pork_carcass": [r.get("pork", {}).get("carcass") for r in yr_records],
         }
 
+        # Beef comprehensive cutout (weekly, from 2465)
+        yr_data["beef_comp"] = [r.get("beef_comp", {}).get("cutout") for r in yr_records]
+
         # Beef primals
         for primal in ["Rib", "Chuck", "Round", "Loin", "Brisket", "Plate", "Flank"]:
             key = f"beef_{primal.lower()}"
@@ -412,7 +471,7 @@ def build_seasonal_data(daily):
     if prior_years:
         max_days = max(len(by_year[y]) for y in prior_years)
         avg = {"year": "5yr_avg", "dates": seasonal.get("labels", [])}
-        for field in ["beef_choice", "beef_select", "pork_carcass",
+        for field in ["beef_choice", "beef_select", "beef_comp", "pork_carcass",
                        "beef_rib", "beef_chuck", "beef_round", "beef_loin",
                        "beef_brisket", "beef_plate", "beef_flank",
                        "pork_loin", "pork_butt", "pork_picnic", "pork_rib", "pork_ham", "pork_belly"]:

@@ -1786,35 +1786,15 @@ function CutoutPage({ ready }) {
     cutoutView = tmp;
   }
   const selectCutoutView = getSeasonalView(beefSelectByKey["2025"], beefSelectByKey["2024"] || [], beefSelectByKey["5yr"] || [], period, liveDates);
-  // Comprehensive cutout view (from 2465 — weekly report, only ~1yr history)
-  // Always aggregate to weekly unless monthly is selected
+  // Comprehensive cutout view (from 2465 — weekly report)
+  // Always aggregate to weekly unless monthly is selected, same 5-yr legend as choice
   var compPeriod = period === "monthly" ? "monthly" : "weekly";
   var compRanges = compPeriod === "monthly" ? BEEF_MONTH_RANGES : BEEF_WEEK_RANGES;
   var compViewData = { labels: compRanges.map(function(r) { return r.label; }) };
-  var compLegendYears = [];
-  var compLegend = [];
-  var compDS = {};
   legendYears.forEach(function(y, i) {
     var yd = meatData ? meatData.seasonal.years.find(function(sy) { return sy.year === y.year; }) : null;
     var series = yd ? yd.beef_comp || [] : [];
-    var agg = compRanges.map(function(r) { return avgRange(series, r.start, r.end); });
-    var hasData = agg.some(function(v) { return v != null; });
-    if (hasData) {
-      var ck = "cyr" + compLegendYears.length;
-      compViewData[ck] = agg;
-      compLegendYears.push(y);
-      var ci = compLegendYears.length - 1;
-      var totalCompYears = legendYears.filter(function(yy) {
-        var ydd = meatData ? meatData.seasonal.years.find(function(sy2) { return sy2.year === yy.year; }) : null;
-        var ss = ydd ? ydd.beef_comp || [] : [];
-        return compRanges.map(function(r) { return avgRange(ss, r.start, r.end); }).some(function(v) { return v != null; });
-      }).length;
-      // Color: use same scheme but indexed for available years only
-      var cColors = ["#D85A30","#E8A735","#639922","#1D9E75","#333"];
-      var cIdx = cColors.length - totalCompYears + ci;
-      compLegend.push({ label: String(y.year), color: cColors[cIdx] || "#999", key: ck });
-      compDS[ck] = { borderColor: cColors[cIdx] || "#999", borderWidth: ci === totalCompYears - 1 ? 2.5 : 1.5, pointRadius: 0, tension: 0 };
-    }
+    compViewData["yr" + i] = compRanges.map(function(r) { return avgRange(series, r.start, r.end); });
   });
   const productViews = BEEF_PRODUCT_SEASONAL.map(p => getProductView(p, period));
   const productSeasonalViews = BEEF_PRODUCT_SEASONAL.map(function(p) { return getSeasonalView(p.daily, p["2024"] || [], p["5yr"] || [], period); });
@@ -1831,31 +1811,6 @@ function CutoutPage({ ready }) {
     return { yMin: Math.floor((dataMin - pad) / step) * step, yMax: Math.ceil((dataMax + pad) / step) * step };
   }
 
-  function mkCompChart(view, cLegend, cDS, hidden) {
-    return function(canvas) {
-      var keys = cLegend.map(function(l) { return l.key; }).filter(function(k) { return !hidden.has(k); });
-      var ds = keys.map(function(k) {
-        var item = cLegend.find(function(l) { return l.key === k; });
-        return Object.assign({ label: item ? item.label : k, data: view[k], spanGaps: true }, cDS[k] || {});
-      });
-      var allVals = keys.flatMap(function(k) { return (view[k] || []).filter(function(v) { return v != null; }); });
-      var ax = niceAxis(allVals);
-      var labels = view.labels || [];
-      var ma = buildMonthAxis(labels);
-      new Chart(canvas, {
-        type: "line",
-        data: { labels: ma.displayLabels, datasets: ds },
-        options: { responsive: true, maintainAspectRatio: false,
-          interaction: { mode: "nearest", intersect: false },
-          plugins: { legend: { display: false }, tooltip: { callbacks: { label: function(c2) { return c2.dataset.label + ": $" + c2.parsed.y.toFixed(2); } } } },
-          scales: {
-            x: { ticks: { autoSkip: true, maxTicksLimit: 12, maxRotation: 0, font: { size: 10 } }, grid: { color: ma.gridColors } },
-            y: { min: ax.yMin, max: ax.yMax, title: { display: true, text: "$/cwt", font: { size: 11 } }, ticks: { font: { size: 10 }, callback: function(v) { return "$" + v; } }, grid: { color: "rgba(0,0,0,0.06)" } },
-          },
-        },
-      });
-    };
-  }
 
   function mkSeasonalChart(view, hidden) {
     return (canvas) => {
@@ -2016,7 +1971,7 @@ function CutoutPage({ ready }) {
   const chChg = chCur != null && chPrev != null ? chCur - chPrev : null;
   const seChg = seCur != null && sePrev != null ? seCur - sePrev : null;
   const spreadCur = chCur != null && seCur != null ? chCur - seCur : null;
-  const compVals2 = (compViewData["cyr" + (compLegendYears.length - 1)] || []).filter(function(v) { return v != null; });
+  const compVals2 = (compViewData["yr" + (legendYears.length - 1)] || []).filter(function(v) { return v != null; });
   const compCur = compVals2.length > 0 ? compVals2[compVals2.length - 1] : liveCompLatest;
   const compPrev = compVals2.length > 1 ? compVals2[compVals2.length - 2] : null;
   const compChg = compCur != null && compPrev != null ? compCur - compPrev : null;
@@ -2086,8 +2041,8 @@ function CutoutPage({ ready }) {
         </div>
         <div>
           <h3 style={{ fontSize: 15, fontWeight: 500, color: "var(--color-text-primary)", margin: "0 0 2px" }}>Comprehensive cutout</h3>
-          {chartMode === "seasonal" && <InteractiveLegend items={compLegend} hidden={hCutout} onToggle={tCutout} />}
-          {ready && <ChartBox id={`cut_comp_${period}_${chartMode}`} renderChart={mkCompChart(compViewData, compLegend, compDS, hCutout)} deps={`comp_${period}_${chartMode}_${[...hCutout].join()}_${meatData ? "live" : "syn"}`} />}
+          {chartMode === "seasonal" && <InteractiveLegend items={seasonLegend} hidden={hCutout} onToggle={tCutout} />}
+          {ready && <ChartBox id={`cut_comp_${period}_${chartMode}`} renderChart={mkSeasonalChart(compViewData, hCutout)} deps={`comp_${period}_${chartMode}_${[...hCutout].join()}_${meatData ? "live" : "syn"}`} />}
         </div>
       </div>
 

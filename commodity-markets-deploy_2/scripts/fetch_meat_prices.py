@@ -252,6 +252,65 @@ def parse_beef_comprehensive(data):
     return result if result else None
 
 
+
+def load_comp_cutout_csv(daily):
+    """Load historical comprehensive cutout from CSV and merge into daily records.
+    CSV has weekly Monday dates with Savg values. Forward-fill to cover each week's trading days.
+    Prefer API data (report 2465) when available; CSV fills gaps."""
+    import csv as csv_mod
+    csv_path = os.path.join(SCRIPT_DIR, "..", "data", "comp_cutout_historical.csv")
+    if not os.path.exists(csv_path):
+        csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "comp_cutout_historical.csv")
+    if not os.path.exists(csv_path):
+        print("  comp_cutout_historical.csv not found, skipping CSV merge")
+        return
+
+    # Parse CSV: date -> cutout value
+    weekly = {}
+    with open(csv_path) as f:
+        reader = csv_mod.reader(f)
+        next(reader)  # skip title row
+        next(reader)  # skip header row
+        for row in reader:
+            if not row or not row[0].strip() or "Reminder" in row[0]:
+                continue
+            try:
+                date_str = row[0].strip().replace(" 12:00:00 AM", "")
+                dt = datetime.strptime(date_str, "%m/%d/%Y")
+                val = float(row[3].strip())
+                weekly[dt] = val
+            except:
+                continue
+
+    print(f"  CSV comp cutout: {len(weekly)} weekly records")
+    if not weekly:
+        return
+
+    # Build a lookup: for any date, find the most recent Monday value
+    sorted_mondays = sorted(weekly.keys())
+
+    def find_weekly_value(dt):
+        """Find the most recent Monday value on or before dt."""
+        for i in range(len(sorted_mondays) - 1, -1, -1):
+            if sorted_mondays[i] <= dt:
+                return weekly[sorted_mondays[i]]
+        return None
+
+    # Merge into daily records where beef_comp is missing
+    filled = 0
+    for rec in daily:
+        if rec.get("beef_comp") and rec["beef_comp"].get("cutout"):
+            continue  # Already has API data
+        parts = rec["date"].split("/")
+        dt = datetime(int(parts[2]), int(parts[0]), int(parts[1]))
+        val = find_weekly_value(dt)
+        if val:
+            rec["beef_comp"] = {"cutout": val, "source": "csv"}
+            filled += 1
+
+    print(f"  CSV merge: filled {filled} daily records with comp cutout")
+
+
 def _f(v):
     """Parse float from API value."""
     if v is None: return None
@@ -449,6 +508,9 @@ def main():
             last_comp = rec["beef_comp"]
         elif last_comp and not rec.get("beef_comp"):
             rec["beef_comp"] = last_comp
+
+    # Merge historical CSV data for years not covered by API
+    load_comp_cutout_csv(daily)
 
     # Build seasonal data for charts (pre-computed by year)
     seasonal = build_seasonal_data(daily)

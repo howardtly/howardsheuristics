@@ -1786,22 +1786,16 @@ function CutoutPage({ ready }) {
     cutoutView = tmp;
   }
   const selectCutoutView = getSeasonalView(beefSelectByKey["2025"], beefSelectByKey["2024"] || [], beefSelectByKey["5yr"] || [], period, liveDates);
-  // Comprehensive cutout view (from 2465)
-  var compViewData = { labels: liveDates };
+  // Comprehensive cutout view (from 2465 — weekly report)
+  // Always aggregate to weekly unless monthly is selected
+  var compPeriod = period === "monthly" ? "monthly" : "weekly";
+  var compRanges = compPeriod === "monthly" ? BEEF_MONTH_RANGES : BEEF_WEEK_RANGES;
+  var compViewData = { labels: compRanges.map(function(r) { return r.label; }) };
   legendYears.forEach(function(y, i) {
     var yd = meatData ? meatData.seasonal.years.find(function(sy) { return sy.year === y.year; }) : null;
-    compViewData["yr" + i] = yd ? yd.beef_comp || [] : [];
+    var series = yd ? yd.beef_comp || [] : [];
+    compViewData["yr" + i] = compRanges.map(function(r) { return avgRange(series, r.start, r.end); });
   });
-  if (period !== "daily") {
-    var ctmp = { labels: period === "weekly" ? BEEF_WEEK_RANGES.map(function(w) { return w.label; }) : BEEF_MONTH_RANGES.map(function(m) { return m.label; }) };
-    legendYears.forEach(function(y, i) {
-      var yd = meatData ? meatData.seasonal.years.find(function(sy) { return sy.year === y.year; }) : null;
-      var series = yd ? yd.beef_comp || [] : [];
-      if (period === "weekly") ctmp["yr"+i] = BEEF_WEEK_RANGES.map(function(w) { return avgRange(series, w.start, w.end); });
-      else ctmp["yr"+i] = BEEF_MONTH_RANGES.map(function(m) { return avgRange(series, m.start, m.end); });
-    });
-    compViewData = ctmp;
-  }
   const productViews = BEEF_PRODUCT_SEASONAL.map(p => getProductView(p, period));
   const productSeasonalViews = BEEF_PRODUCT_SEASONAL.map(function(p) { return getSeasonalView(p.daily, p["2024"] || [], p["5yr"] || [], period); });
 
@@ -1980,6 +1974,10 @@ function CutoutPage({ ready }) {
   const chChg = chCur != null && chPrev != null ? chCur - chPrev : null;
   const seChg = seCur != null && sePrev != null ? seCur - sePrev : null;
   const spreadCur = chCur != null && seCur != null ? chCur - seCur : null;
+  const compVals2 = (compViewData["yr" + (legendYears.length - 1)] || []).filter(function(v) { return v != null; });
+  const compCur = compVals2.length > 0 ? compVals2[compVals2.length - 1] : liveCompLatest;
+  const compPrev = compVals2.length > 1 ? compVals2[compVals2.length - 2] : null;
+  const compChg = compCur != null && compPrev != null ? compCur - compPrev : null;
   const spreadPrev = chPrev != null && sePrev != null ? chPrev - sePrev : null;
   const spreadChg = spreadCur != null && spreadPrev != null ? spreadCur - spreadPrev : null;
   const periodLabel = period === "daily" ? "D/D" : period === "weekly" ? "W/W" : "M/M";
@@ -2036,7 +2034,7 @@ function CutoutPage({ ready }) {
         <CutoutCard label="Choice cutout" cur={chCur} prev={chPrev} chg={chChg} />
         <CutoutCard label="Select cutout" cur={seCur} prev={sePrev} chg={seChg} />
         <CutoutCard label="Choice–select spread" cur={spreadCur} prev={spreadPrev} chg={spreadChg} />
-        <CutoutCard label="Comprehensive cutout" cur={liveCompLatest} prev={null} chg={null} />
+        <CutoutCard label="Comprehensive cutout" cur={compCur} prev={compPrev} chg={compChg} />
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
         <div>

@@ -1683,6 +1683,10 @@ function CutoutPage({ ready }) {
   var livePorkLatest = PORK_CUTOUT_LATEST;
   var liveCompLatest = null;
   var liveLatest = null;
+  var liveBeefPrimalRows = null;
+  var liveBeefCutRows = null;
+  var livePorkPrimalRows = null;
+  var livePorkCutRows = null;
 
   // Chart data keyed as "2025"=cur, "2024"=prev, "5yr"=avg for seasonDS compatibility
   var beefChoiceByKey = { "2025": BOXED_BEEF_CHOICE_DAILY["2025"], "2024": BOXED_BEEF_CHOICE_DAILY["2024"], "5yr": BOXED_BEEF_CHOICE_DAILY["5yr"] };
@@ -1748,6 +1752,137 @@ function CutoutPage({ ready }) {
       livePorkLatest = lp.carcass || livePorkLatest;
       liveLatest = meatData.latest;
         if (meatData.latest.beef_comp) liveCompLatest = meatData.latest.beef_comp.cutout || null;
+
+        // Build live table data from last 2 daily records
+        var dLen = meatData.daily ? meatData.daily.length : 0;
+        var latestRec = dLen > 0 ? meatData.daily[dLen - 1] : null;
+        var prevRec = dLen > 1 ? meatData.daily[dLen - 2] : null;
+
+        // ── Beef product table from API data ──
+        if (latestRec && latestRec.beef) {
+          var lb2 = latestRec.beef;
+          var pb = prevRec ? prevRec.beef || {} : {};
+
+          // Build primal lookup from latest primals
+          var primals = lb2.primals || {};
+          var prevPrimals = pb.primals || {};
+          var beefPrimalRows = {};
+          ["Rib","Chuck","Round","Loin","Brisket","Plate","Flank"].forEach(function(name) {
+            var p = primals[name] || {};
+            var pp = prevPrimals[name] || {};
+            beefPrimalRows[name] = { latest: p.choice, prev: pp.choice };
+          });
+
+          // Build cut rows from choice_cuts - map to primals by first word
+          var beefCutRows = [];
+          (lb2.choice_cuts || []).forEach(function(cut) {
+            var name = cut.name || "";
+            var primal = "Other";
+            if (name.match(/^Rib/i)) primal = "Rib";
+            else if (name.match(/^Chuck/i)) primal = "Chuck";
+            else if (name.match(/^Round/i) || name.match(/^Knuckle/i) || name.match(/^Inside/i) || name.match(/^Outside/i) || name.match(/^Eye of/i)) primal = "Round";
+            else if (name.match(/^Loin/i) || name.match(/^Strip/i) || name.match(/^Tender/i) || name.match(/^Top Sirloin/i) || name.match(/^Sirloin/i) || name.match(/^Short Loin/i)) primal = "Loin";
+            else if (name.match(/^Brisket/i)) primal = "Brisket";
+            else if (name.match(/^Plate/i) || name.match(/^Skirt/i)) primal = "Plate";
+            else if (name.match(/^Flank/i)) primal = "Flank";
+            // Extract IMPS code from parentheses
+            var impsMatch = name.match(/\(([^)]+)\)/);
+            var imps = impsMatch ? impsMatch[1].trim() : "";
+            var shortName = name.replace(/\s*\([^)]+\)/, "").trim();
+            // Find prev day value for this cut
+            var prevCut = (pb.choice_cuts || []).find(function(pc) { return pc.name === cut.name; });
+            beefCutRows.push({
+              name: shortName, primal: primal, item: imps,
+              loads: cut.trades || null, lbs: cut.lbs || null,
+              latest: cut.avg, prev: prevCut ? prevCut.avg : null
+            });
+          });
+
+          // Add ground beef
+          (lb2.ground_beef || []).forEach(function(g) {
+            var prevG = (pb.ground_beef || []).find(function(pg) { return pg.name === g.name; });
+            beefCutRows.push({
+              name: g.name, primal: "Trim", item: "",
+              loads: null, lbs: g.lbs || null,
+              latest: g.avg, prev: prevG ? prevG.avg : null
+            });
+          });
+
+          // Add 50% trim from report 2453
+          (lb2.trimmings_2453 || []).forEach(function(t) {
+            var prevT = (pb.trimmings_2453 || []).find(function(pt) { return pt.name === t.name; });
+            beefCutRows.push({
+              name: t.name, primal: "Trim", item: "",
+              loads: null, lbs: t.lbs || null,
+              latest: t.avg, prev: prevT ? prevT.avg : null
+            });
+          });
+
+          // Add boneless beef trimmings (90CL, 85CL, etc.) from report 2451
+          var bt = latestRec.beef_trimmings || {};
+          var btPrev = prevRec ? prevRec.beef_trimmings || {} : {};
+          (bt.national || []).forEach(function(t) {
+            var prevT = (btPrev.national || []).find(function(pt) { return pt.name === t.name; });
+            beefCutRows.push({
+              name: t.name, primal: "Trim", item: "",
+              loads: t.trades || null, lbs: t.lbs || null,
+              latest: t.avg, prev: prevT ? prevT.avg : null
+            });
+          });
+
+          // Also add Trim primal composite value
+          var trimCuts = beefCutRows.filter(function(r) { return r.primal === "Trim" && r.latest; });
+          if (trimCuts.length > 0) {
+            var trimLatest = trimCuts[0].latest;
+            var trimPrev = trimCuts[0].prev;
+            beefPrimalRows["Trim"] = { latest: trimLatest, prev: trimPrev };
+          }
+
+          liveBeefPrimalRows = beefPrimalRows;
+          liveBeefCutRows = beefCutRows;
+        }
+
+        // ── Pork product table from API data ──
+        if (latestRec && latestRec.pork) {
+          var lp2 = latestRec.pork;
+          var pp2 = prevRec ? prevRec.pork || {} : {};
+
+          var porkPrimalRows = {};
+          ["Loin","Butt","Picnic","Rib","Ham","Belly"].forEach(function(name) {
+            var key = name.toLowerCase();
+            porkPrimalRows[name] = { latest: lp2[key], prev: pp2[key] };
+          });
+
+          var porkCutRows = [];
+          var porkSections = [
+            { key: "loin_cuts", primal: "Loin" },
+            { key: "butt_cuts", primal: "Butt" },
+            { key: "picnic_cuts", primal: "Picnic" },
+            { key: "ham_cuts", primal: "Ham" },
+            { key: "belly_cuts", primal: "Belly" },
+            { key: "sparerib_cuts", primal: "Rib" },
+            { key: "trim_cuts", primal: "Trim" },
+          ];
+          porkSections.forEach(function(sec) {
+            (lp2[sec.key] || []).forEach(function(cut) {
+              var prevCut = (pp2[sec.key] || []).find(function(pc) { return pc.name === cut.name; });
+              porkCutRows.push({
+                name: cut.name, primal: sec.primal, item: "",
+                loads: null, lbs: cut.lbs || null,
+                latest: cut.avg, prev: prevCut ? prevCut.avg : null
+              });
+            });
+          });
+
+          // Trim primal composite
+          var trimPorkCuts = porkCutRows.filter(function(r) { return r.primal === "Trim" && r.latest; });
+          if (trimPorkCuts.length > 0) {
+            porkPrimalRows["Trim"] = { latest: trimPorkCuts[0].latest, prev: trimPorkCuts[0].prev };
+          }
+
+          livePorkPrimalRows = porkPrimalRows;
+          livePorkCutRows = porkCutRows;
+        }
     }
   }
 
@@ -2097,13 +2232,11 @@ function CutoutPage({ ready }) {
           </thead>
           <tbody>
             {BEEF_PRIMAL_ORDER.map((primalName) => {
-              const primalData = BEEF_PRIMALS_DAILY.find(p => p.name === primalName);
-              const primalView = primalData ? getPrimalView(primalData, period) : null;
-              const primalVals = primalView ? primalView.values.filter(v => v != null) : [];
-              const primalLatest = primalVals.length > 0 ? primalVals[primalVals.length - 1] : null;
-              const primalPrev = primalVals.length > 1 ? primalVals[primalVals.length - 2] : null;
+              const pr = liveBeefPrimalRows ? liveBeefPrimalRows[primalName] || {} : {};
+              const primalLatest = pr.latest || null;
+              const primalPrev = pr.prev || null;
               const primalChg = primalLatest != null && primalPrev != null ? primalLatest - primalPrev : null;
-              const subs = BEEF_PRODUCTS_DAILY.filter(p => p.primal === primalName);
+              const subs = liveBeefCutRows ? liveBeefCutRows.filter(function(r) { return r.primal === primalName; }) : [];
               return (<>
                 <tr key={`primal-${primalName}`} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-secondary)" }}>
                   <td style={{ padding: "8px 12px", fontWeight: 500, color: "var(--color-text-primary)", fontSize: 12 }}>{primalName}</td>
@@ -2114,16 +2247,13 @@ function CutoutPage({ ready }) {
                     color: primalChg != null ? (primalChg > 0 ? "#639922" : primalChg < 0 ? "#A32D2D" : "var(--color-text-tertiary)") : "var(--color-text-tertiary)",
                   }}>{primalChg != null ? `${primalChg > 0 ? "+" : ""}${primalChg.toFixed(2)}` : "—"}</td>
                 </tr>
-                {subs.map((p) => {
-                  const pi = BEEF_PRODUCTS_DAILY.indexOf(p);
-                  const view = productViews[pi];
-                  const vals = view.values.filter(v => v != null);
-                  const latest = vals.length > 0 ? vals[vals.length - 1] : null;
-                  const prev = vals.length > 1 ? vals[vals.length - 2] : null;
+                {subs.map((p, si) => {
+                  const latest = p.latest || p.avg || null;
+                  const prev = p.prev || null;
                   const chg = latest != null && prev != null ? latest - prev : null;
-                  const isSelected = selectedProduct === pi;
+                  const isSelected = selectedProduct === (primalName + "_" + si);
                   return (<>
-                    <tr key={pi} onClick={() => setSelectedProduct(isSelected ? null : pi)} style={{
+                    <tr key={primalName + "_" + si} onClick={() => setSelectedProduct(isSelected ? null : (primalName + "_" + si))} style={{
                       cursor: "pointer", borderBottom: "0.5px solid var(--color-border-tertiary)",
                       background: isSelected ? "var(--color-background-info)" : "transparent",
                       transition: "background 0.1s",
@@ -2148,7 +2278,7 @@ function CutoutPage({ ready }) {
                       <tr key={`chart-${pi}`}>
                         <td colSpan={5} style={{ padding: "12px 12px 16px", background: "var(--color-background-secondary)" }}>
                           <div style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 8 }}>{p.name} <span style={{ fontWeight: 400, fontSize: 11, color: "var(--color-text-tertiary)" }}>— USDA Item {p.item}, $/cwt ({period})</span></div>
-                          <ProductChart idx={pi} />
+                          {/* Product chart placeholder */}
                         </td>
                       </tr>
                     )}
@@ -2219,13 +2349,11 @@ function CutoutPage({ ready }) {
           </thead>
           <tbody>
             {PORK_PRIMAL_ORDER.map((primalName) => {
-              const primalData = PORK_PRIMALS_DAILY.find(p => p.name === primalName);
-              const primalView = primalData ? getProductView(primalData, period) : null;
-              const primalVals = primalView ? primalView.values.filter(v => v != null) : [];
-              const primalLatest = primalVals.length > 0 ? primalVals[primalVals.length - 1] : null;
-              const primalPrev = primalVals.length > 1 ? primalVals[primalVals.length - 2] : null;
+              const pr = livePorkPrimalRows ? livePorkPrimalRows[primalName] || {} : {};
+              const primalLatest = pr.latest || null;
+              const primalPrev = pr.prev || null;
               const primalChg = primalLatest != null && primalPrev != null ? primalLatest - primalPrev : null;
-              const subs = PORK_PRODUCTS_DAILY.filter(p => p.primal === primalName);
+              const subs = livePorkCutRows ? livePorkCutRows.filter(function(r) { return r.primal === primalName; }) : [];
               return (<>
                 <tr key={`pork-primal-${primalName}`} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-secondary)" }}>
                   <td style={{ padding: "8px 12px", fontWeight: 500, color: "var(--color-text-primary)", fontSize: 12 }}>{primalName}</td>
@@ -2236,16 +2364,13 @@ function CutoutPage({ ready }) {
                     color: primalChg != null ? (primalChg > 0 ? "#639922" : primalChg < 0 ? "#A32D2D" : "var(--color-text-tertiary)") : "var(--color-text-tertiary)",
                   }}>{primalChg != null ? `${primalChg > 0 ? "+" : ""}${primalChg.toFixed(2)}` : "—"}</td>
                 </tr>
-                {subs.map((p) => {
-                  const pi = PORK_PRODUCTS_DAILY.indexOf(p);
-                  const view = porkProductViews[pi];
-                  const vals = view.values.filter(v => v != null);
-                  const latest = vals.length > 0 ? vals[vals.length - 1] : null;
-                  const prev = vals.length > 1 ? vals[vals.length - 2] : null;
+                {subs.map((p, si) => {
+                  const latest = p.latest || p.avg || null;
+                  const prev = p.prev || null;
                   const chg = latest != null && prev != null ? latest - prev : null;
-                  const isSelected = selectedPorkProduct === pi;
+                  const isSelected = selectedPorkProduct === (primalName + "_" + si);
                   return (<>
-                    <tr key={`pork-${pi}`} onClick={() => setSelectedPorkProduct(isSelected ? null : pi)} style={{
+                    <tr key={`pork-${primalName}-${si}`} onClick={() => setSelectedPorkProduct(isSelected ? null : (primalName + "_" + si))} style={{
                       cursor: "pointer", borderBottom: "0.5px solid var(--color-border-tertiary)",
                       background: isSelected ? "var(--color-background-info)" : "transparent",
                       transition: "background 0.1s",
@@ -2270,7 +2395,7 @@ function CutoutPage({ ready }) {
                       <tr key={`pork-chart-${pi}`}>
                         <td colSpan={5} style={{ padding: "12px 12px 16px", background: "var(--color-background-secondary)" }}>
                           <div style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 8 }}>{p.name} <span style={{ fontWeight: 400, fontSize: 11, color: "var(--color-text-tertiary)" }}>— USDA Item {p.item}, $/cwt ({period})</span></div>
-                          <PorkProductChart idx={pi} />
+                          {/* Pork product chart placeholder */}
                         </td>
                       </tr>
                     )}

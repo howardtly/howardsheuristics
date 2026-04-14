@@ -229,14 +229,13 @@ def parse_beef_comprehensive(data):
                     }
             result["grades"] = grades
             # The comprehensive (all-grade) cutout - try different names
-            for key in ["All", "Total", "Comprehensive", "All Fed"]:
+            for key in ["Comp", "All", "Total", "Comprehensive", "All Fed"]:
                 if key in grades:
                     result["cutout"] = grades[key]["cutout"]
                     break
             # If no explicit "All", try common variants
             if "cutout" not in result and grades:
-                for key in sorted(grades.keys()):
-                    print(f"    Comp grade: {key} = {grades[key].get('cutout')}")
+                pass  # Grades checked
                 # Use a weighted approach: if Choice and Select exist, weight them
                 ch = grades.get("Choice", {}).get("cutout")
                 se = grades.get("Select", {}).get("cutout")
@@ -315,6 +314,29 @@ def trading_days(start_date, end_date):
         if d.weekday() < 5:  # Mon-Fri
             yield d
         d += timedelta(days=1)
+
+
+
+def slim_daily_records(daily):
+    """Remove verbose per-cut data from old records to reduce JSON size.
+    Only keep individual cuts for the most recent 5 trading days."""
+    if len(daily) < 10:
+        return
+    cut_keys = ["choice_cuts", "select_cuts", "ground_beef", "trimmings_2453",
+                "loin_cuts", "butt_cuts", "picnic_cuts", "ham_cuts",
+                "belly_cuts", "sparerib_cuts", "trim_cuts", "jowl_cuts",
+                "variety_cuts", "added_ingredients_cuts"]
+    keep_recent = 5
+    for rec in daily[:-keep_recent]:
+        beef = rec.get("beef", {})
+        for k in cut_keys:
+            beef.pop(k, None)
+        pork = rec.get("pork", {})
+        for k in cut_keys:
+            pork.pop(k, None)
+        # Also slim beef_trimmings national list for old records
+        bt = rec.get("beef_trimmings", {})
+        bt.pop("national", None)
 
 
 def main():
@@ -450,6 +472,7 @@ def main():
         print(f"  Beef Choice: {b.get('choice')}, Select: {b.get('select')}")
         print(f"  Pork Carcass: {p.get('carcass')}")
 
+    slim_daily_records(daily)
     print(f"\nWriting {output_file}")
     with open(output_file, "w") as f:
         json.dump(result, f)

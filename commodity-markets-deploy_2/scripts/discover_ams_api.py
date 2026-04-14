@@ -16,7 +16,7 @@ SKIP = {"report_title","slug_name","slug_id","office_name","office_code",
         "market_location_state","market_type","market_type_category","is_correction",
         "narrative","trend","published_date"}
 
-for rid, label in [("2643", "Unknown 2643"), ("2461", "Weekly Negotiated"), ("2465", "Weekly Comprehensive")]:
+for rid, label in [("2646", "Unknown 2646"), ("2461", "Weekly Negotiated"), ("2465", "Weekly Comprehensive")]:
     print(f"\n{'='*60}")
     print(f"  Report {rid}: {label}")
     print(f"{'='*60}")

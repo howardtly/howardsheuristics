@@ -674,7 +674,7 @@ const BEEF_PRIMALS_DAILY = [
 ];
 
 // Ordered grouping: primal → its subprimals
-const BEEF_PRIMAL_ORDER = ["Chuck","Rib","Loin","Round","Brisket","Trim","Flank","Plate"];
+const BEEF_PRIMAL_ORDER = ["Rib","Chuck","Brisket","Round","Loin","Plate","Flank","Trim"];
 
 function getPrimalView(primal, period) {
   return getProductView(primal, period);
@@ -845,7 +845,7 @@ const PORK_PRODUCTS_DAILY = [
   { name: "42% Lean Trim", primal: "Trim", item: "42%", loads: 480, daily: genDaily2025(22.30, scaleDrift(DRIFT_A, 0.08)) },
 ];
 
-const PORK_PRIMAL_ORDER = ["Loin","Butt","Ham","Belly","Rib","Picnic","Trim"];
+const PORK_PRIMAL_ORDER = ["Loin","Butt","Rib","Ham","Belly","Jowl","Trim"];
 
 const PORK_PRODUCT_SEASONAL = PORK_PRODUCTS_DAILY.map((p, i) => ({
   ...p,
@@ -1773,55 +1773,127 @@ function CutoutPage({ ready }) {
             beefPrimalRows[name] = { latest: p.choice, prev: pp.choice };
           });
 
-          // Build cut rows from choice_cuts - map to primals by first word
+          // ── Beef cut mapping per RJO/USDA Meat Deli Planning Guide ──
+          // IMPS codes that appear in the guide, mapped to primal
+          var BEEF_IMPS_MAP = {
+            "109E  1": "Rib", "112A  3": "Rib",
+            "113C  1": "Chuck", "114  1": "Chuck", "114A  3": "Chuck", "116A  3": "Chuck",
+            "120  1": "Brisket",
+            "160  1": "Round", "161  1": "Round", "167A  4": "Round",
+            "168  1": "Round", "168  3": "Round", "169  5": "Round",
+            "170  1": "Round", "171B  3": "Round", "171C  3": "Round",
+            "174  3": "Loin", "175  3": "Loin", "180  3": "Loin",
+            "184  1": "Loin", "184  3": "Loin", "184B  3": "Loin",
+            "185A  4": "Loin", "185B  1": "Loin", "185C  1": "Loin",
+            "185D  4": "Loin", "189A  4": "Loin", "191A  4": "Loin",
+            "193  4": "Flank",
+            "121D  4": "Plate", "121C  4": "Plate", "121E  6": "Plate",
+            "123A  3": "Plate", "130  4": "Plate"
+          };
+          // Also match by partial IMPS (API sometimes has extra spaces)
+          function findImps(name) {
+            var m = name.match(/\(([^)]+)\)/);
+            return m ? m[1].trim() : "";
+          }
+          function impsLookup(imps) {
+            if (BEEF_IMPS_MAP[imps]) return BEEF_IMPS_MAP[imps];
+            // Try normalizing spaces
+            var norm = imps.replace(/\s+/g, "  ");
+            if (BEEF_IMPS_MAP[norm]) return BEEF_IMPS_MAP[norm];
+            // Try single space
+            var s1 = imps.replace(/\s+/g, " ");
+            for (var k in BEEF_IMPS_MAP) {
+              if (k.replace(/\s+/g, " ") === s1) return BEEF_IMPS_MAP[k];
+            }
+            return null;
+          }
+
           var beefCutRows = [];
+          // Choice cuts — filter to only items in the planning guide
           (lb2.choice_cuts || []).forEach(function(cut) {
             var name = cut.name || "";
-            var primal = "Other";
-            if (name.match(/^Rib/i)) primal = "Rib";
-            else if (name.match(/^Chuck/i)) primal = "Chuck";
-            else if (name.match(/^Round/i) || name.match(/^Knuckle/i) || name.match(/^Inside/i) || name.match(/^Outside/i) || name.match(/^Eye of/i)) primal = "Round";
-            else if (name.match(/^Loin/i) || name.match(/^Strip/i) || name.match(/^Tender/i) || name.match(/^Top Sirloin/i) || name.match(/^Sirloin/i) || name.match(/^Short Loin/i)) primal = "Loin";
-            else if (name.match(/^Brisket/i)) primal = "Brisket";
-            else if (name.match(/^Plate/i) || name.match(/^Skirt/i)) primal = "Plate";
-            else if (name.match(/^Flank/i)) primal = "Flank";
-            // Extract IMPS code from parentheses
-            var impsMatch = name.match(/\(([^)]+)\)/);
-            var imps = impsMatch ? impsMatch[1].trim() : "";
+            var imps = findImps(name);
+            var primal = impsLookup(imps);
+            if (!primal) return; // Not in planning guide, skip
             var shortName = name.replace(/\s*\([^)]+\)/, "").trim();
-            // Find prev day value for this cut
             var prevCut = (pb.choice_cuts || []).find(function(pc) { return pc.name === cut.name; });
             beefCutRows.push({
               name: shortName, primal: primal, item: imps,
               loads: cut.trades || null, lbs: cut.lbs || null,
-              latest: cut.avg, prev: prevCut ? prevCut.avg : null
+              latest: cut.avg, low: cut.low, high: cut.high,
+              prev: prevCut ? prevCut.avg : null
             });
           });
 
-          // Add ground beef
+          // Choice & Select combo cuts (Plate items: inside/outside skirt, cap & wedge, pectoral)
+          var comboSection = lb2.choice_and_select || [];
+          // These use trim_description instead of item_description
+          // Handled via IMPS map above if present in choice_cuts
+
+          // Choice & Select combo cuts (Plate items: skirts, cap & wedge, pectoral)
+          (lb2.choice_select_cuts || []).forEach(function(cut) {
+            if (!cut.avg) return;
+            var name = cut.name || "";
+            // Map to Plate primal
+            var imps = findImps(name);
+            var primal = impsLookup(imps);
+            if (!primal) {
+              // These items sometimes don't have IMPS in parens, use name matching
+              if (name.indexOf("Plate") >= 0 || name.indexOf("Skirt") >= 0 || name.indexOf("Cap and Wedge") >= 0 || name.indexOf("Pectoral") >= 0) {
+                primal = "Plate";
+              } else return;
+            }
+            var shortName = name.replace(/\s*\([^)]+\)/, "").replace(/^\s*\d+[A-Z]?\s+\d\s+/, "").trim();
+            var prevCut = (pb.choice_select_cuts || []).find(function(pc) { return pc.name === cut.name; });
+            beefCutRows.push({
+              name: name, primal: primal, item: imps,
+              loads: cut.trades || null, lbs: cut.lbs || null,
+              latest: cut.avg, low: cut.low, high: cut.high,
+              prev: prevCut ? prevCut.avg : null
+            });
+          });
+
+          // Plate primal composite from primals data
+          var platePrimal = primals["Plate"] || primals["Short Plate"] || {};
+          var prevPlatePrimal = prevPrimals["Plate"] || prevPrimals["Short Plate"] || {};
+          if (platePrimal.choice) {
+            beefPrimalRows["Plate"] = { latest: platePrimal.choice, prev: prevPlatePrimal.choice };
+          }
+
+          // Flank primal composite
+          var flankPrimal = primals["Flank"] || {};
+          var prevFlankPrimal = prevPrimals["Flank"] || {};
+          if (flankPrimal.choice) {
+            beefPrimalRows["Flank"] = { latest: flankPrimal.choice, prev: prevFlankPrimal.choice };
+          }
+
+          // Ground beef
           (lb2.ground_beef || []).forEach(function(g) {
+            if (!g.avg) return;
             var prevG = (pb.ground_beef || []).find(function(pg) { return pg.name === g.name; });
             beefCutRows.push({
               name: g.name, primal: "Trim", item: "",
-              loads: null, lbs: g.lbs || null,
+              loads: g.trades || null, lbs: g.lbs || null,
               latest: g.avg, prev: prevG ? prevG.avg : null
             });
           });
 
-          // Add 50% trim from report 2453
+          // 50% trim from report 2453
           (lb2.trimmings_2453 || []).forEach(function(t) {
+            if (!t.avg) return;
             var prevT = (pb.trimmings_2453 || []).find(function(pt) { return pt.name === t.name; });
             beefCutRows.push({
               name: t.name, primal: "Trim", item: "",
-              loads: null, lbs: t.lbs || null,
+              loads: t.trades || null, lbs: t.lbs || null,
               latest: t.avg, prev: prevT ? prevT.avg : null
             });
           });
 
-          // Add boneless beef trimmings (90CL, 85CL, etc.) from report 2451
+          // Boneless beef trimmings (90CL, 85CL, etc.) from report 2451
           var bt = latestRec.beef_trimmings || {};
           var btPrev = prevRec ? prevRec.beef_trimmings || {} : {};
           (bt.national || []).forEach(function(t) {
+            if (!t.avg) return;
             var prevT = (btPrev.national || []).find(function(pt) { return pt.name === t.name; });
             beefCutRows.push({
               name: t.name, primal: "Trim", item: "",
@@ -1830,12 +1902,10 @@ function CutoutPage({ ready }) {
             });
           });
 
-          // Also add Trim primal composite value
-          var trimCuts = beefCutRows.filter(function(r) { return r.primal === "Trim" && r.latest; });
-          if (trimCuts.length > 0) {
-            var trimLatest = trimCuts[0].latest;
-            var trimPrev = trimCuts[0].prev;
-            beefPrimalRows["Trim"] = { latest: trimLatest, prev: trimPrev };
+          // Trim primal composite — use Fresh 50% as representative
+          var trim50 = beefCutRows.find(function(r) { return r.primal === "Trim" && r.name && r.name.indexOf("Fresh 50%") >= 0 && r.latest; });
+          if (trim50) {
+            beefPrimalRows["Trim"] = { latest: trim50.latest, prev: trim50.prev };
           }
 
           liveBeefPrimalRows = beefPrimalRows;
@@ -1853,31 +1923,80 @@ function CutoutPage({ ready }) {
             porkPrimalRows[name] = { latest: lp2[key], prev: pp2[key] };
           });
 
-          var porkCutRows = [];
-          var porkSections = [
-            { key: "loin_cuts", primal: "Loin" },
-            { key: "butt_cuts", primal: "Butt" },
-            { key: "picnic_cuts", primal: "Picnic" },
-            { key: "ham_cuts", primal: "Ham" },
-            { key: "belly_cuts", primal: "Belly" },
-            { key: "sparerib_cuts", primal: "Rib" },
-            { key: "trim_cuts", primal: "Trim" },
+          // ── Pork cut mapping per RJO/USDA Meat Deli Planning Guide ──
+          var PORK_GUIDE_CUTS = [
+            // Loin
+            { match: "1/4 Trimmed Loin VAC", primal: "Loin", section: "loin_cuts", exact: true },
+            { match: "1/8 Trimmed Loin VAC", primal: "Loin", section: "loin_cuts", exact: true },
+            { match: "Bone-in CC, Tender-in Loin", primal: "Loin", section: "loin_cuts" },
+            { match: "Bnls CC Strap-on", primal: "Loin", section: "loin_cuts" },
+            { match: "Bnls CC Strap-off", primal: "Loin", section: "loin_cuts" },
+            { match: "Boneless Sirloin", primal: "Loin", section: "loin_cuts" },
+            { match: "Tenderloin", primal: "Loin", section: "loin_cuts" },
+            { match: "Backribs 2.0#/up VAC", primal: "Loin", section: "loin_cuts" },
+            { match: "Backribs 2.0#/up 1 Pc", primal: "Loin", section: "loin_cuts" },
+            // Butt
+            { match: "1/4 Trim Butt VAC", primal: "Butt", section: "butt_cuts", exact: true },
+            { match: "1/4 Trim Butt Combo", primal: "Butt", section: "butt_cuts" },
+            // Sparerib
+            { match: "Trmd Sparerib - LGT", primal: "Rib", section: "sparerib_cuts", exact: true },
+            { match: "Trmd Sparerib - MED", primal: "Rib", section: "sparerib_cuts" },
+            { match: "St Louis", primal: "Rib", section: "sparerib_cuts" },
+            { match: "BBQ Style", primal: "Rib", section: "sparerib_cuts" },
+            // Ham
+            { match: "17-20# Trmd Selected Ham", primal: "Ham", section: "ham_cuts" },
+            { match: "20-23# Trmd Selected Ham", primal: "Ham", section: "ham_cuts" },
+            { match: "23-27# Trmd Selected Ham", primal: "Ham", section: "ham_cuts" },
+            { match: "3 Muscle Ham", primal: "Ham", section: "ham_cuts" },
+            { match: "4 Muscle Ham", primal: "Ham", section: "ham_cuts" },
+            { match: "Insides", primal: "Ham", section: "ham_cuts" },
+            { match: "Outsides", primal: "Ham", section: "ham_cuts" },
+            { match: "Knuckles", primal: "Ham", section: "ham_cuts" },
+            { match: "Lite Butt", primal: "Ham", section: "ham_cuts" },
+            { match: "Outer Shank", primal: "Ham", section: "ham_cuts" },
+            { match: "Inner Shank", primal: "Ham", section: "ham_cuts" },
+            // Belly
+            { match: "Derind Belly 9-13#", primal: "Belly", section: "belly_cuts" },
+            { match: "Derind Belly 13-17#", primal: "Belly", section: "belly_cuts" },
+            // Jowl
+            { match: "Skinned Combo", primal: "Jowl", section: "jowl_cuts" },
+            // Trim
+            { match: "42% Trim Combo", primal: "Trim", section: "trim_cuts" },
+            { match: "72% Trim Combo", primal: "Trim", section: "trim_cuts" },
+            { match: "72% Trim Boxed", primal: "Trim", section: "trim_cuts" },
           ];
-          porkSections.forEach(function(sec) {
-            (lp2[sec.key] || []).forEach(function(cut) {
-              var prevCut = (pp2[sec.key] || []).find(function(pc) { return pc.name === cut.name; });
+
+          var porkCutRows = [];
+          var porkSectionKeys = ["loin_cuts","butt_cuts","picnic_cuts","ham_cuts","belly_cuts","sparerib_cuts","jowl_cuts","trim_cuts"];
+          porkSectionKeys.forEach(function(secKey) {
+            (lp2[secKey] || []).forEach(function(cut) {
+              // Check if this cut matches any guide item
+              var guideCut = PORK_GUIDE_CUTS.find(function(g) {
+                if (g.section !== secKey) return false;
+                if (g.exact) return cut.name === g.match || cut.name === g.match + ", FZN";
+                return cut.name && cut.name.indexOf(g.match) >= 0 && cut.name.indexOf("FZN") < 0;
+              });
+              if (!guideCut) return; // Not in guide, skip
+              if (!cut.avg) return; // No price
+              var prevCut = (pp2[secKey] || []).find(function(pc) { return pc.name === cut.name; });
               porkCutRows.push({
-                name: cut.name, primal: sec.primal, item: "",
+                name: cut.name, primal: guideCut.primal, item: "",
                 loads: null, lbs: cut.lbs || null,
-                latest: cut.avg, prev: prevCut ? prevCut.avg : null
+                latest: cut.avg, low: cut.low, high: cut.high,
+                prev: prevCut ? prevCut.avg : null
               });
             });
           });
 
-          // Trim primal composite
-          var trimPorkCuts = porkCutRows.filter(function(r) { return r.primal === "Trim" && r.latest; });
-          if (trimPorkCuts.length > 0) {
-            porkPrimalRows["Trim"] = { latest: trimPorkCuts[0].latest, prev: trimPorkCuts[0].prev };
+          // Trim primal composite — use 42% Trim as representative
+          var trim42 = porkCutRows.find(function(r) { return r.name && r.name.indexOf("42% Trim") >= 0 && r.latest; });
+          if (trim42) {
+            porkPrimalRows["Trim"] = { latest: trim42.latest, prev: trim42.prev };
+          }
+          // Jowl primal value
+          var jowlCut = porkCutRows.find(function(r) { return r.primal === "Jowl" && r.latest; });
+          if (jowlCut) {
+            porkPrimalRows["Jowl"] = { latest: jowlCut.latest, prev: jowlCut.prev };
           }
 
           livePorkPrimalRows = porkPrimalRows;
@@ -2237,9 +2356,18 @@ function CutoutPage({ ready }) {
               const primalPrev = pr.prev || null;
               const primalChg = primalLatest != null && primalPrev != null ? primalLatest - primalPrev : null;
               const subs = liveBeefCutRows ? liveBeefCutRows.filter(function(r) { return r.primal === primalName; }) : [];
+              const isPrimalSelected = selectedProduct === ("primal_" + primalName);
               return (<>
-                <tr key={`primal-${primalName}`} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-secondary)" }}>
-                  <td style={{ padding: "8px 12px", fontWeight: 500, color: "var(--color-text-primary)", fontSize: 12 }}>{primalName}</td>
+                <tr key={`primal-${primalName}`} onClick={() => setSelectedProduct(isPrimalSelected ? null : ("primal_" + primalName))} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)", background: isPrimalSelected ? "var(--color-background-info)" : "var(--color-background-secondary)", cursor: "pointer" }}
+                  onMouseEnter={e => { if (!isPrimalSelected) e.currentTarget.style.background = "rgba(37,99,235,0.06)"; }}
+                  onMouseLeave={e => { if (!isPrimalSelected) e.currentTarget.style.background = "var(--color-background-secondary)"; }}
+                >
+                  <td style={{ padding: "8px 12px", fontWeight: 500, color: "var(--color-text-primary)", fontSize: 12 }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ transform: isPrimalSelected ? "rotate(90deg)" : "none", transition: "transform 0.15s", flexShrink: 0 }}><path d="M3.5 1.5L7.5 5L3.5 8.5" /></svg>
+                      {primalName}
+                    </span>
+                  </td>
                   <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)" }}></td>
                   <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 500, color: "var(--color-text-primary)" }}>{primalLatest != null ? `${primalLatest.toFixed(2)}` : "—"}</td>
                   <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-secondary)" }}>{primalPrev != null ? `${primalPrev.toFixed(2)}` : "—"}</td>
@@ -2247,6 +2375,22 @@ function CutoutPage({ ready }) {
                     color: primalChg != null ? (primalChg > 0 ? "#639922" : primalChg < 0 ? "#A32D2D" : "var(--color-text-tertiary)") : "var(--color-text-tertiary)",
                   }}>{primalChg != null ? `${primalChg > 0 ? "+" : ""}${primalChg.toFixed(2)}` : "—"}</td>
                 </tr>
+                {isPrimalSelected && (
+                  <tr key={`primal-chart-${primalName}`}>
+                    <td colSpan={5} style={{ padding: "12px 16px 16px", background: "var(--color-background-secondary)" }}>
+                      <div style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 8 }}>{primalName} primal — seasonal</div>
+                      {(function() {
+                        var pView = { labels: liveDates };
+                        legendYears.forEach(function(y, yi) {
+                          var yd = meatData ? meatData.seasonal.years.find(function(sy) { return sy.year === y.year; }) : null;
+                          pView["yr" + yi] = yd ? yd["beef_" + primalName.toLowerCase()] || [] : [];
+                        });
+                        var cid = "beefprimal_" + primalName + "_" + period;
+                        return React.createElement(ChartBox, { id: cid, renderChart: mkSeasonalChart(pView, new Set()), deps: cid + "_" + (meatData ? "L" : "S") });
+                      })()}
+                    </td>
+                  </tr>
+                )}
                 {subs.map((p, si) => {
                   const latest = p.latest || p.avg || null;
                   const prev = p.prev || null;
@@ -2277,21 +2421,18 @@ function CutoutPage({ ready }) {
                     {isSelected && (
                       <tr key={`chart-beef-${primalName}-${si}`}>
                         <td colSpan={5} style={{ padding: "12px 16px 16px", background: "var(--color-background-secondary)" }}>
-                          <div style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 10 }}>{p.name} {p.item && <span style={{ color: "var(--color-text-tertiary)", fontSize: 11 }}>({p.item})</span>}</div>
-                          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8 }}>
-                            {[
-                              { label: "Wtd Avg", value: latest },
-                              { label: "Low", value: p.low },
-                              { label: "High", value: p.high },
-                              { label: "Trades", value: p.trades || p.loads, isCt: true },
-                              { label: "Volume (lbs)", value: p.lbs, isCt: true },
-                            ].filter(function(m) { return m.value != null; }).map(function(m) {
-                              return React.createElement("div", { key: m.label, style: { background: "var(--color-background-primary)", borderRadius: 6, padding: "8px 10px" } },
-                                React.createElement("div", { style: { fontSize: 10, color: "var(--color-text-tertiary)", marginBottom: 2, textTransform: "uppercase" } }, m.label),
-                                React.createElement("div", { style: { fontSize: 14, fontWeight: 500, fontFamily: "var(--font-mono)", color: "var(--color-text-primary)" } }, m.isCt ? Number(m.value).toLocaleString() : "$" + Number(m.value).toFixed(2))
-                              );
-                            })}
-                          </div>
+                          <div style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 8 }}>{p.name} {p.item && <span style={{ color: "var(--color-text-tertiary)", fontSize: 11 }}>({p.item})</span>} <span style={{ fontWeight: 400, fontSize: 11, color: "var(--color-text-tertiary)" }}>— {primalName} primal seasonal</span></div>
+                          {(function() {
+                            var primalEntry = liveBeefPrimals.find(function(bp) { return bp.name === primalName; });
+                            if (!primalEntry) return null;
+                            var pView = { labels: liveDates };
+                            legendYears.forEach(function(y, yi) {
+                              var yd = meatData ? meatData.seasonal.years.find(function(sy) { return sy.year === y.year; }) : null;
+                              pView["yr" + yi] = yd ? yd["beef_" + primalName.toLowerCase()] || [] : [];
+                            });
+                            var cid = "beefcut_" + primalName + "_" + si + "_" + period;
+                            return React.createElement(ChartBox, { id: cid, renderChart: mkSeasonalChart(pView, new Set()), deps: cid + "_" + (meatData ? "L" : "S") });
+                          })()}
                         </td>
                       </tr>
                     )}
@@ -2367,9 +2508,18 @@ function CutoutPage({ ready }) {
               const primalPrev = pr.prev || null;
               const primalChg = primalLatest != null && primalPrev != null ? primalLatest - primalPrev : null;
               const subs = livePorkCutRows ? livePorkCutRows.filter(function(r) { return r.primal === primalName; }) : [];
+              const isPorkPrimalSelected = selectedPorkProduct === ("primal_" + primalName);
               return (<>
-                <tr key={`pork-primal-${primalName}`} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-secondary)" }}>
-                  <td style={{ padding: "8px 12px", fontWeight: 500, color: "var(--color-text-primary)", fontSize: 12 }}>{primalName}</td>
+                <tr key={`pork-primal-${primalName}`} onClick={() => setSelectedPorkProduct(isPorkPrimalSelected ? null : ("primal_" + primalName))} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)", background: isPorkPrimalSelected ? "var(--color-background-info)" : "var(--color-background-secondary)", cursor: "pointer" }}
+                  onMouseEnter={e => { if (!isPorkPrimalSelected) e.currentTarget.style.background = "rgba(37,99,235,0.06)"; }}
+                  onMouseLeave={e => { if (!isPorkPrimalSelected) e.currentTarget.style.background = "var(--color-background-secondary)"; }}
+                >
+                  <td style={{ padding: "8px 12px", fontWeight: 500, color: "var(--color-text-primary)", fontSize: 12 }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ transform: isPorkPrimalSelected ? "rotate(90deg)" : "none", transition: "transform 0.15s", flexShrink: 0 }}><path d="M3.5 1.5L7.5 5L3.5 8.5" /></svg>
+                      {primalName}
+                    </span>
+                  </td>
                   <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)" }}></td>
                   <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 500, color: "var(--color-text-primary)" }}>{primalLatest != null ? `${primalLatest.toFixed(2)}` : "—"}</td>
                   <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-secondary)" }}>{primalPrev != null ? `${primalPrev.toFixed(2)}` : "—"}</td>
@@ -2377,6 +2527,22 @@ function CutoutPage({ ready }) {
                     color: primalChg != null ? (primalChg > 0 ? "#639922" : primalChg < 0 ? "#A32D2D" : "var(--color-text-tertiary)") : "var(--color-text-tertiary)",
                   }}>{primalChg != null ? `${primalChg > 0 ? "+" : ""}${primalChg.toFixed(2)}` : "—"}</td>
                 </tr>
+                {isPorkPrimalSelected && (
+                  <tr key={`pork-primal-chart-${primalName}`}>
+                    <td colSpan={5} style={{ padding: "12px 16px 16px", background: "var(--color-background-secondary)" }}>
+                      <div style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 8 }}>{primalName} primal — seasonal</div>
+                      {(function() {
+                        var pView = { labels: liveDates };
+                        legendYears.forEach(function(y, yi) {
+                          var yd = meatData ? meatData.seasonal.years.find(function(sy) { return sy.year === y.year; }) : null;
+                          pView["yr" + yi] = yd ? yd["pork_" + primalName.toLowerCase()] || [] : [];
+                        });
+                        var cid = "porkprimal_" + primalName + "_" + period;
+                        return React.createElement(ChartBox, { id: cid, renderChart: mkSeasonalChart(pView, new Set()), deps: cid + "_" + (meatData ? "L" : "S") });
+                      })()}
+                    </td>
+                  </tr>
+                )}
                 {subs.map((p, si) => {
                   const latest = p.latest || p.avg || null;
                   const prev = p.prev || null;
@@ -2407,20 +2573,16 @@ function CutoutPage({ ready }) {
                     {isSelected && (
                       <tr key={`chart-pork-${primalName}-${si}`}>
                         <td colSpan={5} style={{ padding: "12px 16px 16px", background: "var(--color-background-secondary)" }}>
-                          <div style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 10 }}>{p.name}</div>
-                          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8 }}>
-                            {[
-                              { label: "Wtd Avg", value: latest },
-                              { label: "Low", value: p.low },
-                              { label: "High", value: p.high },
-                              { label: "Volume (lbs)", value: p.lbs, isCt: true },
-                            ].filter(function(m) { return m.value != null; }).map(function(m) {
-                              return React.createElement("div", { key: m.label, style: { background: "var(--color-background-primary)", borderRadius: 6, padding: "8px 10px" } },
-                                React.createElement("div", { style: { fontSize: 10, color: "var(--color-text-tertiary)", marginBottom: 2, textTransform: "uppercase" } }, m.label),
-                                React.createElement("div", { style: { fontSize: 14, fontWeight: 500, fontFamily: "var(--font-mono)", color: "var(--color-text-primary)" } }, m.isCt ? Number(m.value).toLocaleString() : "$" + Number(m.value).toFixed(2))
-                              );
-                            })}
-                          </div>
+                          <div style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 8 }}>{p.name} <span style={{ fontWeight: 400, fontSize: 11, color: "var(--color-text-tertiary)" }}>— {primalName} primal seasonal</span></div>
+                          {(function() {
+                            var pView = { labels: liveDates };
+                            legendYears.forEach(function(y, yi) {
+                              var yd = meatData ? meatData.seasonal.years.find(function(sy) { return sy.year === y.year; }) : null;
+                              pView["yr" + yi] = yd ? yd["pork_" + primalName.toLowerCase()] || [] : [];
+                            });
+                            var cid = "porkcut_" + primalName + "_" + si + "_" + period;
+                            return React.createElement(ChartBox, { id: cid, renderChart: mkSeasonalChart(pView, new Set()), deps: cid + "_" + (meatData ? "L" : "S") });
+                          })()}
                         </td>
                       </tr>
                     )}

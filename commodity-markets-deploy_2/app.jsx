@@ -2275,10 +2275,23 @@ function CutoutPage({ ready }) {
                       }}>{chg != null ? `${chg > 0 ? "+" : ""}${chg.toFixed(2)}` : "—"}</td>
                     </tr>
                     {isSelected && (
-                      <tr key={`chart-${pi}`}>
-                        <td colSpan={5} style={{ padding: "12px 12px 16px", background: "var(--color-background-secondary)" }}>
-                          <div style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 8 }}>{p.name} <span style={{ fontWeight: 400, fontSize: 11, color: "var(--color-text-tertiary)" }}>— USDA Item {p.item}, $/cwt ({period})</span></div>
-                          {/* Product chart placeholder */}
+                      <tr key={`chart-beef-${primalName}-${si}`}>
+                        <td colSpan={5} style={{ padding: "12px 16px 16px", background: "var(--color-background-secondary)" }}>
+                          <div style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 10 }}>{p.name} {p.item && <span style={{ color: "var(--color-text-tertiary)", fontSize: 11 }}>({p.item})</span>}</div>
+                          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8 }}>
+                            {[
+                              { label: "Wtd Avg", value: latest },
+                              { label: "Low", value: p.low },
+                              { label: "High", value: p.high },
+                              { label: "Trades", value: p.trades || p.loads, isCt: true },
+                              { label: "Volume (lbs)", value: p.lbs, isCt: true },
+                            ].filter(function(m) { return m.value != null; }).map(function(m) {
+                              return React.createElement("div", { key: m.label, style: { background: "var(--color-background-primary)", borderRadius: 6, padding: "8px 10px" } },
+                                React.createElement("div", { style: { fontSize: 10, color: "var(--color-text-tertiary)", marginBottom: 2, textTransform: "uppercase" } }, m.label),
+                                React.createElement("div", { style: { fontSize: 14, fontWeight: 500, fontFamily: "var(--font-mono)", color: "var(--color-text-primary)" } }, m.isCt ? Number(m.value).toLocaleString() : "$" + Number(m.value).toFixed(2))
+                              );
+                            })}
+                          </div>
                         </td>
                       </tr>
                     )}
@@ -2392,10 +2405,22 @@ function CutoutPage({ ready }) {
                       }}>{chg != null ? `${chg > 0 ? "+" : ""}${chg.toFixed(2)}` : "—"}</td>
                     </tr>
                     {isSelected && (
-                      <tr key={`pork-chart-${pi}`}>
-                        <td colSpan={5} style={{ padding: "12px 12px 16px", background: "var(--color-background-secondary)" }}>
-                          <div style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 8 }}>{p.name} <span style={{ fontWeight: 400, fontSize: 11, color: "var(--color-text-tertiary)" }}>— USDA Item {p.item}, $/cwt ({period})</span></div>
-                          {/* Pork product chart placeholder */}
+                      <tr key={`chart-pork-${primalName}-${si}`}>
+                        <td colSpan={5} style={{ padding: "12px 16px 16px", background: "var(--color-background-secondary)" }}>
+                          <div style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 10 }}>{p.name}</div>
+                          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8 }}>
+                            {[
+                              { label: "Wtd Avg", value: latest },
+                              { label: "Low", value: p.low },
+                              { label: "High", value: p.high },
+                              { label: "Volume (lbs)", value: p.lbs, isCt: true },
+                            ].filter(function(m) { return m.value != null; }).map(function(m) {
+                              return React.createElement("div", { key: m.label, style: { background: "var(--color-background-primary)", borderRadius: 6, padding: "8px 10px" } },
+                                React.createElement("div", { style: { fontSize: 10, color: "var(--color-text-tertiary)", marginBottom: 2, textTransform: "uppercase" } }, m.label),
+                                React.createElement("div", { style: { fontSize: 14, fontWeight: 500, fontFamily: "var(--font-mono)", color: "var(--color-text-primary)" } }, m.isCt ? Number(m.value).toLocaleString() : "$" + Number(m.value).toFixed(2))
+                              );
+                            })}
+                          </div>
                         </td>
                       </tr>
                     )}

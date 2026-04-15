@@ -93,6 +93,21 @@ def parse_beef_cutout(data):
                     })
             result["select_cuts"] = cuts
 
+        elif section == "Choice and Select Cuts":
+            cuts = []
+            for r in results:
+                desc = r.get("trim_description", "")
+                if desc:
+                    cuts.append({
+                        "name": desc,
+                        "avg": _f(r.get("weighted_average")),
+                        "low": _f(r.get("price_range_low")),
+                        "high": _f(r.get("price_range_high")),
+                        "trades": _i(r.get("number_trades")),
+                        "lbs": _i(r.get("total_pounds")),
+                    })
+            result["choice_select_cuts"] = cuts
+
         elif section == "Ground Beef":
             grinds = []
             for r in results:
@@ -381,7 +396,7 @@ def slim_daily_records(daily):
     Only keep individual cuts for the most recent 5 trading days."""
     if len(daily) < 10:
         return
-    cut_keys = ["choice_cuts", "select_cuts", "ground_beef", "trimmings_2453",
+    cut_keys = ["choice_cuts", "select_cuts", "choice_select_cuts", "ground_beef", "trimmings_2453",
                 "loin_cuts", "butt_cuts", "picnic_cuts", "ham_cuts",
                 "belly_cuts", "sparerib_cuts", "trim_cuts", "jowl_cuts",
                 "variety_cuts", "added_ingredients_cuts"]
@@ -433,9 +448,9 @@ def main():
     # Count records for current year
     cur_year_count = sum(1 for d in existing_dates if d.endswith(f"/{current_year}"))
 
-    if cur_year_count < 200:
+    if cur_year_count < 200 and len(existing.get("daily", [])) < 1200:
         # Backfill: fetch from Jan 1 of the current year and prior year
-        start = datetime(current_year - 4, 1, 2)
+        start = datetime(2021, 1, 4)
         print(f"\n  Backfill mode: fetching from {start.strftime('%m/%d/%Y')}")
     else:
         # Incremental: just last 5 trading days

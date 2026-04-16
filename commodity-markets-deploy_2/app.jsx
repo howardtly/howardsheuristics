@@ -1659,6 +1659,60 @@ function CattleOnFeedPage({ ready }) {
   </div>);
 }
 
+// ──────────────────────────────────────────────────────────────────────
+// Expanded row chart with its own interactive legend (per-chart year toggle)
+// ──────────────────────────────────────────────────────────────────────
+function ExpandChartRow(props) {
+  var chartId = props.chartId;
+  var title = props.title;
+  var buildView = props.buildView;          // function(): { labels, yr0..yrN }
+  var legendYears = props.legendYears;
+  var seasonLegend = props.seasonLegend;
+  var mkChart = props.mkChart;              // function(view, hidden, localLegend, localDS): function(canvas){...}
+  var seasonDS = props.seasonDS;
+  var chartMode = props.chartMode;
+  var _h = useState(new Set());
+  var hidden = _h[0], setHidden = _h[1];
+  var toggle = function(key) {
+    setHidden(function(prev) {
+      var n = new Set(prev);
+      if (n.has(key)) n.delete(key); else n.add(key);
+      return n;
+    });
+  };
+  var view = buildView();
+  return React.createElement("div", null,
+    React.createElement("div", { style: { fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 8 } }, title),
+    React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10, alignItems: "center" } },
+      seasonLegend.map(function(item) {
+        var isH = hidden.has(item.key);
+        return React.createElement("button", {
+          key: item.key,
+          onClick: function() { toggle(item.key); },
+          style: {
+            display: "flex", alignItems: "center", gap: 5,
+            padding: "4px 10px",
+            border: "1px solid var(--color-border-secondary)",
+            borderRadius: 5,
+            background: isH ? "var(--color-background-secondary)" : "transparent",
+            cursor: "pointer",
+            opacity: isH ? 0.3 : 1,
+            transition: "all 0.15s"
+          }
+        },
+          React.createElement("span", { style: { width: 18, height: 0, borderTop: "2.5px solid " + item.color, display: "inline-block" } }),
+          React.createElement("span", { style: { fontSize: 12, fontWeight: 500, color: "var(--color-text-primary)" } }, item.label)
+        );
+      })
+    ),
+    React.createElement(ChartBox, {
+      id: chartId,
+      renderChart: mkChart(view, hidden),
+      deps: chartId + "_" + [].concat(Array.from(hidden)).sort().join(",") + "_" + chartMode
+    })
+  );
+}
+
 function CutoutPage({ ready }) {
   const [tab, setTab] = useState("cattle");
   const [hCutout, tCutout] = useToggle();
@@ -2068,33 +2122,75 @@ function CutoutPage({ ready }) {
 
   function mkSeasonalChart(view, hidden) {
     return (canvas) => {
+      const keys = legendYears.map(function(y, i) { return "yr" + i; }).filter(function(k) { return !hidden.has(k); });
+
       if (chartMode === "contiguous") {
-        // Stitch 2024 + 2025 into continuous series
-        const labels24 = view.labels.map(function(l) { return l + " " + prevYearLabel; });
-        const labels25 = view.labels.map(function(l) { return l + " " + curYearLabel; });
-        const allLabels = [...labels24, ...labels25];
-        const prevKey = "yr" + (legendYears.length - 2);
-        const curKey = "yr" + (legendYears.length - 1);
-        const allData = [...(view[prevKey] || []), ...(view[curKey] || [])];
+        // Concatenate all visible years in chronological order with per-year segments
+        const visibleYears = legendYears.filter(function(y, i) { return keys.indexOf("yr" + i) >= 0; });
+        if (visibleYears.length === 0) {
+          new Chart(canvas, { type: "line", data: { labels: [], datasets: [] }, options: { responsive: true, maintainAspectRatio: false } });
+          return;
+        }
+        const allLabels = [];
+        const allData = [];
+        const yearBoundaries = []; // indices where a new year starts
+        const yearMidpoints = []; // mid-index for each year (for x-axis label)
+        visibleYears.forEach(function(y, idx) {
+          var yrKey = "yr" + legendYears.indexOf(y);
+          var yrData = view[yrKey] || [];
+          var startIdx = allLabels.length;
+          if (idx > 0) yearBoundaries.push(startIdx);
+          yrData.forEach(function(v, i) {
+            allLabels.push(String(y.year) + "-" + (view.labels ? view.labels[i] : i));
+            allData.push(v);
+          });
+          yearMidpoints.push({ idx: Math.floor(startIdx + yrData.length / 2), label: String(y.year) });
+        });
         const allVals = allData.filter(v => v != null);
         const { yMin, yMax } = niceAxis(allVals);
+        const needsRotation = visibleYears.length > 8;
+
         new Chart(canvas, {
           type: "line", data: { labels: allLabels, datasets: [{
-            label: "Price", data: allData, borderColor: "#A32D2D", backgroundColor: "rgba(163,45,45,0.06)",
-            fill: true, borderWidth: 2, pointRadius: 0, tension: 0, spanGaps: true,
+            label: "Price", data: allData, borderColor: "#2563EB",
+            borderWidth: 1.8, pointRadius: 0, tension: 0, spanGaps: true, fill: false,
           }]},
           options: { responsive: true, maintainAspectRatio: false,
             interaction: { mode: "nearest", intersect: false },
-            plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `$${c.parsed.y.toFixed(2)}` } } },
+            plugins: { legend: { display: false }, tooltip: { callbacks: {
+              title: function(items) {
+                if (items.length === 0) return "";
+                var parts = allLabels[items[0].dataIndex].split("-");
+                var yr = parts.shift();
+                return parts.join("-") + " " + yr;
+              },
+              label: c => "$" + c.parsed.y.toFixed(2),
+            } } },
             scales: {
-              x: { ticks: { autoSkip: true, maxTicksLimit: 12, maxRotation: 45, font: { size: 10 } }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
-              y: { min: yMin, max: yMax, title: { display: true, text: "$/cwt", font: { size: 11 } }, ticks: { font: { size: 11 }, callback: v => "$" + v }, grid: { color: "rgba(0,0,0,0.12)", lineWidth: 0.75 } },
+              x: {
+                ticks: {
+                  autoSkip: false, maxRotation: needsRotation ? 90 : 0, minRotation: needsRotation ? 90 : 0, font: { size: 11 },
+                  callback: function(val, idx) {
+                    for (var i = 0; i < yearMidpoints.length; i++) {
+                      if (yearMidpoints[i].idx === idx) return yearMidpoints[i].label;
+                    }
+                    return "";
+                  },
+                },
+                grid: {
+                  color: function(ctx) {
+                    return yearBoundaries.indexOf(ctx.index) >= 0 ? "rgba(0,0,0,0.12)" : "transparent";
+                  },
+                  lineWidth: 0.75,
+                },
+              },
+              y: { min: yMin, max: yMax, title: { display: true, text: "$/cwt", font: { size: 11 } }, ticks: { font: { size: 11 }, callback: v => "$" + v }, grid: { color: "rgba(0,0,0,0.08)", lineWidth: 0.75 } },
             },
           },
         });
         return;
       }
-      const keys = legendYears.map(function(y, i) { return "yr" + i; }).filter(function(k) { return !hidden.has(k); });
+
       const ds = keys.map(function(k) { return Object.assign({ label: seasonLegend.find(function(s) { return s.key === k; }) ? seasonLegend.find(function(s) { return s.key === k; }).label : k, data: view[k], spanGaps: true }, seasonDS[k] || {}); });
       const allVals = keys.flatMap(k => (view[k] || []).filter(v => v != null));
       const { yMin, yMax } = niceAxis(allVals);
@@ -2260,12 +2356,11 @@ function CutoutPage({ ready }) {
   return (<div>
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <div style={{ display: "flex", gap: 3 }}>
-          {tabs.map(t => (
-            <button key={t.id} onClick={() => { setTab(t.id); setSelectedProduct(null); }} style={{ padding: "7px 18px", fontSize: 13, cursor: "pointer", border: "1px solid var(--color-border-secondary)", borderRadius: 6, background: tab === t.id ? "#2563EB" : "transparent", color: tab === t.id ? "#fff" : "var(--color-text-secondary)", fontWeight: tab === t.id ? 600 : 400, transition: "all 0.15s" }}>
-              {t.label}
-            </button>
-          ))}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.4px" }}>Commodity</span>
+          <select value={tab} onChange={function(e){ setTab(e.target.value); setSelectedProduct(null); setSelectedPorkProduct(null); }} style={{ padding: "7px 28px 7px 12px", fontSize: 14, fontWeight: 500, border: "1px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-primary)", color: "var(--color-text-primary)", fontFamily: "inherit", cursor: "pointer", appearance: "none", backgroundImage: "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M3 4.5l3 3 3-3' stroke='%23666' stroke-width='1.5' fill='none'/></svg>\")", backgroundRepeat: "no-repeat", backgroundPosition: "right 8px center" }}>
+            {tabs.map(function(t){ return <option key={t.id} value={t.id}>{t.label}</option>; })}
+          </select>
         </div>
         <div style={{ display: "flex", borderRadius: 6, border: "1px solid var(--color-border-secondary)", overflow: "hidden" }}>
           {[{ id: "daily", label: "Daily" }, { id: "weekly", label: "Weekly" }, { id: "monthly", label: "Monthly" }].map(u => (
@@ -2378,16 +2473,23 @@ function CutoutPage({ ready }) {
                 {isPrimalSelected && (
                   <tr key={`primal-chart-${primalName}`}>
                     <td colSpan={5} style={{ padding: "12px 16px 16px", background: "var(--color-background-secondary)" }}>
-                      <div style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 8 }}>{primalName} primal — seasonal</div>
-                      {(function() {
-                        var pView = { labels: liveDates };
-                        legendYears.forEach(function(y, yi) {
-                          var yd = meatData ? meatData.seasonal.years.find(function(sy) { return sy.year === y.year; }) : null;
-                          pView["yr" + yi] = yd ? yd["beef_" + primalName.toLowerCase()] || [] : [];
-                        });
-                        var cid = "beefprimal_" + primalName + "_" + period;
-                        return React.createElement(ChartBox, { id: cid, renderChart: mkSeasonalChart(pView, new Set()), deps: cid + "_" + (meatData ? "L" : "S") });
-                      })()}
+                      <ExpandChartRow
+                        chartId={"beefprimal_" + primalName + "_" + period}
+                        title={primalName + " primal — seasonal"}
+                        buildView={function() {
+                          var pView = { labels: liveDates };
+                          legendYears.forEach(function(y, yi) {
+                            var yd = meatData ? meatData.seasonal.years.find(function(sy) { return sy.year === y.year; }) : null;
+                            pView["yr" + yi] = yd ? yd["beef_" + primalName.toLowerCase()] || [] : [];
+                          });
+                          return pView;
+                        }}
+                        legendYears={legendYears}
+                        seasonLegend={seasonLegend}
+                        seasonDS={seasonDS}
+                        mkChart={mkSeasonalChart}
+                        chartMode={chartMode}
+                      />
                     </td>
                   </tr>
                 )}
@@ -2421,18 +2523,23 @@ function CutoutPage({ ready }) {
                     {isSelected && (
                       <tr key={`chart-beef-${primalName}-${si}`}>
                         <td colSpan={5} style={{ padding: "12px 16px 16px", background: "var(--color-background-secondary)" }}>
-                          <div style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 8 }}>{p.name} {p.item && <span style={{ color: "var(--color-text-tertiary)", fontSize: 11 }}>({p.item})</span>} <span style={{ fontWeight: 400, fontSize: 11, color: "var(--color-text-tertiary)" }}>— {primalName} primal seasonal</span></div>
-                          {(function() {
-                            var primalEntry = liveBeefPrimals.find(function(bp) { return bp.name === primalName; });
-                            if (!primalEntry) return null;
-                            var pView = { labels: liveDates };
-                            legendYears.forEach(function(y, yi) {
-                              var yd = meatData ? meatData.seasonal.years.find(function(sy) { return sy.year === y.year; }) : null;
-                              pView["yr" + yi] = yd ? yd["beef_" + primalName.toLowerCase()] || [] : [];
-                            });
-                            var cid = "beefcut_" + primalName + "_" + si + "_" + period;
-                            return React.createElement(ChartBox, { id: cid, renderChart: mkSeasonalChart(pView, new Set()), deps: cid + "_" + (meatData ? "L" : "S") });
-                          })()}
+                          <ExpandChartRow
+                            chartId={"beefcut_" + primalName + "_" + si + "_" + period}
+                            title={(p.name || "") + (p.item ? " (" + p.item + ")" : "") + " — " + primalName + " primal seasonal"}
+                            buildView={function() {
+                              var pView = { labels: liveDates };
+                              legendYears.forEach(function(y, yi) {
+                                var yd = meatData ? meatData.seasonal.years.find(function(sy) { return sy.year === y.year; }) : null;
+                                pView["yr" + yi] = yd ? yd["beef_" + primalName.toLowerCase()] || [] : [];
+                              });
+                              return pView;
+                            }}
+                            legendYears={legendYears}
+                            seasonLegend={seasonLegend}
+                            seasonDS={seasonDS}
+                            mkChart={mkSeasonalChart}
+                            chartMode={chartMode}
+                          />
                         </td>
                       </tr>
                     )}
@@ -2530,16 +2637,23 @@ function CutoutPage({ ready }) {
                 {isPorkPrimalSelected && (
                   <tr key={`pork-primal-chart-${primalName}`}>
                     <td colSpan={5} style={{ padding: "12px 16px 16px", background: "var(--color-background-secondary)" }}>
-                      <div style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 8 }}>{primalName} primal — seasonal</div>
-                      {(function() {
-                        var pView = { labels: liveDates };
-                        legendYears.forEach(function(y, yi) {
-                          var yd = meatData ? meatData.seasonal.years.find(function(sy) { return sy.year === y.year; }) : null;
-                          pView["yr" + yi] = yd ? yd["pork_" + primalName.toLowerCase()] || [] : [];
-                        });
-                        var cid = "porkprimal_" + primalName + "_" + period;
-                        return React.createElement(ChartBox, { id: cid, renderChart: mkSeasonalChart(pView, new Set()), deps: cid + "_" + (meatData ? "L" : "S") });
-                      })()}
+                      <ExpandChartRow
+                        chartId={"porkprimal_" + primalName + "_" + period}
+                        title={primalName + " primal — seasonal"}
+                        buildView={function() {
+                          var pView = { labels: liveDates };
+                          legendYears.forEach(function(y, yi) {
+                            var yd = meatData ? meatData.seasonal.years.find(function(sy) { return sy.year === y.year; }) : null;
+                            pView["yr" + yi] = yd ? yd["pork_" + primalName.toLowerCase()] || [] : [];
+                          });
+                          return pView;
+                        }}
+                        legendYears={legendYears}
+                        seasonLegend={seasonLegend}
+                        seasonDS={seasonDS}
+                        mkChart={mkSeasonalChart}
+                        chartMode={chartMode}
+                      />
                     </td>
                   </tr>
                 )}
@@ -2573,16 +2687,23 @@ function CutoutPage({ ready }) {
                     {isSelected && (
                       <tr key={`chart-pork-${primalName}-${si}`}>
                         <td colSpan={5} style={{ padding: "12px 16px 16px", background: "var(--color-background-secondary)" }}>
-                          <div style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 8 }}>{p.name} <span style={{ fontWeight: 400, fontSize: 11, color: "var(--color-text-tertiary)" }}>— {primalName} primal seasonal</span></div>
-                          {(function() {
-                            var pView = { labels: liveDates };
-                            legendYears.forEach(function(y, yi) {
-                              var yd = meatData ? meatData.seasonal.years.find(function(sy) { return sy.year === y.year; }) : null;
-                              pView["yr" + yi] = yd ? yd["pork_" + primalName.toLowerCase()] || [] : [];
-                            });
-                            var cid = "porkcut_" + primalName + "_" + si + "_" + period;
-                            return React.createElement(ChartBox, { id: cid, renderChart: mkSeasonalChart(pView, new Set()), deps: cid + "_" + (meatData ? "L" : "S") });
-                          })()}
+                          <ExpandChartRow
+                            chartId={"porkcut_" + primalName + "_" + si + "_" + period}
+                            title={(p.name || "") + " — " + primalName + " primal seasonal"}
+                            buildView={function() {
+                              var pView = { labels: liveDates };
+                              legendYears.forEach(function(y, yi) {
+                                var yd = meatData ? meatData.seasonal.years.find(function(sy) { return sy.year === y.year; }) : null;
+                                pView["yr" + yi] = yd ? yd["pork_" + primalName.toLowerCase()] || [] : [];
+                              });
+                              return pView;
+                            }}
+                            legendYears={legendYears}
+                            seasonLegend={seasonLegend}
+                            seasonDS={seasonDS}
+                            mkChart={mkSeasonalChart}
+                            chartMode={chartMode}
+                          />
                         </td>
                       </tr>
                     )}

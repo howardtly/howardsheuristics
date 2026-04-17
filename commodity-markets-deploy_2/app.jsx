@@ -1699,15 +1699,23 @@ function CattleOnFeedPage({ ready }) {
 
   // ── Header stats ──
   function headerStats(sid) {
-    if (!cofData || !cofData.series[sid]) return { latest: null, prev: null, month: null };
+    if (!cofData || !cofData.series[sid]) return { cur: null, lastYr: null, prevMo: null, month: null };
     const cur = cofData.series[sid].years[String(curYear)] || [];
-    const prev = cofData.series[sid].years[String(curYear - 1)] || [];
+    const lastYrArr = cofData.series[sid].years[String(curYear - 1)] || [];
     let latestIdx = -1;
     for (let i = 11; i >= 0; i--) { if (cur[i] != null) { latestIdx = i; break; } }
+    if (latestIdx < 0) return { cur: null, lastYr: null, prevMo: null, month: null };
+    // Previous month (same year if available, else December of prior year)
+    let prevMoVal = null;
+    for (let i = latestIdx - 1; i >= 0; i--) { if (cur[i] != null) { prevMoVal = cur[i]; break; } }
+    if (prevMoVal == null) {
+      for (let i = 11; i >= 0; i--) { if (lastYrArr[i] != null) { prevMoVal = lastYrArr[i]; break; } }
+    }
     return {
-      latest: latestIdx >= 0 ? cur[latestIdx] : null,
-      prev: latestIdx >= 0 ? prev[latestIdx] : null,
-      month: latestIdx >= 0 ? MONTH_LABELS[latestIdx] : null,
+      cur: cur[latestIdx],
+      lastYr: lastYrArr[latestIdx] != null ? lastYrArr[latestIdx] : null,
+      prevMo: prevMoVal,
+      month: MONTH_LABELS[latestIdx],
     };
   }
 
@@ -1929,11 +1937,49 @@ function CattleOnFeedPage({ ready }) {
     </div>
 
     {/* Metric cards */}
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 16 }}>
-      <MetricCard label="On feed" value={fmtNum(ofStats.latest)} sub={ofStats.month ? ofStats.month + " " + curYear : ""} trend={pctChg(ofStats.latest, ofStats.prev)} />
-      <MetricCard label="Placements" value={fmtNum(plStats.latest)} sub={plStats.month ? plStats.month + " " + curYear : ""} trend={pctChg(plStats.latest, plStats.prev)} />
-      <MetricCard label="Marketings" value={fmtNum(mkStats.latest)} sub={mkStats.month ? mkStats.month + " " + curYear : ""} trend={pctChg(mkStats.latest, mkStats.prev)} />
-      <MetricCard label="Heifers on feed" value={fmtNum(hfStats.latest, true)} sub={hfStats.month ? hfStats.month + " " + curYear : "Quarterly"} trend={pctChg(hfStats.latest, hfStats.prev)} />
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10, marginBottom: 16 }}>
+      {[
+        { label: "On feed", info: ofStats, unit: "K head", isPct: false },
+        { label: "Placements", info: plStats, unit: "K head", isPct: false },
+        { label: "Marketings", info: mkStats, unit: "K head", isPct: false },
+        { label: "Heifers on feed", info: hfStats, unit: "%", isPct: true },
+      ].map(function(card) {
+        const info = card.info;
+        const fmtCard = function(v) {
+          if (v == null) return "—";
+          if (card.isPct) return v.toFixed(1);
+          // Display in thousand head (match chart y-axis)
+          return Math.round(v / 1000).toLocaleString();
+        };
+        const diffLine = function(label, comp) {
+          if (info.cur == null || comp == null) return null;
+          const diff = card.isPct ? (info.cur - comp) : (info.cur - comp) / 1000;
+          const rounded = Math.round(diff * 100) / 100;
+          const col = rounded > 0 ? "#639922" : rounded < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
+          const fmtDiff = function(v) {
+            if (card.isPct) return v.toFixed(1);
+            return Math.round(v).toLocaleString();
+          };
+          return (<div key={label} style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, padding: "1px 0" }}>
+            <span style={{ color: "var(--color-text-tertiary)" }}>{label}</span>
+            <span style={{ display: "flex", gap: 4, alignItems: "baseline" }}>
+              <span style={{ color: "var(--color-text-secondary)", textAlign: "right", minWidth: 56 }}>{fmtCard(comp)}</span>
+              <span style={{ color: col, fontWeight: 500, textAlign: "right", minWidth: 56 }}>({rounded > 0 ? "+" : ""}{fmtDiff(rounded)})</span>
+            </span>
+          </div>);
+        };
+        return (<div key={card.label} style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px", minWidth: 0 }}>
+          <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.4px" }}>{card.label}</div>
+          <div style={{ fontSize: 22, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 2 }}>
+            {fmtCard(info.cur)}<span style={{ fontSize: 12, fontWeight: 400, color: "var(--color-text-secondary)", marginLeft: 4 }}>{card.unit}</span>
+          </div>
+          {info.month && <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", marginBottom: 6 }}>as of {info.month} {curYear}</div>}
+          <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 5 }}>
+            {diffLine("vs. prior period", info.prevMo)}
+            {diffLine("vs. last year", info.lastYr)}
+          </div>
+        </div>);
+      })}
     </div>
 
     {/* Master legend (seasonal only) */}

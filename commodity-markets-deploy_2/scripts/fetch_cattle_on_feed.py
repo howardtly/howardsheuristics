@@ -137,23 +137,6 @@ def fetch_heifers_on_feed():
     return rows
 
 
-def fetch_total_on_feed():
-    """Fetch total on-feed inventory (all capacity) — used as denominator for heifers %."""
-    print("\n  Fetching total on-feed inventory (for heifers % calc)...")
-    params = {
-        "source_desc": "SURVEY",
-        "commodity_desc": "CATTLE",
-        "short_desc": "CATTLE, ON FEED - INVENTORY",
-        "agg_level_desc": "NATIONAL",
-        "domain_desc": "TOTAL",
-        "year__GE": str(START_YEAR),
-        "year__LE": str(CUR_YEAR),
-    }
-    rows = api_get(params)
-    print(f"    Got {len(rows)} records")
-    return rows
-
-
 def rows_to_yearly(rows):
     """Convert rows to {year_str: [12 slots Jan-Dec]}."""
     out = defaultdict(lambda: [None] * 12)
@@ -217,12 +200,11 @@ def build_output():
         "years": {str(y): mk_yearly.get(str(y), [None] * 12) for y in FETCH_YEARS},
     }
 
-    # Heifers % — compute from heifers inventory / total on-feed inventory
+    # Heifers % — compute from heifers inventory / 1,000+ capacity on-feed inventory
+    # (heifers is reported quarterly for 1,000+ lots only; denominator is monthly for same scope)
     hf_rows = fetch_heifers_on_feed()
     hf_yearly = rows_to_yearly(hf_rows)
-    tot_rows = fetch_total_on_feed()
-    tot_yearly = rows_to_yearly(tot_rows)
-    heifers_pct = compute_heifers_pct(hf_yearly, tot_yearly)
+    heifers_pct = compute_heifers_pct(hf_yearly, of_yearly)
     result["series"]["heifersOnFeed"] = {
         "label": "Heifers on Feed (%)",
         "years": {str(y): heifers_pct.get(str(y), [None] * 12) for y in FETCH_YEARS},

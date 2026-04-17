@@ -1743,11 +1743,12 @@ function CattleOnFeedPage({ ready }) {
             data: data,
             borderColor: getColor(yr),
             borderWidth: yr === curYear ? 2.5 : 1.5,
-            pointRadius: 0,
+            // Quarterly series: show points at reported months, don't bridge null gaps
+            pointRadius: isPct ? 3 : 0,
             pointHitRadius: 8,
             tension: 0,
             fill: false,
-            spanGaps: true,
+            spanGaps: isPct ? false : true,
             hidden: hiddenYrs.has(String(yr)),
           };
         });
@@ -1773,7 +1774,7 @@ function CattleOnFeedPage({ ready }) {
               x: { ticks: { font: { size: 11 } }, grid: { color: "rgba(0,0,0,0.08)", lineWidth: 0.75 } },
               y: {
                 min: niceY.yMin, max: niceY.yMax,
-                ticks: { font: { size: 11 }, callback: function(v) { return isPct ? v.toFixed(0) + "%" : (v / 1000).toLocaleString() + "K"; } },
+                ticks: { font: { size: 11 }, callback: function(v) { return isPct ? v.toFixed(0) + "%" : (v / 1000).toLocaleString(); } },
                 grid: { color: "rgba(0,0,0,0.08)", lineWidth: 0.75 }
               },
             },
@@ -1865,7 +1866,7 @@ function CattleOnFeedPage({ ready }) {
               },
               y: {
                 min: niceY.yMin, max: niceY.yMax,
-                ticks: { font: { size: 11 }, callback: function(v) { return isPct ? v.toFixed(0) + "%" : (v / 1000).toLocaleString() + "K"; } },
+                ticks: { font: { size: 11 }, callback: function(v) { return isPct ? v.toFixed(0) + "%" : (v / 1000).toLocaleString(); } },
                 grid: { color: "rgba(0,0,0,0.08)", lineWidth: 0.75 }
               },
             },
@@ -1894,9 +1895,9 @@ function CattleOnFeedPage({ ready }) {
   const modeSt = function(active) { return { padding: "6px 14px", fontSize: 12, fontWeight: 500, border: "1px solid " + (active ? "#2563EB" : "var(--color-border-secondary)"), borderRadius: 5, cursor: "pointer", background: active ? "#2563EB" : "transparent", color: active ? "#fff" : "var(--color-text-primary)", transition: "all 0.15s" }; };
 
   const CHARTS = [
-    { key: "onFeed", label: "On feed inventory", yLabel: "head (1,000+ head lots)", isPct: false },
-    { key: "placements", label: "Placements", yLabel: "head", isPct: false },
-    { key: "marketings", label: "Marketings", yLabel: "head", isPct: false },
+    { key: "onFeed", label: "On feed inventory", yLabel: "thousand head", isPct: false },
+    { key: "placements", label: "Placements", yLabel: "thousand head", isPct: false },
+    { key: "marketings", label: "Marketings", yLabel: "thousand head", isPct: false },
     { key: "heifersOnFeed", label: "Heifers on feed", yLabel: "% of on-feed total (quarterly)", isPct: true },
   ];
 

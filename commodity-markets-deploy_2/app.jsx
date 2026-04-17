@@ -1751,12 +1751,12 @@ function CattleOnFeedPage({ ready }) {
             data: data,
             borderColor: getColor(yr),
             borderWidth: yr === curYear ? 2.5 : 1.5,
-            // Quarterly series: show points at reported months, don't bridge null gaps
+            // Quarterly series: show points at reported months, connect with lines across null gaps
             pointRadius: isPct ? 3 : 0,
             pointHitRadius: 8,
             tension: 0,
             fill: false,
-            spanGaps: isPct ? false : true,
+            spanGaps: true,
             hidden: hiddenYrs.has(String(yr)),
           };
         });
@@ -1906,7 +1906,7 @@ function CattleOnFeedPage({ ready }) {
     { key: "onFeed", label: "On feed inventory", yLabel: "thousand head", isPct: false },
     { key: "placements", label: "Placements", yLabel: "thousand head", isPct: false },
     { key: "marketings", label: "Marketings", yLabel: "thousand head", isPct: false },
-    { key: "heifersOnFeed", label: "Heifers on feed", yLabel: "% of on-feed total (quarterly)", isPct: true },
+    { key: "heifersOnFeed", label: "Quarterly heifers on feed", yLabel: "% of on-feed total", isPct: true },
   ];
 
   return (<div>
@@ -1929,7 +1929,7 @@ function CattleOnFeedPage({ ready }) {
           <span style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase" }}>Month filter</span>
           <select value={monthFilter} onChange={function(e){ setMonthFilter(e.target.value); }} style={selSt}>
             <option value="all">All months</option>
-            {MONTH_LABELS.map(function(m) { return <option key={m} value={m}>{m} only</option>; })}
+            {MONTH_LABELS.map(function(m) { return <option key={m} value={m}>{m}</option>; })}
           </select>
         </div>
       )}
@@ -1975,7 +1975,7 @@ function CattleOnFeedPage({ ready }) {
           </div>
           {info.month && <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", marginBottom: 6 }}>as of {info.month} {curYear}</div>}
           <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 5 }}>
-            {diffLine("vs. prior period", info.prevMo)}
+            {diffLine("vs. prior month", info.prevMo)}
             {diffLine("vs. last year", info.lastYr)}
           </div>
         </div>);

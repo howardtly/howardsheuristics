@@ -1651,12 +1651,30 @@ function CattleOnFeedPage({ ready }) {
 
   const MONTH_LABELS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
+  function niceAxis(allVals) {
+    if (!allVals || allVals.length === 0) return { yMin: 0, yMax: 100 };
+    const dataMin = Math.min.apply(null, allVals);
+    const dataMax = Math.max.apply(null, allVals);
+    const range = dataMax - dataMin;
+    const pad = Math.max(range * 0.1, Math.abs(dataMax) * 0.03 || 1);
+    const rawStep = (range + pad * 2) / 5;
+    if (rawStep === 0 || !isFinite(rawStep)) return { yMin: dataMin - 1, yMax: dataMax + 1 };
+    const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+    const norm = rawStep / mag;
+    const niceNorm = norm <= 1.5 ? 1 : norm <= 3.5 ? 2 : norm <= 7.5 ? 5 : 10;
+    const step = niceNorm * mag;
+    const yMin = Math.floor((dataMin - pad) / step) * step;
+    const yMax = Math.ceil((dataMax + pad) / step) * step;
+    return { yMin: yMin, yMax: yMax };
+  }
+
   const curYear = new Date().getFullYear();
   const availYears = cofData && cofData.years ? cofData.years : [];
   let displayYears = availYears;
   if (range !== "all") {
     const n = parseInt(range);
-    displayYears = availYears.filter(function(y) { return y >= curYear - n + 1; });
+    // n-year range = n prior years + current year (n+1 total)
+    displayYears = availYears.filter(function(y) { return y >= curYear - n; });
   }
   // Chronological (oldest-first for legend)
   const displayYearsAsc = displayYears.slice().sort(function(a, b) { return a - b; });

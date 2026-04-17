@@ -1630,74 +1630,68 @@ const COF_DS = {
 };
 
 function CattleOnFeedPage({ ready }) {
-  // Load data from JSON
   const [cofData, setCofData] = useState(null);
+  const [cofLoaded, setCofLoaded] = useState(false);
   useEffect(function() {
     fetch("data/cattle_on_feed.json?t=" + Date.now())
       .then(function(r) { return r.ok ? r.json() : null; })
-      .then(function(d) { if (d) setCofData(d); })
-      .catch(function() {});
+      .then(function(d) { if (d) { setCofData(d); setCofLoaded(true); } })
+      .catch(function() { setCofLoaded(true); });
   }, []);
 
-  const [chartMode, setChartMode] = useState("seasonal");
-  const [timeRange, setTimeRange] = useState("5");
-  const [monthFilter, setMonthFilter] = useState("all"); // "all" or "Jan"..."Dec"
-  const [hOF, setHOF] = useState(new Set());
-  const [hPl, setHPl] = useState(new Set());
-  const [hMk, setHMk] = useState(new Set());
-  const [hHf, setHHf] = useState(new Set());
+  const [mode, setMode] = useState("seasonal");
+  const [range, setRange] = useState("5");
+  const [monthFilter, setMonthFilter] = useState("all");
+  const [hiddenYrs, setHiddenYrs] = useState(new Set());
+
+  useEffect(function() { setHiddenYrs(new Set()); }, [mode, range, monthFilter]);
+  const toggleYr = function(label) {
+    setHiddenYrs(function(prev) { const n = new Set(prev); if (n.has(label)) n.delete(label); else n.add(label); return n; });
+  };
 
   const MONTH_LABELS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
-  // Determine available years from data
-  const availYears = cofData && cofData.years ? cofData.years : [];
   const curYear = new Date().getFullYear();
+  const availYears = cofData && cofData.years ? cofData.years : [];
   let displayYears = availYears;
-  if (timeRange !== "all") {
-    const n = parseInt(timeRange);
+  if (range !== "all") {
+    const n = parseInt(range);
     displayYears = availYears.filter(function(y) { return y >= curYear - n + 1; });
   }
+  // Chronological (oldest-first for legend)
+  const displayYearsAsc = displayYears.slice().sort(function(a, b) { return a - b; });
 
-  // Color palette — most recent year is black, then teal/green/yellow/orange/deep red backwards
+  // Color palette — current year is black, others are distance-based (closest = teal, furthest = red)
   const yrColors = ["#A32D2D","#D85A30","#E8A735","#639922","#1D9E75","#378ADD","#534AB7","#8B5CF6","#EC4899","#6B7280","#0EA5E9","#14B8A6"];
-  const getYearColor = function(yr) {
+  const getColor = function(yr) {
     if (yr === curYear) return "#333";
-    const rev = displayYears.filter(function(y) { return y !== curYear; }).sort().reverse();
-    const idx = rev.indexOf(yr);
-    return yrColors[idx % yrColors.length];
+    const dist = curYear - yr;
+    if (dist === 1) return "#1D9E75";
+    if (dist === 2) return "#639922";
+    if (dist === 3) return "#E8A735";
+    if (dist === 4) return "#D85A30";
+    if (dist === 5) return "#A32D2D";
+    return yrColors[(dist - 1) % yrColors.length];
   };
 
-  const legendItems = displayYears.slice().sort().reverse().map(function(yr) {
-    return { label: String(yr), color: getYearColor(yr), key: String(yr) };
+  const legendItems = displayYearsAsc.map(function(yr) {
+    return { label: String(yr), color: getColor(yr), key: String(yr) };
   });
+  const hk = Array.from(hiddenYrs).sort().join(",");
 
-  const toggle = function(setFn) {
-    return function(key) {
-      setFn(function(prev) {
-        const n = new Set(prev);
-        if (n.has(key)) n.delete(key); else n.add(key);
-        return n;
-      });
-    };
-  };
-
-  // Header cards — latest value + YoY
+  // ── Header stats ──
   function headerStats(sid) {
     if (!cofData || !cofData.series[sid]) return { latest: null, prev: null, month: null };
     const cur = cofData.series[sid].years[String(curYear)] || [];
     const prev = cofData.series[sid].years[String(curYear - 1)] || [];
-    // Find latest non-null in current year
     let latestIdx = -1;
     for (let i = 11; i >= 0; i--) { if (cur[i] != null) { latestIdx = i; break; } }
-    const latest = latestIdx >= 0 ? cur[latestIdx] : null;
-    const prevYrSameMonth = latestIdx >= 0 ? prev[latestIdx] : null;
-    return { latest: latest, prev: prevYrSameMonth, month: latestIdx >= 0 ? MONTH_LABELS[latestIdx] : null };
+    return {
+      latest: latestIdx >= 0 ? cur[latestIdx] : null,
+      prev: latestIdx >= 0 ? prev[latestIdx] : null,
+      month: latestIdx >= 0 ? MONTH_LABELS[latestIdx] : null,
+    };
   }
-
-  const ofStats = headerStats("onFeed");
-  const plStats = headerStats("placements");
-  const mkStats = headerStats("marketings");
-  const hfStats = headerStats("heifersOnFeed");
 
   function fmtNum(v, isPct) {
     if (v == null) return "—";
@@ -1712,28 +1706,38 @@ function CattleOnFeedPage({ ready }) {
     return ((a - b) / b * 100);
   }
 
-  // Chart builder
-  function mkCofChart(sid, hidden, isPct) {
+  const ofStats = headerStats("onFeed");
+  const plStats = headerStats("placements");
+  const mkStats = headerStats("marketings");
+  const hfStats = headerStats("heifersOnFeed");
+
+  // ── Chart builder ──
+  function mkCofChart(sid, isPct) {
     return function(canvas) {
       if (!cofData || !cofData.series[sid]) return;
       const series = cofData.series[sid].years;
 
-      if (chartMode === "seasonal") {
-        const datasets = displayYears.slice().sort().map(function(yr) {
+      if (mode === "seasonal") {
+        const datasets = displayYearsAsc.map(function(yr) {
           const data = series[String(yr)] || [];
           return {
             label: String(yr),
             data: data,
-            borderColor: getYearColor(yr),
+            borderColor: getColor(yr),
             borderWidth: yr === curYear ? 2.5 : 1.5,
             pointRadius: 0,
+            pointHitRadius: 8,
             tension: 0,
             fill: false,
             spanGaps: true,
-            hidden: hidden.has(String(yr)),
+            hidden: hiddenYrs.has(String(yr)),
           };
         });
         const visibleVals = datasets.filter(function(ds) { return !ds.hidden; }).flatMap(function(ds) { return ds.data.filter(function(v) { return v != null; }); });
+        if (visibleVals.length === 0) {
+          new Chart(canvas, { type: "line", data: { labels: MONTH_LABELS, datasets: [] }, options: { responsive: true, maintainAspectRatio: false } });
+          return;
+        }
         const niceY = niceAxis(visibleVals);
         new Chart(canvas, {
           type: "line",
@@ -1759,15 +1763,19 @@ function CattleOnFeedPage({ ready }) {
         });
       } else {
         // Contiguous mode
-        const yearsSorted = displayYears.slice().sort().filter(function(yr) { return !hidden.has(String(yr)); });
+        const yearsVisible = displayYearsAsc.filter(function(yr) { return !hiddenYrs.has(String(yr)); });
+        if (yearsVisible.length === 0) {
+          new Chart(canvas, { type: "line", data: { labels: [], datasets: [] }, options: { responsive: true, maintainAspectRatio: false } });
+          return;
+        }
+
         const allPoints = [];
         const allLabels = [];
         const yearBoundaries = [];
         const yearMidpoints = [];
 
         if (monthFilter === "all") {
-          // True contiguous: all months of each visible year
-          yearsSorted.forEach(function(yr, yi) {
+          yearsVisible.forEach(function(yr, yi) {
             const data = series[String(yr)] || [];
             const startIdx = allPoints.length;
             if (yi > 0) yearBoundaries.push(startIdx);
@@ -1778,9 +1786,8 @@ function CattleOnFeedPage({ ready }) {
             yearMidpoints.push({ idx: Math.floor(startIdx + data.length / 2), label: String(yr) });
           });
         } else {
-          // Specific-month contiguous: one point per year for the selected month
           const mIdx = MONTH_LABELS.indexOf(monthFilter);
-          yearsSorted.forEach(function(yr) {
+          yearsVisible.forEach(function(yr) {
             const v = (series[String(yr)] || [])[mIdx];
             allLabels.push(String(yr));
             allPoints.push(v);
@@ -1794,7 +1801,7 @@ function CattleOnFeedPage({ ready }) {
           return;
         }
         const niceY = niceAxis(visibleVals);
-        const needsRotation = yearsSorted.length > 8;
+        const needsRotation = yearsVisible.length > 8;
 
         new Chart(canvas, {
           type: "line",
@@ -1812,10 +1819,7 @@ function CattleOnFeedPage({ ready }) {
             responsive: true, maintainAspectRatio: false,
             interaction: { mode: "nearest", intersect: false },
             plugins: { legend: { display: false }, tooltip: { callbacks: {
-              title: function(items) {
-                if (items.length === 0) return "";
-                return allLabels[items[0].dataIndex];
-              },
+              title: function(items) { if (items.length === 0) return ""; return allLabels[items[0].dataIndex]; },
               label: function(c) {
                 if (c.parsed.y == null) return "";
                 return isPct ? c.parsed.y.toFixed(1) + "%" : c.parsed.y.toLocaleString();
@@ -1853,111 +1857,91 @@ function CattleOnFeedPage({ ready }) {
     };
   }
 
-  function dlCSV(sid, fn) {
-    return function() {
-      if (!cofData || !cofData.series[sid]) return;
-      const series = cofData.series[sid].years;
-      const yrs = displayYears.slice().sort();
-      const headers = ["Month"].concat(yrs.map(String));
-      const rows = MONTH_LABELS.map(function(m, i) {
-        return [m].concat(yrs.map(function(yr) { return (series[String(yr)] || [])[i] || ""; }));
+  function dlCSV() {
+    if (!cofData) return;
+    const headers = ["Series","Year"].concat(MONTH_LABELS);
+    const rows = [];
+    ["onFeed","placements","marketings","heifersOnFeed"].forEach(function(sid) {
+      const s = cofData.series[sid];
+      if (!s) return;
+      displayYearsAsc.forEach(function(yr) {
+        const arr = s.years[String(yr)] || [];
+        rows.push([s.label, yr].concat(arr.map(function(v) { return v != null ? v : ""; })));
       });
-      downloadCSV(fn, headers, rows);
-    };
+    });
+    downloadCSV("cattle_on_feed.csv", headers, rows);
   }
 
-  // Per-chart helper
-  function CofChart(props) {
-    const sid = props.sid;
-    const title = props.title;
-    const isPct = props.isPct;
-    const hidden = props.hidden;
-    const setHidden = props.setHidden;
-    const unit = props.unit;
-    const chartId = "cof_" + sid + "_" + chartMode + "_" + timeRange + "_" + monthFilter + "_" + Array.from(hidden).sort().join(",");
+  const selSt = { padding: "7px 28px 7px 12px", fontSize: 14, fontWeight: 500, border: "1px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-primary)", color: "var(--color-text-primary)", fontFamily: "inherit", cursor: "pointer", appearance: "none", backgroundImage: "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M3 4.5l3 3 3-3' stroke='%23666' stroke-width='1.5' fill='none'/></svg>\")", backgroundRepeat: "no-repeat", backgroundPosition: "right 8px center" };
+  const modeSt = function(active) { return { padding: "6px 14px", fontSize: 12, fontWeight: 500, border: "1px solid " + (active ? "#2563EB" : "var(--color-border-secondary)"), borderRadius: 5, cursor: "pointer", background: active ? "#2563EB" : "transparent", color: active ? "#fff" : "var(--color-text-primary)", transition: "all 0.15s" }; };
 
-    return React.createElement("div", { style: { background: "var(--color-background-primary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: "var(--border-radius-lg)", padding: 16 } },
-      React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 } },
-        React.createElement("h3", { style: { fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)", margin: 0 } }, title),
-        React.createElement("span", { style: { fontSize: 10, color: "var(--color-text-tertiary)" } }, unit)
-      ),
-      chartMode === "seasonal" && React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 10 } },
-        legendItems.map(function(item) {
-          const isH = hidden.has(item.key);
-          return React.createElement("button", {
-            key: item.key, onClick: function() { toggle(setHidden)(item.key); },
-            style: {
-              display: "flex", alignItems: "center", gap: 4,
-              padding: "3px 8px", fontSize: 10,
-              border: "1px solid var(--color-border-secondary)", borderRadius: 4,
-              background: isH ? "var(--color-background-secondary)" : "transparent",
-              cursor: "pointer", opacity: isH ? 0.3 : 1, transition: "all 0.15s"
-            }
-          },
-            React.createElement("span", { style: { width: 14, height: 0, borderTop: "2.5px solid " + item.color, display: "inline-block" } }),
-            React.createElement("span", { style: { fontWeight: 500, color: "var(--color-text-primary)" } }, item.label)
-          );
-        })
-      ),
-      ready && React.createElement(ChartBox, {
-        id: chartId, height: 240,
-        renderChart: mkCofChart(sid, hidden, isPct),
-        deps: chartId + "_" + (cofData ? "live" : "none")
-      })
-    );
-  }
+  const CHARTS = [
+    { key: "onFeed", label: "On feed inventory", yLabel: "head (1,000+ head lots)", isPct: false },
+    { key: "placements", label: "Placements", yLabel: "head", isPct: false },
+    { key: "marketings", label: "Marketings", yLabel: "head", isPct: false },
+    { key: "heifersOnFeed", label: "Heifers on feed", yLabel: "% of on-feed total (quarterly)", isPct: true },
+  ];
 
   return (<div>
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.4px" }}>Range</span>
-          <select value={timeRange} onChange={function(e){ setTimeRange(e.target.value); }} style={{ padding: "7px 28px 7px 12px", fontSize: 14, fontWeight: 500, border: "1px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-primary)", color: "var(--color-text-primary)", fontFamily: "inherit", cursor: "pointer", appearance: "none", backgroundImage: "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M3 4.5l3 3 3-3' stroke='%23666' stroke-width='1.5' fill='none'/></svg>\")", backgroundRepeat: "no-repeat", backgroundPosition: "right 8px center" }}>
-            <option value="3">3 Year</option>
-            <option value="5">5 Year</option>
-            <option value="10">10 Year</option>
-            <option value="all">All</option>
+    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <span style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase" }}>Range</span>
+        <select value={range} onChange={function(e){ setRange(e.target.value); }} style={selSt}>
+          <option value="3">3 Year</option>
+          <option value="5">5 Year</option>
+          <option value="10">10 Year</option>
+          <option value="all">All</option>
+        </select>
+      </div>
+      <div style={{ display: "flex", gap: 3 }}>
+        <button onClick={function(){ setMode("seasonal"); }} style={modeSt(mode === "seasonal")}>Seasonal</button>
+        <button onClick={function(){ setMode("contiguous"); }} style={modeSt(mode === "contiguous")}>Contiguous</button>
+      </div>
+      {mode === "contiguous" && (
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase" }}>Month filter</span>
+          <select value={monthFilter} onChange={function(e){ setMonthFilter(e.target.value); }} style={selSt}>
+            <option value="all">All months</option>
+            {MONTH_LABELS.map(function(m) { return <option key={m} value={m}>{m} only</option>; })}
           </select>
         </div>
-        <div style={{ display: "flex", borderRadius: 6, border: "1px solid var(--color-border-secondary)", overflow: "hidden" }}>
-          {[{ id: "seasonal", label: "Seasonal" }, { id: "contiguous", label: "Contiguous" }].map(function(u) {
-            return <button key={u.id} onClick={function(){ setChartMode(u.id); }} style={{ padding: "6px 14px", fontSize: 12, cursor: "pointer", border: "none", borderRight: u.id !== "contiguous" ? "1px solid var(--color-border-secondary)" : "none", background: chartMode === u.id ? "#2563EB" : "transparent", color: chartMode === u.id ? "#fff" : "var(--color-text-tertiary)", fontWeight: 500, transition: "all 0.15s" }}>{u.label}</button>;
-          })}
-        </div>
-        {chartMode === "contiguous" && (
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.4px" }}>Month filter</span>
-            <select value={monthFilter} onChange={function(e){ setMonthFilter(e.target.value); }} style={{ padding: "7px 28px 7px 12px", fontSize: 14, fontWeight: 500, border: "1px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-primary)", color: "var(--color-text-primary)", fontFamily: "inherit", cursor: "pointer", appearance: "none", backgroundImage: "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M3 4.5l3 3 3-3' stroke='%23666' stroke-width='1.5' fill='none'/></svg>\")", backgroundRepeat: "no-repeat", backgroundPosition: "right 8px center" }}>
-              <option value="all">All months</option>
-              {MONTH_LABELS.map(function(m) { return <option key={m} value={m}>{m} only</option>; })}
-            </select>
-          </div>
-        )}
-      </div>
-      <DownloadBtn onClick={dlCSV("onFeed", "cattle_on_feed.csv")} />
+      )}
+      <div style={{ marginLeft: "auto" }}><DownloadBtn onClick={dlCSV} /></div>
     </div>
 
-    {/* Header metric cards */}
+    {/* Metric cards */}
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 16 }}>
-      <MetricCard label="On feed" value={fmtNum(ofStats.latest)} sub={ofStats.month ? `${ofStats.month} ${curYear}` : ""} trend={pctChg(ofStats.latest, ofStats.prev)} />
-      <MetricCard label="Placements" value={fmtNum(plStats.latest)} sub={plStats.month ? `${plStats.month} ${curYear}` : ""} trend={pctChg(plStats.latest, plStats.prev)} />
-      <MetricCard label="Marketings" value={fmtNum(mkStats.latest)} sub={mkStats.month ? `${mkStats.month} ${curYear}` : ""} trend={pctChg(mkStats.latest, mkStats.prev)} />
-      <MetricCard label="Heifers on feed" value={fmtNum(hfStats.latest, true)} sub={hfStats.month ? `${hfStats.month} ${curYear}` : "Quarterly"} trend={pctChg(hfStats.latest, hfStats.prev)} />
+      <MetricCard label="On feed" value={fmtNum(ofStats.latest)} sub={ofStats.month ? ofStats.month + " " + curYear : ""} trend={pctChg(ofStats.latest, ofStats.prev)} />
+      <MetricCard label="Placements" value={fmtNum(plStats.latest)} sub={plStats.month ? plStats.month + " " + curYear : ""} trend={pctChg(plStats.latest, plStats.prev)} />
+      <MetricCard label="Marketings" value={fmtNum(mkStats.latest)} sub={mkStats.month ? mkStats.month + " " + curYear : ""} trend={pctChg(mkStats.latest, mkStats.prev)} />
+      <MetricCard label="Heifers on feed" value={fmtNum(hfStats.latest, true)} sub={hfStats.month ? hfStats.month + " " + curYear : "Quarterly"} trend={pctChg(hfStats.latest, hfStats.prev)} />
     </div>
+
+    {/* Master legend (seasonal only) */}
+    {mode === "seasonal" && (
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 16, alignItems: "center" }}>
+        {legendItems.map(function(item) {
+          const isH = hiddenYrs.has(item.label);
+          return (<button key={item.label} onClick={function(){ toggleYr(item.label); }} style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", border: "1px solid var(--color-border-secondary)", borderRadius: 5, background: isH ? "var(--color-background-secondary)" : "transparent", cursor: "pointer", opacity: isH ? 0.3 : 1, transition: "all 0.15s" }}>
+            <span style={{ width: 18, height: 0, borderTop: "2.5px solid " + item.color, display: "inline-block" }}></span>
+            <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-primary)" }}>{item.label}</span>
+          </button>);
+        })}
+      </div>
+    )}
 
     {/* 2x2 chart grid */}
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-      <CofChart sid="onFeed" title="On feed inventory" unit="head (1,000+ head lots)" hidden={hOF} setHidden={setHOF} />
-      <CofChart sid="placements" title="Placements" unit="head" hidden={hPl} setHidden={setHPl} />
-      <CofChart sid="marketings" title="Marketings" unit="head" hidden={hMk} setHidden={setHMk} />
-      <CofChart sid="heifersOnFeed" title="Heifers on feed" unit="% of on-feed total (quarterly)" isPct={true} hidden={hHf} setHidden={setHHf} />
+      {CHARTS.map(function(ch) { return (<div key={ch.key}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 6 }}>{ch.label} <span style={{ fontSize: 11, fontWeight: 400, color: "var(--color-text-tertiary)" }}>({ch.yLabel})</span></div>
+        {ready && <ChartBox id={"cof_" + ch.key + "_" + mode + "_" + range + "_" + monthFilter + "_" + hk} height={240} renderChart={mkCofChart(ch.key, ch.isPct)} deps={"cof_" + ch.key + "_" + mode + "_" + range + "_" + monthFilter + "_" + hk + "_" + cofLoaded} />}
+      </div>); })}
     </div>
     <div style={{ marginTop: 14, fontSize: 11, color: "var(--color-text-tertiary)" }}>
-      Source: USDA NASS Cattle on Feed report. 1,000+ head capacity feedlots, US total. Heifers on feed is reported quarterly (Jan/Apr/Jul/Oct).
+      Source: USDA NASS Cattle on Feed report. 1,000+ head capacity feedlots, US total. Heifers on feed is reported quarterly (Jan/Apr/Jul/Oct) and computed as a percentage of total on-feed inventory.
     </div>
   </div>);
-}
-// ──────────────────────────────────────────────────────────────────────
+}// ──────────────────────────────────────────────────────────────────────
 // Expanded row chart with its own interactive legend (per-chart year toggle)
 // ──────────────────────────────────────────────────────────────────────
 function ExpandChartRow(props) {

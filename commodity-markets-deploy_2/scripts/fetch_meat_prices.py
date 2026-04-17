@@ -448,10 +448,21 @@ def main():
     # Count records for current year
     cur_year_count = sum(1 for d in existing_dates if d.endswith(f"/{current_year}"))
 
-    if cur_year_count < 200 and len(existing.get("daily", [])) < 1200:
-        # Backfill: fetch from Jan 1 of the current year and prior year
+    # Check earliest date in existing data
+    earliest_date = None
+    if existing.get("daily"):
+        try:
+            parts = existing["daily"][0]["date"].split("/")
+            earliest_date = datetime(int(parts[2]), int(parts[0]), int(parts[1]))
+        except: pass
+
+    needs_deep_backfill = earliest_date is None or earliest_date > datetime(2021, 6, 1)
+    if (cur_year_count < 200 and len(existing.get("daily", [])) < 1200) or needs_deep_backfill:
+        # Backfill: fetch from Jan 2021 if data doesn't go back that far
         start = datetime(2021, 1, 4)
         print(f"\n  Backfill mode: fetching from {start.strftime('%m/%d/%Y')}")
+        if earliest_date:
+            print(f"  Current earliest record: {earliest_date.strftime('%m/%d/%Y')}")
     else:
         # Incremental: just last 5 trading days
         start = today - timedelta(days=8)

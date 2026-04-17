@@ -2064,8 +2064,8 @@ function CutoutPage({ ready }) {
   const chgLabel = period === "daily" ? "D/D" : period === "weekly" ? "W/W" : "M/M";
 
   var yr5 = meatData && meatData.seasonal ? meatData.seasonal.years.filter(function(y) { return typeof y.year === "number"; }).sort(function(a,b) { return a.year - b.year; }) : [];
-  var legendYears = yr5.slice(-5);
-  var yrColorMap = { 0: "#D85A30", 1: "#E8A735", 2: "#639922", 3: "#1D9E75", 4: "#333" };
+  var legendYears = yr5.slice(-6);
+  var yrColorMap = { 0: "#A32D2D", 1: "#D85A30", 2: "#E8A735", 3: "#639922", 4: "#1D9E75", 5: "#333" };
   var seasonLegend = legendYears.map(function(y, i) {
     return { label: String(y.year), color: yrColorMap[i] || "#999", key: "yr" + i };
   });
@@ -2729,8 +2729,8 @@ function SlaughterPage({ ready }) {
   const [hHog, tHog] = useToggle();
 
   var yr5 = meatData && meatData.seasonal ? meatData.seasonal.years.filter(function(y) { return typeof y.year === "number"; }).sort(function(a,b) { return a.year - b.year; }) : [];
-  var legendYears = yr5.slice(-5);
-  var yrColorMap = { 0: "#D85A30", 1: "#E8A735", 2: "#639922", 3: "#1D9E75", 4: "#333" };
+  var legendYears = yr5.slice(-6);
+  var yrColorMap = { 0: "#A32D2D", 1: "#D85A30", 2: "#E8A735", 3: "#639922", 4: "#1D9E75", 5: "#333" };
   var seasonLegend = legendYears.map(function(y, i) {
     return { label: String(y.year), color: yrColorMap[i] || "#999", key: "yr" + i };
   });
@@ -4913,8 +4913,8 @@ function EnergyChartPage({ ready, dataKey }) {
   const [chartMode, setChartMode] = useState("seasonal");
 
   var yr5 = meatData && meatData.seasonal ? meatData.seasonal.years.filter(function(y) { return typeof y.year === "number"; }).sort(function(a,b) { return a.year - b.year; }) : [];
-  var legendYears = yr5.slice(-5);
-  var yrColorMap = { 0: "#D85A30", 1: "#E8A735", 2: "#639922", 3: "#1D9E75", 4: "#333" };
+  var legendYears = yr5.slice(-6);
+  var yrColorMap = { 0: "#A32D2D", 1: "#D85A30", 2: "#E8A735", 3: "#639922", 4: "#1D9E75", 5: "#333" };
   var seasonLegend = legendYears.map(function(y, i) {
     return { label: String(y.year), color: yrColorMap[i] || "#999", key: "yr" + i };
   });

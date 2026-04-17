@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
-Fetch USDA NASS Cattle on Feed data via QuickStats API.
+Fetch USDA NASS Cattle on Feed monthly data via QuickStats API.
 Outputs cattle_on_feed.json with monthly data for:
-  - On-feed inventory (1,000+ head capacity feedlots)
-  - Placements
-  - Marketings
-  - Heifers & heifer calves as % of inventory (quarterly: Jan/Apr/Jul/Oct)
+  - On-feed inventory (1,000+ head capacity lots, national)
+  - Placements (total placements, national)
+  - Marketings (sales for slaughter, national)
+  - Heifers on feed (% of on-feed total, computed from quarterly heifer inventory)
 
-Covers 2021 through current year.
+Cattle on Feed is released monthly (~23rd of each month for the prior month).
+Data is fetched from 2000 through present.
 """
-import urllib.request, urllib.parse, json, os, sys
+import urllib.request, urllib.parse, json, os, time
 from datetime import datetime, timezone
 from collections import defaultdict
 
@@ -18,171 +19,238 @@ BASE = "https://quickstats.nass.usda.gov/api/api_GET/"
 OUTPUT_DIR = os.environ.get("OUTPUT_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data"))
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 
+# Fetch from 2000 through current year
+START_YEAR = 2000
 CUR_YEAR = datetime.now(timezone.utc).year
-START_YEAR = 2021
 FETCH_YEARS = list(range(START_YEAR, CUR_YEAR + 1))
 
-# NASS short_desc mappings for COF 1,000+ head feedlots
-SERIES = {
-    "on_feed":    "CATTLE, ON FEED - INVENTORY, MEASURED IN HEAD",
-    "placements": "CATTLE, ON FEED, PLACEMENTS - RECEIPTS, MEASURED IN HEAD",
-    "marketings": "CATTLE, ON FEED, MARKETINGS - DISAPPEARANCE, MEASURED IN HEAD",
-    "heifer_pct": "CATTLE, ON FEED, HEIFERS & HEIFER CALVES - INVENTORY, MEASURED IN PCT OF INVENTORY",
-}
-
-MONTH_MAP = {
-    "JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
-    "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12,
-}
+MONTH_LABELS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+# NASS period values for inventory (dated as "FIRST OF <MONTH>")
+INV_PERIODS = ["FIRST OF JAN","FIRST OF FEB","FIRST OF MAR","FIRST OF APR","FIRST OF MAY","FIRST OF JUN",
+               "FIRST OF JUL","FIRST OF AUG","FIRST OF SEP","FIRST OF OCT","FIRST OF NOV","FIRST OF DEC"]
+# NASS period values for flow (placements/marketings) are month abbreviations
+FLOW_PERIODS = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"]
 
 
 def api_get(params, retries=2):
+    """Call NASS API with retry."""
     params["key"] = API_KEY
     params["format"] = "json"
     url = BASE + "?" + urllib.parse.urlencode(params)
     for attempt in range(retries + 1):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": UA})
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                return json.loads(resp.read().decode("utf-8")).get("data", [])
+            resp = urllib.request.urlopen(req, timeout=60)
+            data = json.loads(resp.read().decode("utf-8"))
+            return data.get("data", [])
         except Exception as e:
-            if attempt >= retries:
-                print(f"  API error: {e}")
+            if attempt < retries:
+                time.sleep(2)
+            else:
+                print(f"    ERROR after {retries} retries: {e}")
                 return []
-            import time
-            time.sleep(1.5 * (attempt + 1))
-    return []
 
 
 def parse_value(v):
-    """Convert NASS value string to int/float. '(D)' = withheld, '(Z)' = <0.5"""
-    if v is None or v == "" or v == "(D)" or v == "(NA)":
-        return None
-    if v == "(Z)":
-        return 0
+    if v is None: return None
+    s = str(v).strip()
+    if s in ("", "(D)", "(NA)", "(Z)", "-"): return None
     try:
-        return int(str(v).replace(",", ""))
-    except ValueError:
-        try:
-            return float(str(v).replace(",", ""))
-        except ValueError:
-            return None
+        return int(float(s.replace(",", "")))
+    except:
+        return None
 
 
-def fetch_series(short_desc, year):
-    """Fetch NASS data for one series, one year. National level, 1,000+ head."""
+def period_to_month_idx(period):
+    """Map period string to 0-11 month index."""
+    p = (period or "").upper().strip()
+    for i, iv in enumerate(INV_PERIODS):
+        if p == iv: return i
+    for i, fp in enumerate(FLOW_PERIODS):
+        if p == fp: return i
+    return None
+
+
+def fetch_on_feed_inventory():
+    """Fetch on-feed inventory for 1,000+ head capacity lots, national, monthly."""
+    print("\n  Fetching on-feed inventory (1,000+ head capacity)...")
     params = {
-        "short_desc": short_desc,
-        "year": str(year),
+        "source_desc": "SURVEY",
+        "commodity_desc": "CATTLE",
+        "short_desc": "CATTLE, ON FEED - INVENTORY",
         "agg_level_desc": "NATIONAL",
+        "domain_desc": "CAPACITY",
+        "domaincat_desc": "CAPACITY: (1,000 OR MORE HEAD)",
+        "year__GE": str(START_YEAR),
+        "year__LE": str(CUR_YEAR),
     }
     rows = api_get(params)
-    # Filter: want 1,000+ head capacity feedlots (domain_desc: FEEDLOTS, 1,000+ HEAD CAPACITY)
-    # or where domain_desc is just TOTAL (national 1,000+ head is the default reported series)
-    result = []
-    for row in rows:
-        dd = row.get("domain_desc", "")
-        dc = row.get("domaincat_desc", "")
-        # Target only 1,000+ head capacity series
-        if dd == "FEEDLOTS" and "1,000+" in dc:
-            result.append(row)
-        elif dd == "TOTAL" and short_desc == SERIES["heifer_pct"]:
-            # Heifer pct sometimes reported at TOTAL level
-            result.append(row)
-    # Fallback: if the strict filter returns nothing, take TOTAL
-    if not result:
-        for row in rows:
-            if row.get("domain_desc") == "TOTAL":
-                result.append(row)
+    print(f"    Got {len(rows)} records")
+    return rows
+
+
+def fetch_placements():
+    """Fetch placements (monthly flow)."""
+    print("\n  Fetching placements...")
+    params = {
+        "source_desc": "SURVEY",
+        "commodity_desc": "CATTLE",
+        "short_desc": "CATTLE, ON FEED - PLACEMENTS, MEASURED IN HEAD",
+        "agg_level_desc": "NATIONAL",
+        "year__GE": str(START_YEAR),
+        "year__LE": str(CUR_YEAR),
+    }
+    rows = api_get(params)
+    print(f"    Got {len(rows)} records")
+    return rows
+
+
+def fetch_marketings():
+    """Fetch marketings / sales for slaughter (monthly flow)."""
+    print("\n  Fetching marketings...")
+    params = {
+        "source_desc": "SURVEY",
+        "commodity_desc": "CATTLE",
+        "short_desc": "CATTLE, ON FEED - SALES FOR SLAUGHTER, MEASURED IN HEAD",
+        "agg_level_desc": "NATIONAL",
+        "year__GE": str(START_YEAR),
+        "year__LE": str(CUR_YEAR),
+    }
+    rows = api_get(params)
+    print(f"    Got {len(rows)} records")
+    return rows
+
+
+def fetch_heifers_on_feed():
+    """Fetch heifers/heifer calves on feed inventory (quarterly)."""
+    print("\n  Fetching heifers on feed (quarterly)...")
+    params = {
+        "source_desc": "SURVEY",
+        "commodity_desc": "CATTLE",
+        "short_desc": "CATTLE, HEIFERS & HEIFER CALVES, ON FEED - INVENTORY",
+        "agg_level_desc": "NATIONAL",
+        "year__GE": str(START_YEAR),
+        "year__LE": str(CUR_YEAR),
+    }
+    rows = api_get(params)
+    print(f"    Got {len(rows)} records")
+    return rows
+
+
+def fetch_total_on_feed():
+    """Fetch total on-feed inventory (all capacity) — used as denominator for heifers %."""
+    print("\n  Fetching total on-feed inventory (for heifers % calc)...")
+    params = {
+        "source_desc": "SURVEY",
+        "commodity_desc": "CATTLE",
+        "short_desc": "CATTLE, ON FEED - INVENTORY",
+        "agg_level_desc": "NATIONAL",
+        "domain_desc": "TOTAL",
+        "year__GE": str(START_YEAR),
+        "year__LE": str(CUR_YEAR),
+    }
+    rows = api_get(params)
+    print(f"    Got {len(rows)} records")
+    return rows
+
+
+def rows_to_yearly(rows):
+    """Convert rows to {year_str: [12 slots Jan-Dec]}."""
+    out = defaultdict(lambda: [None] * 12)
+    for r in rows:
+        try:
+            yr = int(r.get("year"))
+        except:
+            continue
+        mi = period_to_month_idx(r.get("reference_period_desc"))
+        if mi is None:
+            continue
+        val = parse_value(r.get("Value"))
+        if val is None:
+            continue
+        out[str(yr)][mi] = val
+    return dict(out)
+
+
+def compute_heifers_pct(heifers_inv, total_inv):
+    """Compute heifers % of on-feed = heifers_inv / total_inv * 100 by year/month."""
+    out = defaultdict(lambda: [None] * 12)
+    for yr_str, heifers_arr in heifers_inv.items():
+        tot_arr = total_inv.get(yr_str, [None] * 12)
+        for mi in range(12):
+            h = heifers_arr[mi]
+            t = tot_arr[mi]
+            if h is not None and t not in (None, 0):
+                out[yr_str][mi] = round(h / t * 100, 2)
+    return dict(out)
+
+
+def build_output():
+    result = {
+        "updated": datetime.now(timezone.utc).isoformat(),
+        "months": MONTH_LABELS,
+        "years": FETCH_YEARS,
+        "series": {},
+    }
+
+    # On-feed inventory (1,000+ head capacity)
+    of_rows = fetch_on_feed_inventory()
+    of_yearly = rows_to_yearly(of_rows)
+    result["series"]["onFeed"] = {
+        "label": "Cattle on Feed (1,000+ head capacity)",
+        "years": {str(y): of_yearly.get(str(y), [None] * 12) for y in FETCH_YEARS},
+    }
+
+    # Placements
+    pl_rows = fetch_placements()
+    pl_yearly = rows_to_yearly(pl_rows)
+    result["series"]["placements"] = {
+        "label": "Placements",
+        "years": {str(y): pl_yearly.get(str(y), [None] * 12) for y in FETCH_YEARS},
+    }
+
+    # Marketings
+    mk_rows = fetch_marketings()
+    mk_yearly = rows_to_yearly(mk_rows)
+    result["series"]["marketings"] = {
+        "label": "Marketings",
+        "years": {str(y): mk_yearly.get(str(y), [None] * 12) for y in FETCH_YEARS},
+    }
+
+    # Heifers % — compute from heifers inventory / total on-feed inventory
+    hf_rows = fetch_heifers_on_feed()
+    hf_yearly = rows_to_yearly(hf_rows)
+    tot_rows = fetch_total_on_feed()
+    tot_yearly = rows_to_yearly(tot_rows)
+    heifers_pct = compute_heifers_pct(hf_yearly, tot_yearly)
+    result["series"]["heifersOnFeed"] = {
+        "label": "Heifers on Feed (%)",
+        "years": {str(y): heifers_pct.get(str(y), [None] * 12) for y in FETCH_YEARS},
+    }
+
+    # Summary
+    for sid, sdata in result["series"].items():
+        populated = sum(1 for arr in sdata["years"].values() for v in arr if v is not None)
+        print(f"    {sid}: {populated} data points across {len(sdata['years'])} years")
+
     return result
 
 
 def main():
-    print(f"Fetching Cattle on Feed data {START_YEAR}-{CUR_YEAR}")
+    print("=" * 60)
+    print("USDA NASS Cattle on Feed Fetcher")
+    print(f"Time: {datetime.now(timezone.utc).isoformat()}")
+    print(f"Years: {START_YEAR}-{CUR_YEAR}")
     print("=" * 60)
 
-    # Structure: {series_key: {year: {month: value}}}
-    data = {key: defaultdict(dict) for key in SERIES}
+    result = build_output()
 
-    for key, short_desc in SERIES.items():
-        print(f"\nFetching {key}: {short_desc}")
-        for year in FETCH_YEARS:
-            rows = fetch_series(short_desc, year)
-            count = 0
-            for row in rows:
-                # Reference period: "FIRST OF JAN" / "MAR 1" etc.
-                ref = row.get("reference_period_desc", "").strip().upper()
-                # Parse month from reference period
-                month = None
-                for m_name, m_num in MONTH_MAP.items():
-                    if m_name in ref:
-                        month = m_num
-                        break
-                if month is None:
-                    continue
-                val = parse_value(row.get("Value"))
-                if val is None:
-                    continue
-                data[key][year][month] = val
-                count += 1
-            print(f"  {year}: {count} data points")
-
-    # Build output structure matching CattleOnFeedPage expectations:
-    # {
-    #   last_updated: "...",
-    #   years: [2021, 2022, ...],
-    #   series: {
-    #     onFeed:        { years: { "2021": [Jan..Dec], ... } },
-    #     placements:    { years: { ... } },
-    #     marketings:    { years: { ... } },
-    #     heifersOnFeed: { years: { ... } }
-    #   }
-    # }
-    SID_MAP = {
-        "on_feed":    "onFeed",
-        "placements": "placements",
-        "marketings": "marketings",
-        "heifer_pct": "heifersOnFeed",
-    }
-
-    series_out = {}
-    all_years_seen = set()
-    for key in SERIES:
-        sid = SID_MAP[key]
-        yearly = {}
-        for year in FETCH_YEARS:
-            arr = [data[key][year].get(m) for m in range(1, 13)]
-            if any(v is not None for v in arr):
-                yearly[str(year)] = arr
-                all_years_seen.add(year)
-        series_out[sid] = {"years": yearly}
-
-    output = {
-        "last_updated": datetime.now(timezone.utc).isoformat(),
-        "years": sorted(all_years_seen),
-        "series": series_out,
-    }
-
-    # Write JSON
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    out_path = os.path.join(OUTPUT_DIR, "cattle_on_feed.json")
-    with open(out_path, "w") as f:
-        json.dump(output, f, indent=2)
-
-    # Summary
-    print("\n" + "=" * 60)
-    print(f"Wrote {out_path}")
-    print(f"Years covered: {output['years'][0]}-{output['years'][-1]}" if output['years'] else "No data")
-    for key in SERIES:
-        sid = SID_MAP[key]
-        yearly = output["series"][sid]["years"]
-        years_covered = sorted(yearly.keys())
-        if years_covered:
-            latest_year = years_covered[-1]
-            latest_vals = yearly[latest_year]
-            last_non_null_idx = max((i for i, v in enumerate(latest_vals) if v is not None), default=-1)
-            latest_val = latest_vals[last_non_null_idx] if last_non_null_idx >= 0 else None
-            print(f"  {sid}: {len(years_covered)} years, latest {latest_year} M{last_non_null_idx+1}: {latest_val}")
+    output_file = os.path.join(OUTPUT_DIR, "cattle_on_feed.json")
+    with open(output_file, "w") as f:
+        json.dump(result, f, separators=(",", ":"))
+    size = os.path.getsize(output_file)
+    print(f"\nWrote {output_file} ({size:,} bytes)")
 
 
 if __name__ == "__main__":

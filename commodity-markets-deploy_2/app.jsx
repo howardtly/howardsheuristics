@@ -1752,7 +1752,7 @@ function CattleOnFeedPage({ ready }) {
             borderColor: getColor(yr),
             borderWidth: yr === curYear ? 2.5 : 1.5,
             // Quarterly series: show points at reported months, connect with lines across null gaps
-            pointRadius: isPct ? 3 : 0,
+            pointRadius: 0,
             pointHitRadius: 8,
             tension: 0,
             fill: false,

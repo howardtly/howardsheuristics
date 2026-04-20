@@ -2054,6 +2054,7 @@ function ExpandChartRow(props) {
     ),
     React.createElement(ChartBox, {
       id: chartId,
+      height: 340,
       renderChart: mkChart(view, hidden),
       deps: chartId + "_" + [].concat(Array.from(hidden)).sort().join(",") + "_" + chartMode
     })
@@ -2455,7 +2456,10 @@ function CutoutPage({ ready }) {
     const norm = rawStep / mag;
     const niceNorm = norm <= 1.5 ? 1 : norm <= 3.5 ? 2 : norm <= 7.5 ? 5 : 10;
     const step = niceNorm * mag;
-    return { yMin: Math.floor((dataMin - pad) / step) * step, yMax: Math.ceil((dataMax + pad) / step) * step };
+    let yMin = Math.floor((dataMin - pad) / step) * step;
+    const yMax = Math.ceil((dataMax + pad) / step) * step;
+    if (yMin < 0) yMin = 0;
+    return { yMin: yMin, yMax: yMax };
   }
 
 
@@ -2725,12 +2729,12 @@ function CutoutPage({ ready }) {
         <div>
           <h3 style={{ fontSize: 15, fontWeight: 500, color: "var(--color-text-primary)", margin: "0 0 2px" }}>Choice cutout</h3>
           {chartMode === "seasonal" && <InteractiveLegend items={seasonLegend} hidden={hCutout} onToggle={tCutout} />}
-          {ready && <ChartBox id={`cut_choice_${period}_${chartMode}`} renderChart={mkSeasonalChart(cutoutView, hCutout)} deps={`${period}_${chartMode}_${[...hCutout].join()}_${meatData ? "live" : "syn"}`} />}
+          {ready && <ChartBox id={`cut_choice_${period}_${chartMode}`} height={340} renderChart={mkSeasonalChart(cutoutView, hCutout)} deps={`${period}_${chartMode}_${[...hCutout].join()}_${meatData ? "live" : "syn"}`} />}
         </div>
         <div>
           <h3 style={{ fontSize: 15, fontWeight: 500, color: "var(--color-text-primary)", margin: "0 0 2px" }}>Comprehensive cutout</h3>
           {chartMode === "seasonal" && <InteractiveLegend items={seasonLegend} hidden={hCutout} onToggle={tCutout} />}
-          {ready && <ChartBox id={`cut_comp_${period}_${chartMode}`} renderChart={mkSeasonalChart(compViewData, hCutout)} deps={`comp_${period}_${chartMode}_${[...hCutout].join()}_${meatData ? "live" : "syn"}`} />}
+          {ready && <ChartBox id={`cut_comp_${period}_${chartMode}`} height={340} renderChart={mkSeasonalChart(compViewData, hCutout)} deps={`comp_${period}_${chartMode}_${[...hCutout].join()}_${meatData ? "live" : "syn"}`} />}
         </div>
       </div>
 
@@ -2902,7 +2906,7 @@ function CutoutPage({ ready }) {
       </div>
       <SectionTitle right={<ChartModeToggle mode={chartMode} setMode={setChartMode} />}>Pork cutout</SectionTitle>
       {chartMode === "seasonal" && <InteractiveLegend items={seasonLegend} hidden={hPorkCutout} onToggle={tPorkCutout} />}
-      {ready && <ChartBox id={`cut_pork_${period}_${chartMode}`} renderChart={mkSeasonalChart(porkCutoutView, hPorkCutout)} deps={`${period}_${chartMode}_${[...hPorkCutout].join()}_${meatData ? "live" : "syn"}`} />}
+      {ready && <ChartBox id={`cut_pork_${period}_${chartMode}`} height={340} renderChart={mkSeasonalChart(porkCutoutView, hPorkCutout)} deps={`${period}_${chartMode}_${[...hPorkCutout].join()}_${meatData ? "live" : "syn"}`} />}
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 28, marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
         <div>

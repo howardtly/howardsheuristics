@@ -2800,14 +2800,14 @@ function CutoutPage({ ready }) {
               const subs = liveBeefCutRows ? liveBeefCutRows.filter(function(r) { return r.primal === primalName; }) : [];
               const isPrimalSelected = selectedProduct === ("primal_" + primalName);
               return (<>
-                <tr key={`primal-${primalName}`} onClick={() => setSelectedProduct(isPrimalSelected ? null : ("primal_" + primalName))} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)", background: isPrimalSelected ? "var(--color-background-info)" : "var(--color-background-secondary)", cursor: "pointer" }}
-                  onMouseEnter={e => { if (!isPrimalSelected) e.currentTarget.style.background = "rgba(37,99,235,0.06)"; }}
-                  onMouseLeave={e => { if (!isPrimalSelected) e.currentTarget.style.background = "var(--color-background-secondary)"; }}
+                <tr key={`primal-${primalName}`} onClick={primalName === "Trim" ? undefined : () => setSelectedProduct(isPrimalSelected ? null : ("primal_" + primalName))} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)", background: isPrimalSelected ? "var(--color-background-info)" : "var(--color-background-secondary)", cursor: primalName === "Trim" ? "default" : "pointer" }}
+                  onMouseEnter={e => { if (!isPrimalSelected && primalName !== "Trim") e.currentTarget.style.background = "rgba(37,99,235,0.06)"; }}
+                  onMouseLeave={e => { if (!isPrimalSelected && primalName !== "Trim") e.currentTarget.style.background = "var(--color-background-secondary)"; }}
                 >
                   <td style={{ padding: "8px 12px", fontWeight: 500, color: "var(--color-text-primary)", fontSize: 12 }}>
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ transform: isPrimalSelected ? "rotate(90deg)" : "none", transition: "transform 0.15s", flexShrink: 0 }}><path d="M3.5 1.5L7.5 5L3.5 8.5" /></svg>
-                      {primalName}
+                      {primalName !== "Trim" && <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ transform: isPrimalSelected ? "rotate(90deg)" : "none", transition: "transform 0.15s", flexShrink: 0 }}><path d="M3.5 1.5L7.5 5L3.5 8.5" /></svg>}
+                      {primalName === "Trim" ? "Trimmings & Ground" : primalName}
                     </span>
                   </td>
                   <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)" }}></td>
@@ -2846,17 +2846,17 @@ function CutoutPage({ ready }) {
                   const chg = latest != null && prev != null ? latest - prev : null;
                   const isSelected = selectedProduct === (primalName + "_" + si);
                   return (<>
-                    <tr key={primalName + "_" + si} onClick={() => setSelectedProduct(isSelected ? null : (primalName + "_" + si))} style={{
-                      cursor: "pointer", borderBottom: "0.5px solid var(--color-border-tertiary)",
+                    <tr key={primalName + "_" + si} onClick={primalName === "Trim" ? undefined : () => setSelectedProduct(isSelected ? null : (primalName + "_" + si))} style={{
+                      cursor: primalName === "Trim" ? "default" : "pointer", borderBottom: "0.5px solid var(--color-border-tertiary)",
                       background: isSelected ? "var(--color-background-info)" : "transparent",
                       transition: "background 0.1s",
                     }}
-                    onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = "var(--color-background-secondary)"; }}
-                    onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = "transparent"; }}
+                    onMouseEnter={e => { if (!isSelected && primalName !== "Trim") e.currentTarget.style.background = "var(--color-background-secondary)"; }}
+                    onMouseLeave={e => { if (!isSelected && primalName !== "Trim") e.currentTarget.style.background = "transparent"; }}
                     >
                       <td style={{ padding: "6px 12px 6px 28px", fontWeight: isSelected ? 500 : 400, color: "var(--color-text-primary)", fontSize: 12 }}>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ transform: isSelected ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s", flexShrink: 0 }}><path d="M3 1.5l4 3.5-4 3.5" /></svg>
+                          {primalName !== "Trim" && <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ transform: isSelected ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s", flexShrink: 0 }}><path d="M3 1.5l4 3.5-4 3.5" /></svg>}
                           {p.name} <span style={{ color: "var(--color-text-tertiary)", fontSize: 10 }}>{p.item}</span>
                         </span>
                       </td>
@@ -2964,14 +2964,14 @@ function CutoutPage({ ready }) {
               const subs = livePorkCutRows ? livePorkCutRows.filter(function(r) { return r.primal === primalName; }) : [];
               const isPorkPrimalSelected = selectedPorkProduct === ("primal_" + primalName);
               return (<>
-                <tr key={`pork-primal-${primalName}`} onClick={() => setSelectedPorkProduct(isPorkPrimalSelected ? null : ("primal_" + primalName))} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)", background: isPorkPrimalSelected ? "var(--color-background-info)" : "var(--color-background-secondary)", cursor: "pointer" }}
-                  onMouseEnter={e => { if (!isPorkPrimalSelected) e.currentTarget.style.background = "rgba(37,99,235,0.06)"; }}
-                  onMouseLeave={e => { if (!isPorkPrimalSelected) e.currentTarget.style.background = "var(--color-background-secondary)"; }}
+                <tr key={`pork-primal-${primalName}`} onClick={primalName === "Trim" ? undefined : () => setSelectedPorkProduct(isPorkPrimalSelected ? null : ("primal_" + primalName))} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)", background: isPorkPrimalSelected ? "var(--color-background-info)" : "var(--color-background-secondary)", cursor: primalName === "Trim" ? "default" : "pointer" }}
+                  onMouseEnter={e => { if (!isPorkPrimalSelected && primalName !== "Trim") e.currentTarget.style.background = "rgba(37,99,235,0.06)"; }}
+                  onMouseLeave={e => { if (!isPorkPrimalSelected && primalName !== "Trim") e.currentTarget.style.background = "var(--color-background-secondary)"; }}
                 >
                   <td style={{ padding: "8px 12px", fontWeight: 500, color: "var(--color-text-primary)", fontSize: 12 }}>
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ transform: isPorkPrimalSelected ? "rotate(90deg)" : "none", transition: "transform 0.15s", flexShrink: 0 }}><path d="M3.5 1.5L7.5 5L3.5 8.5" /></svg>
-                      {primalName}
+                      {primalName !== "Trim" && <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ transform: isPorkPrimalSelected ? "rotate(90deg)" : "none", transition: "transform 0.15s", flexShrink: 0 }}><path d="M3.5 1.5L7.5 5L3.5 8.5" /></svg>}
+                      {primalName === "Trim" ? "Trimmings & Processing" : primalName}
                     </span>
                   </td>
                   <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)" }}></td>
@@ -3010,17 +3010,17 @@ function CutoutPage({ ready }) {
                   const chg = latest != null && prev != null ? latest - prev : null;
                   const isSelected = selectedPorkProduct === (primalName + "_" + si);
                   return (<>
-                    <tr key={`pork-${primalName}-${si}`} onClick={() => setSelectedPorkProduct(isSelected ? null : (primalName + "_" + si))} style={{
-                      cursor: "pointer", borderBottom: "0.5px solid var(--color-border-tertiary)",
+                    <tr key={`pork-${primalName}-${si}`} onClick={primalName === "Trim" ? undefined : () => setSelectedPorkProduct(isSelected ? null : (primalName + "_" + si))} style={{
+                      cursor: primalName === "Trim" ? "default" : "pointer", borderBottom: "0.5px solid var(--color-border-tertiary)",
                       background: isSelected ? "var(--color-background-info)" : "transparent",
                       transition: "background 0.1s",
                     }}
-                    onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = "var(--color-background-secondary)"; }}
-                    onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = "transparent"; }}
+                    onMouseEnter={e => { if (!isSelected && primalName !== "Trim") e.currentTarget.style.background = "var(--color-background-secondary)"; }}
+                    onMouseLeave={e => { if (!isSelected && primalName !== "Trim") e.currentTarget.style.background = "transparent"; }}
                     >
                       <td style={{ padding: "6px 12px 6px 28px", fontWeight: isSelected ? 500 : 400, color: "var(--color-text-primary)", fontSize: 12 }}>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ transform: isSelected ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s", flexShrink: 0 }}><path d="M3 1.5l4 3.5-4 3.5" /></svg>
+                          {primalName !== "Trim" && <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ transform: isSelected ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s", flexShrink: 0 }}><path d="M3 1.5l4 3.5-4 3.5" /></svg>}
                           {p.name} <span style={{ color: "var(--color-text-tertiary)", fontSize: 10 }}>{p.item}</span>
                         </span>
                       </td>

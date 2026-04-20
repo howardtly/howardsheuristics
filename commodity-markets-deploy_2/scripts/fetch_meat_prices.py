@@ -595,6 +595,62 @@ def build_seasonal_data(daily):
             key = f"pork_{primal}"
             yr_data[key] = [r.get("pork", {}).get(primal) for r in yr_records]
 
+        # ── Individual Trim item series (per-name arrays) ──
+        # Collect all beef trim-category items (ground beef, 50% trim, boneless CL trimmings)
+        beef_trim_items = {}  # name -> list of values per day in this year
+        for r in yr_records:
+            beef = r.get("beef", {}) or {}
+            bt = r.get("beef_trimmings", {}) or {}
+            # Collect this record's trim map: name -> avg
+            daily_map = {}
+            for g in beef.get("ground_beef", []) or []:
+                if g.get("name") and g.get("avg") is not None:
+                    daily_map[g["name"]] = g["avg"]
+            for t in beef.get("trimmings_2453", []) or []:
+                if t.get("name") and t.get("avg") is not None:
+                    daily_map[t["name"]] = t["avg"]
+            for t in bt.get("national", []) or []:
+                if t.get("name") and t.get("avg") is not None:
+                    daily_map[t["name"]] = t["avg"]
+            # Append to each known series; fill missing with None
+            seen = set()
+            for name, val in daily_map.items():
+                if name not in beef_trim_items:
+                    # Back-fill Nones for any previously-processed records
+                    beef_trim_items[name] = [None] * (yr_records.index(r))
+                beef_trim_items[name].append(val)
+                seen.add(name)
+            for name in list(beef_trim_items.keys()):
+                if name not in seen:
+                    beef_trim_items[name].append(None)
+        # Ensure all arrays are same length
+        for name in beef_trim_items:
+            while len(beef_trim_items[name]) < len(yr_records):
+                beef_trim_items[name].append(None)
+
+        pork_trim_items = {}
+        for r in yr_records:
+            pork = r.get("pork", {}) or {}
+            daily_map = {}
+            for t in pork.get("trim_cuts", []) or []:
+                if t.get("name") and t.get("avg") is not None:
+                    daily_map[t["name"]] = t["avg"]
+            seen = set()
+            for name, val in daily_map.items():
+                if name not in pork_trim_items:
+                    pork_trim_items[name] = [None] * (yr_records.index(r))
+                pork_trim_items[name].append(val)
+                seen.add(name)
+            for name in list(pork_trim_items.keys()):
+                if name not in seen:
+                    pork_trim_items[name].append(None)
+        for name in pork_trim_items:
+            while len(pork_trim_items[name]) < len(yr_records):
+                pork_trim_items[name].append(None)
+
+        yr_data["trim_beef"] = beef_trim_items
+        yr_data["trim_pork"] = pork_trim_items
+
         seasonal["years"].append(yr_data)
 
     # Compute 5-year average (aligned by trading day index)

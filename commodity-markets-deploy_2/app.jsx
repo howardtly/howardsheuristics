@@ -2303,11 +2303,7 @@ function CutoutPage({ ready }) {
             });
           });
 
-          // Trim primal composite — use Fresh 50% as representative
-          var trim50 = beefCutRows.find(function(r) { return r.primal === "Trim" && r.name && r.name.indexOf("Fresh 50%") >= 0 && r.latest; });
-          if (trim50) {
-            beefPrimalRows["Trim"] = { latest: trim50.latest, prev: trim50.prev };
-          }
+          // Trim is not a real primal — leave beefPrimalRows["Trim"] unset so the header row shows no values
 
           liveBeefPrimalRows = beefPrimalRows;
           liveBeefCutRows = beefCutRows;
@@ -2389,11 +2385,7 @@ function CutoutPage({ ready }) {
             });
           });
 
-          // Trim primal composite — use 42% Trim as representative
-          var trim42 = porkCutRows.find(function(r) { return r.name && r.name.indexOf("42% Trim") >= 0 && r.latest; });
-          if (trim42) {
-            porkPrimalRows["Trim"] = { latest: trim42.latest, prev: trim42.prev };
-          }
+          // Trim is not a real primal — leave porkPrimalRows["Trim"] unset so the header row shows no values
           // Jowl primal value
           var jowlCut = porkCutRows.find(function(r) { return r.primal === "Jowl" && r.latest; });
           if (jowlCut) {
@@ -2807,7 +2799,7 @@ function CutoutPage({ ready }) {
                   <td style={{ padding: "8px 12px", fontWeight: 500, color: "var(--color-text-primary)", fontSize: 12 }}>
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                       {primalName !== "Trim" && <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ transform: isPrimalSelected ? "rotate(90deg)" : "none", transition: "transform 0.15s", flexShrink: 0 }}><path d="M3.5 1.5L7.5 5L3.5 8.5" /></svg>}
-                      {primalName === "Trim" ? "Trimmings & Ground" : primalName}
+                      {primalName === "Trim" ? <span style={{ paddingLeft: 16 }}>Ground Beef & Trimmings</span> : primalName}
                     </span>
                   </td>
                   <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)" }}></td>
@@ -2846,17 +2838,17 @@ function CutoutPage({ ready }) {
                   const chg = latest != null && prev != null ? latest - prev : null;
                   const isSelected = selectedProduct === (primalName + "_" + si);
                   return (<>
-                    <tr key={primalName + "_" + si} onClick={primalName === "Trim" ? undefined : () => setSelectedProduct(isSelected ? null : (primalName + "_" + si))} style={{
-                      cursor: primalName === "Trim" ? "default" : "pointer", borderBottom: "0.5px solid var(--color-border-tertiary)",
+                    <tr key={primalName + "_" + si} onClick={() => setSelectedProduct(isSelected ? null : (primalName + "_" + si))} style={{
+                      cursor: "pointer", borderBottom: "0.5px solid var(--color-border-tertiary)",
                       background: isSelected ? "var(--color-background-info)" : "transparent",
                       transition: "background 0.1s",
                     }}
-                    onMouseEnter={e => { if (!isSelected && primalName !== "Trim") e.currentTarget.style.background = "var(--color-background-secondary)"; }}
-                    onMouseLeave={e => { if (!isSelected && primalName !== "Trim") e.currentTarget.style.background = "transparent"; }}
+                    onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = "var(--color-background-secondary)"; }}
+                    onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = "transparent"; }}
                     >
                       <td style={{ padding: "6px 12px 6px 28px", fontWeight: isSelected ? 500 : 400, color: "var(--color-text-primary)", fontSize: 12 }}>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                          {primalName !== "Trim" && <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ transform: isSelected ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s", flexShrink: 0 }}><path d="M3 1.5l4 3.5-4 3.5" /></svg>}
+                          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ transform: isSelected ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s", flexShrink: 0 }}><path d="M3 1.5l4 3.5-4 3.5" /></svg>
                           {p.name} <span style={{ color: "var(--color-text-tertiary)", fontSize: 10 }}>{p.item}</span>
                         </span>
                       </td>
@@ -2877,7 +2869,13 @@ function CutoutPage({ ready }) {
                               var pView = { labels: liveDates };
                               legendYears.forEach(function(y, yi) {
                                 var yd = meatData ? meatData.seasonal.years.find(function(sy) { return sy.year === y.year; }) : null;
-                                pView["yr" + yi] = yd ? yd["beef_" + primalName.toLowerCase()] || [] : [];
+                                if (!yd) { pView["yr" + yi] = []; return; }
+                                // For Trim items, use per-item series; for real primals, use composite
+                                if (primalName === "Trim" && yd.trim_beef && yd.trim_beef[p.name]) {
+                                  pView["yr" + yi] = yd.trim_beef[p.name];
+                                } else {
+                                  pView["yr" + yi] = yd["beef_" + primalName.toLowerCase()] || [];
+                                }
                               });
                               return pView;
                             }}
@@ -2971,7 +2969,7 @@ function CutoutPage({ ready }) {
                   <td style={{ padding: "8px 12px", fontWeight: 500, color: "var(--color-text-primary)", fontSize: 12 }}>
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                       {primalName !== "Trim" && <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ transform: isPorkPrimalSelected ? "rotate(90deg)" : "none", transition: "transform 0.15s", flexShrink: 0 }}><path d="M3.5 1.5L7.5 5L3.5 8.5" /></svg>}
-                      {primalName === "Trim" ? "Trimmings & Processing" : primalName}
+                      {primalName === "Trim" ? <span style={{ paddingLeft: 16 }}>Trimmings & Processing</span> : primalName}
                     </span>
                   </td>
                   <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)" }}></td>
@@ -3010,17 +3008,17 @@ function CutoutPage({ ready }) {
                   const chg = latest != null && prev != null ? latest - prev : null;
                   const isSelected = selectedPorkProduct === (primalName + "_" + si);
                   return (<>
-                    <tr key={`pork-${primalName}-${si}`} onClick={primalName === "Trim" ? undefined : () => setSelectedPorkProduct(isSelected ? null : (primalName + "_" + si))} style={{
-                      cursor: primalName === "Trim" ? "default" : "pointer", borderBottom: "0.5px solid var(--color-border-tertiary)",
+                    <tr key={`pork-${primalName}-${si}`} onClick={() => setSelectedPorkProduct(isSelected ? null : (primalName + "_" + si))} style={{
+                      cursor: "pointer", borderBottom: "0.5px solid var(--color-border-tertiary)",
                       background: isSelected ? "var(--color-background-info)" : "transparent",
                       transition: "background 0.1s",
                     }}
-                    onMouseEnter={e => { if (!isSelected && primalName !== "Trim") e.currentTarget.style.background = "var(--color-background-secondary)"; }}
-                    onMouseLeave={e => { if (!isSelected && primalName !== "Trim") e.currentTarget.style.background = "transparent"; }}
+                    onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = "var(--color-background-secondary)"; }}
+                    onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = "transparent"; }}
                     >
                       <td style={{ padding: "6px 12px 6px 28px", fontWeight: isSelected ? 500 : 400, color: "var(--color-text-primary)", fontSize: 12 }}>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                          {primalName !== "Trim" && <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ transform: isSelected ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s", flexShrink: 0 }}><path d="M3 1.5l4 3.5-4 3.5" /></svg>}
+                          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ transform: isSelected ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s", flexShrink: 0 }}><path d="M3 1.5l4 3.5-4 3.5" /></svg>
                           {p.name} <span style={{ color: "var(--color-text-tertiary)", fontSize: 10 }}>{p.item}</span>
                         </span>
                       </td>
@@ -3041,7 +3039,12 @@ function CutoutPage({ ready }) {
                               var pView = { labels: liveDates };
                               legendYears.forEach(function(y, yi) {
                                 var yd = meatData ? meatData.seasonal.years.find(function(sy) { return sy.year === y.year; }) : null;
-                                pView["yr" + yi] = yd ? yd["pork_" + primalName.toLowerCase()] || [] : [];
+                                if (!yd) { pView["yr" + yi] = []; return; }
+                                if (primalName === "Trim" && yd.trim_pork && yd.trim_pork[p.name]) {
+                                  pView["yr" + yi] = yd.trim_pork[p.name];
+                                } else {
+                                  pView["yr" + yi] = yd["pork_" + primalName.toLowerCase()] || [];
+                                }
                               });
                               return pView;
                             }}

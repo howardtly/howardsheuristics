@@ -596,6 +596,17 @@ def build_seasonal_data(daily):
             yr_data[key] = [r.get("pork", {}).get(primal) for r in yr_records]
 
         # ── Individual cut series (per-name arrays) ──
+        # Normalize names to match how the app stores them in the table (strips " (xxx)" and leading IMPS prefix)
+        import re as _re_cut
+        def _norm_cut_name(name):
+            if not name:
+                return name
+            # Drop trailing parenthesized group: "Round, outside round (171B 3)" -> "Round, outside round"
+            n = _re_cut.sub(r"\s*\([^)]+\)", "", name)
+            # Drop leading IMPS prefix like "123A 4 " that appears on choice_and_select items
+            n = _re_cut.sub(r"^\s*\d+[A-Z]?\s+\d\s+", "", n)
+            return n.strip()
+
         # Build a dict: name -> [value per day in this year] for beef and pork
         def build_item_series(yr_records, get_items_fn):
             """
@@ -629,9 +640,9 @@ def build_seasonal_data(daily):
             out = []
             for section in ("choice_cuts", "select_cuts", "choice_select_cuts", "ground_beef", "trimmings_2453"):
                 for it in beef.get(section, []) or []:
-                    out.append((it.get("name"), it.get("avg")))
+                    out.append((_norm_cut_name(it.get("name")), it.get("avg")))
             for it in bt.get("national", []) or []:
-                out.append((it.get("name"), it.get("avg")))
+                out.append((_norm_cut_name(it.get("name")), it.get("avg")))
             return out
 
         def pork_items(r):
@@ -641,7 +652,7 @@ def build_seasonal_data(daily):
                             "belly_cuts", "sparerib_cuts", "trim_cuts", "jowl_cuts",
                             "variety_cuts", "added_ingredients_cuts"):
                 for it in pork.get(section, []) or []:
-                    out.append((it.get("name"), it.get("avg")))
+                    out.append((_norm_cut_name(it.get("name")), it.get("avg")))
             return out
 
         yr_data["cuts_beef"] = build_item_series(yr_records, beef_items)

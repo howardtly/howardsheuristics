@@ -595,61 +595,61 @@ def build_seasonal_data(daily):
             key = f"pork_{primal}"
             yr_data[key] = [r.get("pork", {}).get(primal) for r in yr_records]
 
-        # ── Individual Trim item series (per-name arrays) ──
-        # Collect all beef trim-category items (ground beef, 50% trim, boneless CL trimmings)
-        beef_trim_items = {}  # name -> list of values per day in this year
-        for r in yr_records:
+        # ── Individual cut series (per-name arrays) ──
+        # Build a dict: name -> [value per day in this year] for beef and pork
+        def build_item_series(yr_records, get_items_fn):
+            """
+            get_items_fn(record) returns a list of (name, avg) tuples for the record.
+            Returns {name: [None or avg per day]}.
+            """
+            series = {}
+            for idx, r in enumerate(yr_records):
+                daily_map = {}
+                for name, avg in get_items_fn(r):
+                    if name and avg is not None:
+                        daily_map[name] = avg
+                for name, val in daily_map.items():
+                    if name not in series:
+                        series[name] = [None] * idx  # back-fill
+                    series[name].append(val)
+                # Missing names get None for this day
+                seen = set(daily_map.keys())
+                for name in list(series.keys()):
+                    if name not in seen:
+                        series[name].append(None)
+            # Ensure all arrays have the same length as yr_records
+            for name in series:
+                while len(series[name]) < len(yr_records):
+                    series[name].append(None)
+            return series
+
+        def beef_items(r):
             beef = r.get("beef", {}) or {}
             bt = r.get("beef_trimmings", {}) or {}
-            # Collect this record's trim map: name -> avg
-            daily_map = {}
-            for g in beef.get("ground_beef", []) or []:
-                if g.get("name") and g.get("avg") is not None:
-                    daily_map[g["name"]] = g["avg"]
-            for t in beef.get("trimmings_2453", []) or []:
-                if t.get("name") and t.get("avg") is not None:
-                    daily_map[t["name"]] = t["avg"]
-            for t in bt.get("national", []) or []:
-                if t.get("name") and t.get("avg") is not None:
-                    daily_map[t["name"]] = t["avg"]
-            # Append to each known series; fill missing with None
-            seen = set()
-            for name, val in daily_map.items():
-                if name not in beef_trim_items:
-                    # Back-fill Nones for any previously-processed records
-                    beef_trim_items[name] = [None] * (yr_records.index(r))
-                beef_trim_items[name].append(val)
-                seen.add(name)
-            for name in list(beef_trim_items.keys()):
-                if name not in seen:
-                    beef_trim_items[name].append(None)
-        # Ensure all arrays are same length
-        for name in beef_trim_items:
-            while len(beef_trim_items[name]) < len(yr_records):
-                beef_trim_items[name].append(None)
+            out = []
+            for section in ("choice_cuts", "select_cuts", "choice_select_cuts", "ground_beef", "trimmings_2453"):
+                for it in beef.get(section, []) or []:
+                    out.append((it.get("name"), it.get("avg")))
+            for it in bt.get("national", []) or []:
+                out.append((it.get("name"), it.get("avg")))
+            return out
 
-        pork_trim_items = {}
-        for r in yr_records:
+        def pork_items(r):
             pork = r.get("pork", {}) or {}
-            daily_map = {}
-            for t in pork.get("trim_cuts", []) or []:
-                if t.get("name") and t.get("avg") is not None:
-                    daily_map[t["name"]] = t["avg"]
-            seen = set()
-            for name, val in daily_map.items():
-                if name not in pork_trim_items:
-                    pork_trim_items[name] = [None] * (yr_records.index(r))
-                pork_trim_items[name].append(val)
-                seen.add(name)
-            for name in list(pork_trim_items.keys()):
-                if name not in seen:
-                    pork_trim_items[name].append(None)
-        for name in pork_trim_items:
-            while len(pork_trim_items[name]) < len(yr_records):
-                pork_trim_items[name].append(None)
+            out = []
+            for section in ("loin_cuts", "butt_cuts", "picnic_cuts", "ham_cuts",
+                            "belly_cuts", "sparerib_cuts", "trim_cuts", "jowl_cuts",
+                            "variety_cuts", "added_ingredients_cuts"):
+                for it in pork.get(section, []) or []:
+                    out.append((it.get("name"), it.get("avg")))
+            return out
 
-        yr_data["trim_beef"] = beef_trim_items
-        yr_data["trim_pork"] = pork_trim_items
+        yr_data["cuts_beef"] = build_item_series(yr_records, beef_items)
+        yr_data["cuts_pork"] = build_item_series(yr_records, pork_items)
+
+        # Keep trim_beef / trim_pork as aliases for backward compatibility with existing app code
+        yr_data["trim_beef"] = yr_data["cuts_beef"]
+        yr_data["trim_pork"] = yr_data["cuts_pork"]
 
         seasonal["years"].append(yr_data)
 

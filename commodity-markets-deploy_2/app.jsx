@@ -2868,16 +2868,20 @@ function CutoutPage({ ready }) {
                         <td colSpan={5} style={{ padding: "12px 16px 16px", background: "var(--color-background-secondary)" }}>
                           <ExpandChartRow
                             chartId={"beefcut_" + primalName + "_" + si + "_" + period}
-                            title={(p.name || "") + (p.item ? " (" + p.item + ")" : "") + " — " + primalName + " primal seasonal"}
+                            title={(p.name || "") + (p.item ? " (" + p.item + ")" : "")}
                             buildView={function() {
                               var pView = { labels: liveDates };
                               legendYears.forEach(function(y, yi) {
                                 var yd = meatData ? meatData.seasonal.years.find(function(sy) { return sy.year === y.year; }) : null;
                                 if (!yd) { pView["yr" + yi] = []; return; }
-                                // For Trim items, use per-item series; for real primals, use composite
-                                if (primalName === "Trim" && yd.trim_beef && yd.trim_beef[p.name]) {
+                                // Prefer per-item series (each cut's own history)
+                                if (yd.cuts_beef && yd.cuts_beef[p.name]) {
+                                  pView["yr" + yi] = yd.cuts_beef[p.name];
+                                } else if (primalName === "Trim" && yd.trim_beef && yd.trim_beef[p.name]) {
+                                  // Backward compatibility with older JSONs
                                   pView["yr" + yi] = yd.trim_beef[p.name];
                                 } else {
+                                  // Fallback to composite primal (older data without per-item series)
                                   pView["yr" + yi] = yd["beef_" + primalName.toLowerCase()] || [];
                                 }
                               });
@@ -3038,13 +3042,15 @@ function CutoutPage({ ready }) {
                         <td colSpan={5} style={{ padding: "12px 16px 16px", background: "var(--color-background-secondary)" }}>
                           <ExpandChartRow
                             chartId={"porkcut_" + primalName + "_" + si + "_" + period}
-                            title={(p.name || "") + " — " + primalName + " primal seasonal"}
+                            title={p.name || ""}
                             buildView={function() {
                               var pView = { labels: liveDates };
                               legendYears.forEach(function(y, yi) {
                                 var yd = meatData ? meatData.seasonal.years.find(function(sy) { return sy.year === y.year; }) : null;
                                 if (!yd) { pView["yr" + yi] = []; return; }
-                                if (primalName === "Trim" && yd.trim_pork && yd.trim_pork[p.name]) {
+                                if (yd.cuts_pork && yd.cuts_pork[p.name]) {
+                                  pView["yr" + yi] = yd.cuts_pork[p.name];
+                                } else if (primalName === "Trim" && yd.trim_pork && yd.trim_pork[p.name]) {
                                   pView["yr" + yi] = yd.trim_pork[p.name];
                                 } else {
                                   pView["yr" + yi] = yd["pork_" + primalName.toLowerCase()] || [];

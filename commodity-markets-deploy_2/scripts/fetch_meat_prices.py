@@ -508,7 +508,8 @@ def main():
             rec["beef_comp"] = last_comp
 
     # Build seasonal data for charts (pre-computed by year)
-    seasonal = build_seasonal_data(daily)
+    # Pass existing seasonal so cut-level data survives incremental runs (historical records are slimmed)
+    seasonal = build_seasonal_data(daily, existing.get("seasonal"))
 
     # Build latest snapshot
     latest = daily[-1] if daily else None
@@ -537,7 +538,7 @@ def main():
     return 0
 
 
-def build_seasonal_data(daily):
+def build_seasonal_data(daily, existing_seasonal=None):
     """Pre-compute seasonal (day-of-year aligned) data for charting."""
     from collections import defaultdict
 
@@ -685,6 +686,47 @@ def build_seasonal_data(daily):
                 avg_vals.append(round(sum(vals) / len(vals), 2) if vals else None)
             avg[field] = avg_vals
         seasonal["years"].append(avg)
+
+    # ── Merge cuts_beef / cuts_pork from previous seasonal (historical cut data survives slimming) ──
+    if existing_seasonal and isinstance(existing_seasonal.get("years"), list):
+        # Build a lookup for the new seasonal by year
+        new_yr_map = {y.get("year"): y for y in seasonal["years"] if isinstance(y.get("year"), int)}
+        for old_y in existing_seasonal["years"]:
+            if not isinstance(old_y.get("year"), int):
+                continue
+            yr = old_y["year"]
+            new_y = new_yr_map.get(yr)
+            if not new_y:
+                continue
+            # For each cut-item series map, merge day-by-day.
+            # Align by date_label. If new record has a non-null value at a given day, use it;
+            # otherwise carry forward the old value.
+            for map_key in ("cuts_beef", "cuts_pork", "trim_beef", "trim_pork"):
+                old_map = old_y.get(map_key) or {}
+                new_map = new_y.get(map_key) or {}
+                # Use dates array for alignment
+                old_dates = old_y.get("dates") or []
+                new_dates = new_y.get("dates") or []
+                merged = {}
+                all_names = set(list(old_map.keys()) + list(new_map.keys()))
+                for name in all_names:
+                    old_arr = old_map.get(name, [None] * len(old_dates))
+                    new_arr = new_map.get(name, [None] * len(new_dates))
+                    # Build merged array aligned to new_dates (the current shape)
+                    out = []
+                    for i, d in enumerate(new_dates):
+                        new_val = new_arr[i] if i < len(new_arr) else None
+                        if new_val is not None:
+                            out.append(new_val)
+                        else:
+                            # Find this date in old_dates
+                            try:
+                                j = old_dates.index(d)
+                                out.append(old_arr[j] if j < len(old_arr) else None)
+                            except ValueError:
+                                out.append(None)
+                    merged[name] = out
+                new_y[map_key] = merged
 
     return seasonal
 

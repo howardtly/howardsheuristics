@@ -2248,7 +2248,7 @@ function CutoutPage({ ready }) {
             var shortName = name.replace(/\s*\([^)]+\)/, "").replace(/^\s*\d+[A-Z]?\s+\d\s+/, "").trim();
             var prevCut = (pb.choice_select_cuts || []).find(function(pc) { return pc.name === cut.name; });
             beefCutRows.push({
-              name: name, primal: primal, item: imps,
+              name: shortName, primal: primal, item: imps,
               loads: cut.trades || null, lbs: cut.lbs || null,
               latest: cut.avg, low: cut.low, high: cut.high,
               prev: prevCut ? prevCut.avg : null

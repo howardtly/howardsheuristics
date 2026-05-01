@@ -2015,11 +2015,13 @@ function ExpandChartRow(props) {
   var buildView = props.buildView;          // function(): { labels, yr0..yrN }
   var legendYears = props.legendYears;
   var seasonLegend = props.seasonLegend;
-  var mkChart = props.mkChart;              // function(view, hidden, localLegend, localDS): function(canvas){...}
+  var mkChart = props.mkChart;              // function(view, hidden, mode): function(canvas){...}
   var seasonDS = props.seasonDS;
-  var chartMode = props.chartMode;
+  var initialMode = props.chartMode;        // initial value passed in from parent (used as default)
   var _h = useState(new Set());
   var hidden = _h[0], setHidden = _h[1];
+  var _m = useState(initialMode || "seasonal");
+  var localMode = _m[0], setLocalMode = _m[1];
   var toggle = function(key) {
     setHidden(function(prev) {
       var n = new Set(prev);
@@ -2028,9 +2030,32 @@ function ExpandChartRow(props) {
     });
   };
   var view = buildView();
+  var modeBtn = function(label, val) {
+    var active = localMode === val;
+    return React.createElement("button", {
+      key: val,
+      onClick: function() { setLocalMode(val); },
+      style: {
+        padding: "4px 12px", fontSize: 11, fontWeight: 500,
+        border: "1px solid " + (active ? "#2563EB" : "var(--color-border-secondary)"),
+        borderRadius: 4,
+        background: active ? "#2563EB" : "transparent",
+        color: active ? "#fff" : "var(--color-text-secondary)",
+        cursor: "pointer", transition: "all 0.15s"
+      }
+    }, label);
+  };
   return React.createElement("div", null,
-    React.createElement("div", { style: { fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 8 } }, title),
-    React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10, alignItems: "center" } },
+    React.createElement("div", {
+      style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, gap: 12, flexWrap: "wrap" }
+    },
+      React.createElement("div", { style: { fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)" } }, title),
+      React.createElement("div", { style: { display: "flex", gap: 4 } },
+        modeBtn("Seasonal", "seasonal"),
+        modeBtn("Contiguous", "contiguous")
+      )
+    ),
+    React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14, alignItems: "center" } },
       seasonLegend.map(function(item) {
         var isH = hidden.has(item.key);
         return React.createElement("button", {
@@ -2053,10 +2078,10 @@ function ExpandChartRow(props) {
       })
     ),
     React.createElement(ChartBox, {
-      id: chartId,
+      id: chartId + "_" + localMode,
       height: 340,
-      renderChart: mkChart(view, hidden),
-      deps: chartId + "_" + [].concat(Array.from(hidden)).sort().join(",") + "_" + chartMode
+      renderChart: mkChart(view, hidden, localMode),
+      deps: chartId + "_" + [].concat(Array.from(hidden)).sort().join(",") + "_" + localMode
     })
   );
 }
@@ -2064,6 +2089,8 @@ function ExpandChartRow(props) {
 function CutoutPage({ ready }) {
   const [tab, setTab] = useState("cattle");
   const [hCutout, tCutout] = useToggle();
+  const [hChoice, tChoice] = useToggle();
+  const [hComp, tComp] = useToggle();
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [period, setPeriod] = useState("daily");
   const [chartMode, setChartMode] = useState("seasonal");
@@ -2463,11 +2490,12 @@ function CutoutPage({ ready }) {
   }
 
 
-  function mkSeasonalChart(view, hidden) {
+  function mkSeasonalChart(view, hidden, modeOverride) {
     return (canvas) => {
       const keys = legendYears.map(function(y, i) { return "yr" + i; }).filter(function(k) { return !hidden.has(k); });
+      const effectiveMode = modeOverride || chartMode;
 
-      if (chartMode === "contiguous") {
+      if (effectiveMode === "contiguous") {
         // Concatenate all visible years in chronological order with per-year segments
         const visibleYears = legendYears.filter(function(y, i) { return keys.indexOf("yr" + i) >= 0; });
         if (visibleYears.length === 0) {
@@ -2672,20 +2700,95 @@ function CutoutPage({ ready }) {
   const spreadChg = spreadCur != null && spreadPrev != null ? spreadCur - spreadPrev : null;
   const periodLabel = period === "daily" ? "D/D" : period === "weekly" ? "W/W" : "M/M";
 
-  const CutoutCard = ({ label, cur, prev, chg }) => (
-    <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px", minWidth: 0 }}>
+  // ── Multi-period comparisons for header cards (Choice / Select / Spread / Comp) ──
+  // Walk daily records to find prior day, prior week (~5 trading days), prior year (~252 trading days)
+  function buildHistory(getVal) {
+    if (!meatData || !meatData.daily) return { dates: [], values: [] };
+    const out = { dates: [], values: [] };
+    meatData.daily.forEach(function(r) {
+      const v = getVal(r);
+      if (v != null) { out.dates.push(r.date); out.values.push(v); }
+    });
+    return out;
+  }
+  function lookback(hist, daysBack) {
+    if (!hist.values.length) return { val: null, date: null };
+    const idx = hist.values.length - 1 - daysBack;
+    if (idx < 0) return { val: null, date: null };
+    return { val: hist.values[idx], date: hist.dates[idx] };
+  }
+  // Find first record at or before exactly N calendar days before the latest date
+  function lookbackByCalendarDays(hist, calDays) {
+    if (!hist.values.length) return { val: null, date: null };
+    const latestStr = hist.dates[hist.dates.length - 1];
+    const parts = latestStr.split("/"); // mm/dd/yyyy
+    if (parts.length !== 3) return lookback(hist, calDays);
+    const target = new Date(parseInt(parts[2]), parseInt(parts[0]) - 1, parseInt(parts[1]));
+    target.setDate(target.getDate() - calDays);
+    // Walk backwards to find nearest record on or before target
+    for (let i = hist.dates.length - 1; i >= 0; i--) {
+      const dp = hist.dates[i].split("/");
+      const d = new Date(parseInt(dp[2]), parseInt(dp[0]) - 1, parseInt(dp[1]));
+      if (d <= target) return { val: hist.values[i], date: hist.dates[i] };
+    }
+    return { val: null, date: null };
+  }
+  const choiceHist = buildHistory(function(r) { return r.beef && r.beef.choice; });
+  const selectHist = buildHistory(function(r) { return r.beef && r.beef.select; });
+  const compHist = buildHistory(function(r) {
+    if (r.beef_comp_cutout && r.beef_comp_cutout.cutout != null) return r.beef_comp_cutout.cutout;
+    if (r.beef && r.beef.comp != null) return r.beef.comp;
+    return null;
+  });
+  const choiceLastDate = choiceHist.dates.length > 0 ? choiceHist.dates[choiceHist.dates.length - 1] : null;
+  const compLastDate = compHist.dates.length > 0 ? compHist.dates[compHist.dates.length - 1] : null;
+  const choicePD = lookback(choiceHist, 1);
+  const choicePW = lookbackByCalendarDays(choiceHist, 7);
+  const choicePY = lookbackByCalendarDays(choiceHist, 365);
+  const selectPD = lookback(selectHist, 1);
+  const selectPW = lookbackByCalendarDays(selectHist, 7);
+  const selectPY = lookbackByCalendarDays(selectHist, 365);
+  const compPD = lookback(compHist, 1);
+  const compPW = lookbackByCalendarDays(compHist, 7);
+  const compPY = lookbackByCalendarDays(compHist, 365);
+  // Spread comparisons: paired differences using same lookback dates
+  const sub = function(a, b) { return (a != null && b != null) ? (a - b) : null; };
+  const spreadPD = { val: sub(choicePD.val, selectPD.val), date: choicePD.date };
+  const spreadPW = { val: sub(choicePW.val, selectPW.val), date: choicePW.date };
+  const spreadPY = { val: sub(choicePY.val, selectPY.val), date: choicePY.date };
+  // Format date "04/30/2026" → "Apr 30"
+  function fmtMD(d) {
+    if (!d) return "";
+    const p = d.split("/");
+    if (p.length !== 3) return d;
+    const m = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][parseInt(p[0]) - 1] || "";
+    return m + " " + parseInt(p[1]);
+  }
+
+  const CutoutCard = ({ label, cur, asOfDate, pd, pw, py }) => {
+    const diffLine = function(lbl, comp) {
+      if (cur == null || !comp || comp.val == null) return null;
+      const diff = Math.round((cur - comp.val) * 100) / 100;
+      const col = diff > 0 ? "#639922" : diff < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
+      return (<div key={lbl} style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, padding: "1px 0" }}>
+        <span style={{ color: "var(--color-text-tertiary)" }}>{lbl} <span style={{ color: "var(--color-text-tertiary)", opacity: 0.7 }}>({fmtMD(comp.date)})</span></span>
+        <span style={{ display: "flex", gap: 4, alignItems: "baseline" }}>
+          <span style={{ color: "var(--color-text-secondary)", textAlign: "right", minWidth: 56 }}>{comp.val.toFixed(2)}</span>
+          <span style={{ color: col, fontWeight: 500, fontFamily: "var(--font-mono)", textAlign: "right", minWidth: 56 }}>({diff > 0 ? "+" : ""}{diff.toFixed(2)})</span>
+        </span>
+      </div>);
+    };
+    return (<div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px", minWidth: 0 }}>
       <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.4px" }}>{label} <span style={{ textTransform: "none", letterSpacing: 0 }}>($/cwt)</span></div>
-      <div style={{ fontSize: 20, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 4 }}>{cur != null ? cur.toFixed(2) : "—"}</div>
-      {chg != null && (
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--color-text-tertiary)" }}>
-          <span>vs. prev ({prev != null ? prev.toFixed(2) : "—"})</span>
-          <span style={{ fontWeight: 500, fontFamily: "var(--font-mono)", color: chg > 0 ? "#639922" : chg < 0 ? "#A32D2D" : "var(--color-text-tertiary)" }}>
-            {chg > 0 ? "+" : ""}{chg.toFixed(2)}
-          </span>
-        </div>
-      )}
-    </div>
-  );
+      <div style={{ fontSize: 22, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 2 }}>{cur != null ? cur.toFixed(2) : "—"}</div>
+      {asOfDate && <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", marginBottom: 6 }}>as of {fmtMD(asOfDate)}, {asOfDate.split("/")[2]}</div>}
+      <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 5 }}>
+        {diffLine("vs. prior day", pd)}
+        {diffLine("vs. prior week", pw)}
+        {diffLine("vs. prior year", py)}
+      </div>
+    </div>);
+  };
 
   const tabs = [{ id: "cattle", label: "Beef" }, { id: "hogs", label: "Pork" }];
 
@@ -2720,21 +2823,21 @@ function CutoutPage({ ready }) {
     </div>
     {tab === "cattle" && (<div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10, marginBottom: 8 }}>
-        <CutoutCard label="Choice cutout" cur={chCur} prev={chPrev} chg={chChg} />
-        <CutoutCard label="Select cutout" cur={seCur} prev={sePrev} chg={seChg} />
-        <CutoutCard label="Choice–select spread" cur={spreadCur} prev={spreadPrev} chg={spreadChg} />
-        <CutoutCard label="Comprehensive cutout" cur={compCur} prev={compPrev} chg={compChg} />
+        <CutoutCard label="Choice cutout" cur={chCur} asOfDate={choiceLastDate} pd={choicePD} pw={choicePW} py={choicePY} />
+        <CutoutCard label="Select cutout" cur={seCur} asOfDate={choiceLastDate} pd={selectPD} pw={selectPW} py={selectPY} />
+        <CutoutCard label="Choice–select spread" cur={spreadCur} asOfDate={choiceLastDate} pd={spreadPD} pw={spreadPW} py={spreadPY} />
+        <CutoutCard label="Comprehensive cutout" cur={compCur} asOfDate={compLastDate} pd={compPD} pw={compPW} py={compPY} />
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
         <div>
-          <h3 style={{ fontSize: 15, fontWeight: 500, color: "var(--color-text-primary)", margin: "0 0 2px" }}>Choice cutout</h3>
-          {chartMode === "seasonal" && <InteractiveLegend items={seasonLegend} hidden={hCutout} onToggle={tCutout} />}
-          {ready && <ChartBox id={`cut_choice_${period}_${chartMode}`} height={340} renderChart={mkSeasonalChart(cutoutView, hCutout)} deps={`${period}_${chartMode}_${[...hCutout].join()}_${meatData ? "live" : "syn"}`} />}
+          <h3 style={{ fontSize: 15, fontWeight: 500, color: "var(--color-text-primary)", margin: "0 0 12px" }}>Choice cutout</h3>
+          {chartMode === "seasonal" && <InteractiveLegend items={seasonLegend} hidden={hChoice} onToggle={tChoice} />}
+          {ready && <ChartBox id={`cut_choice_${period}_${chartMode}`} height={340} renderChart={mkSeasonalChart(cutoutView, hChoice)} deps={`${period}_${chartMode}_${[...hChoice].join()}_${meatData ? "live" : "syn"}`} />}
         </div>
         <div>
-          <h3 style={{ fontSize: 15, fontWeight: 500, color: "var(--color-text-primary)", margin: "0 0 2px" }}>Comprehensive cutout</h3>
-          {chartMode === "seasonal" && <InteractiveLegend items={seasonLegend} hidden={hCutout} onToggle={tCutout} />}
-          {ready && <ChartBox id={`cut_comp_${period}_${chartMode}`} height={340} renderChart={mkSeasonalChart(compViewData, hCutout)} deps={`comp_${period}_${chartMode}_${[...hCutout].join()}_${meatData ? "live" : "syn"}`} />}
+          <h3 style={{ fontSize: 15, fontWeight: 500, color: "var(--color-text-primary)", margin: "0 0 12px" }}>Comprehensive cutout</h3>
+          {chartMode === "seasonal" && <InteractiveLegend items={seasonLegend} hidden={hComp} onToggle={tComp} />}
+          {ready && <ChartBox id={`cut_comp_${period}_${chartMode}`} height={340} renderChart={mkSeasonalChart(compViewData, hComp)} deps={`comp_${period}_${chartMode}_${[...hComp].join()}_${meatData ? "live" : "syn"}`} />}
         </div>
       </div>
 

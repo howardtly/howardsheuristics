@@ -2238,6 +2238,128 @@ function CutoutPage({ ready }) {
           var lb2 = latestRec.beef;
           var pb = prevRec ? prevRec.beef || {} : {};
 
+          // Helper: build lookup for a cut by name across history
+          // Returns { latest, prevDay, prevWeek, prevMonth, prevYear, latestDate }
+          // sectionGetters is an array of fns (record) -> array of items {name, avg}
+          // matchName normalizes cut names the same way the table uses
+          var _normCut = function(nm) {
+            if (!nm) return nm;
+            return String(nm).replace(/\s*\([^)]+\)/, "").replace(/^\s*\d+[A-Z]?\s+\d\s+/, "").trim();
+          };
+          var _parseDate = function(ds) {
+            if (!ds) return null;
+            var p = ds.split("/");
+            if (p.length !== 3) return null;
+            return new Date(parseInt(p[2]), parseInt(p[0]) - 1, parseInt(p[1]));
+          };
+          var dailyRecs = (meatData.daily || []).slice();
+          // Latest record date
+          var latestRecDate = latestRec ? _parseDate(latestRec.date) : null;
+
+          // Build a fast lookup: for each record, a map of normalized-cut-name -> avg
+          // Used by both beef and pork lookups
+          var _recLookup = function(rec, getSections) {
+            var map = {};
+            if (!rec) return map;
+            getSections.forEach(function(getter) {
+              var arr = getter(rec) || [];
+              arr.forEach(function(it) {
+                if (it && it.name && it.avg != null) {
+                  map[_normCut(it.name)] = it.avg;
+                }
+              });
+            });
+            return map;
+          };
+
+          // Find first record at-or-before targetDate (cal-day lookback)
+          var _findRecAtOrBefore = function(targetDate) {
+            if (!targetDate) return null;
+            for (var i = dailyRecs.length - 1; i >= 0; i--) {
+              var d = _parseDate(dailyRecs[i].date);
+              if (d && d <= targetDate) return dailyRecs[i];
+            }
+            return null;
+          };
+
+          var beefSectionGetters = [
+            function(r) { return (r.beef || {}).choice_cuts; },
+            function(r) { return (r.beef || {}).select_cuts; },
+            function(r) { return (r.beef || {}).choice_select_cuts; },
+            function(r) { return (r.beef || {}).ground_beef; },
+            function(r) { return (r.beef || {}).trimmings_2453; },
+            function(r) { return (r.beef_trimmings || {}).national; },
+          ];
+          var porkSectionGetters = [
+            function(r) { return (r.pork || {}).loin_cuts; },
+            function(r) { return (r.pork || {}).butt_cuts; },
+            function(r) { return (r.pork || {}).picnic_cuts; },
+            function(r) { return (r.pork || {}).ham_cuts; },
+            function(r) { return (r.pork || {}).belly_cuts; },
+            function(r) { return (r.pork || {}).sparerib_cuts; },
+            function(r) { return (r.pork || {}).trim_cuts; },
+            function(r) { return (r.pork || {}).jowl_cuts; },
+            function(r) { return (r.pork || {}).variety_cuts; },
+            function(r) { return (r.pork || {}).added_ingredients_cuts; },
+          ];
+
+          var _lookbackDate = function(days) {
+            if (!latestRecDate) return null;
+            var d = new Date(latestRecDate);
+            d.setDate(d.getDate() - days);
+            return d;
+          };
+          var prevDayRec = dailyRecs.length >= 2 ? dailyRecs[dailyRecs.length - 2] : null;
+          var prevWeekRec = _findRecAtOrBefore(_lookbackDate(7));
+          var prevMonthRec = _findRecAtOrBefore(_lookbackDate(30));
+          var prevYearRec = _findRecAtOrBefore(_lookbackDate(365));
+
+          // Pre-build cut maps for each lookback record (beef + pork share these via different getters)
+          var beefMaps = {
+            prevDay: _recLookup(prevDayRec, beefSectionGetters),
+            prevWeek: _recLookup(prevWeekRec, beefSectionGetters),
+            prevMonth: _recLookup(prevMonthRec, beefSectionGetters),
+            prevYear: _recLookup(prevYearRec, beefSectionGetters),
+          };
+          var porkMaps = {
+            prevDay: _recLookup(prevDayRec, porkSectionGetters),
+            prevWeek: _recLookup(prevWeekRec, porkSectionGetters),
+            prevMonth: _recLookup(prevMonthRec, porkSectionGetters),
+            prevYear: _recLookup(prevYearRec, porkSectionGetters),
+          };
+
+          // Helper: get a cut's lookback values
+          var beefCutHistory = function(cutName) {
+            var n = _normCut(cutName);
+            return {
+              prevDay: beefMaps.prevDay[n] != null ? beefMaps.prevDay[n] : null,
+              prevWeek: beefMaps.prevWeek[n] != null ? beefMaps.prevWeek[n] : null,
+              prevMonth: beefMaps.prevMonth[n] != null ? beefMaps.prevMonth[n] : null,
+              prevYear: beefMaps.prevYear[n] != null ? beefMaps.prevYear[n] : null,
+            };
+          };
+          var porkCutHistory = function(cutName) {
+            var n = _normCut(cutName);
+            return {
+              prevDay: porkMaps.prevDay[n] != null ? porkMaps.prevDay[n] : null,
+              prevWeek: porkMaps.prevWeek[n] != null ? porkMaps.prevWeek[n] : null,
+              prevMonth: porkMaps.prevMonth[n] != null ? porkMaps.prevMonth[n] : null,
+              prevYear: porkMaps.prevYear[n] != null ? porkMaps.prevYear[n] : null,
+            };
+          };
+          // Format lookback dates for column headers
+          var fmtDateMD = function(rec) {
+            if (!rec) return "—";
+            var d = _parseDate(rec.date);
+            if (!d) return "—";
+            var mo = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()];
+            return mo + " " + d.getDate();
+          };
+          var prevDayLabel = fmtDateMD(prevDayRec);
+          var prevWeekLabel = fmtDateMD(prevWeekRec);
+          var prevMonthLabel = fmtDateMD(prevMonthRec);
+          var prevYearLabel2 = fmtDateMD(prevYearRec);
+
           // Build primal lookup from latest primals
           var primals = lb2.primals || {};
           var prevPrimals = pb.primals || {};
@@ -2247,6 +2369,22 @@ function CutoutPage({ ready }) {
             var pp = prevPrimals[name] || {};
             beefPrimalRows[name] = { latest: p.choice, prev: pp.choice };
           });
+
+          // Beef primal historical lookback (uses choice cutout from primals)
+          var _beefPrimalAt = function(rec, primalName) {
+            if (!rec || !rec.beef || !rec.beef.primals) return null;
+            var p = rec.beef.primals[primalName];
+            if (!p) return null;
+            return p.choice != null ? p.choice : (p.cutout != null ? p.cutout : null);
+          };
+          var beefPrimalHistory = function(primalName) {
+            return {
+              prevDay: _beefPrimalAt(prevDayRec, primalName),
+              prevWeek: _beefPrimalAt(prevWeekRec, primalName),
+              prevMonth: _beefPrimalAt(prevMonthRec, primalName),
+              prevYear: _beefPrimalAt(prevYearRec, primalName),
+            };
+          };
 
           // ── Beef cut mapping per RJO/USDA Meat Deli Planning Guide ──
           // IMPS codes that appear in the guide, mapped to primal
@@ -2292,11 +2430,13 @@ function CutoutPage({ ready }) {
             if (!primal) return; // Not in planning guide, skip
             var shortName = name.replace(/\s*\([^)]+\)/, "").trim();
             var prevCut = (pb.choice_cuts || []).find(function(pc) { return pc.name === cut.name; });
+            var _hist1 = beefCutHistory(shortName);
             beefCutRows.push({
               name: shortName, primal: primal, item: imps,
               loads: cut.trades || null, lbs: cut.lbs || null,
               latest: cut.avg, low: cut.low, high: cut.high,
-              prev: prevCut ? prevCut.avg : null
+              prev: prevCut ? prevCut.avg : null,
+              prevDay: _hist1.prevDay, prevWeek: _hist1.prevWeek, prevMonth: _hist1.prevMonth, prevYear: _hist1.prevYear
             });
           });
 
@@ -2320,11 +2460,13 @@ function CutoutPage({ ready }) {
             }
             var shortName = name.replace(/\s*\([^)]+\)/, "").replace(/^\s*\d+[A-Z]?\s+\d\s+/, "").trim();
             var prevCut = (pb.choice_select_cuts || []).find(function(pc) { return pc.name === cut.name; });
+            var _hist1 = beefCutHistory(shortName);
             beefCutRows.push({
               name: shortName, primal: primal, item: imps,
               loads: cut.trades || null, lbs: cut.lbs || null,
               latest: cut.avg, low: cut.low, high: cut.high,
-              prev: prevCut ? prevCut.avg : null
+              prev: prevCut ? prevCut.avg : null,
+              prevDay: _hist1.prevDay, prevWeek: _hist1.prevWeek, prevMonth: _hist1.prevMonth, prevYear: _hist1.prevYear
             });
           });
 
@@ -2346,10 +2488,12 @@ function CutoutPage({ ready }) {
           (lb2.ground_beef || []).forEach(function(g) {
             if (!g.avg) return;
             var prevG = (pb.ground_beef || []).find(function(pg) { return pg.name === g.name; });
+            var _hist3 = beefCutHistory(g.name);
             beefCutRows.push({
               name: g.name, primal: "Trim", item: "",
               loads: g.trades || null, lbs: g.lbs || null,
-              latest: g.avg, prev: prevG ? prevG.avg : null
+              latest: g.avg, prev: prevG ? prevG.avg : null,
+              prevDay: _hist3.prevDay, prevWeek: _hist3.prevWeek, prevMonth: _hist3.prevMonth, prevYear: _hist3.prevYear
             });
           });
 
@@ -2357,10 +2501,12 @@ function CutoutPage({ ready }) {
           (lb2.trimmings_2453 || []).forEach(function(t) {
             if (!t.avg) return;
             var prevT = (pb.trimmings_2453 || []).find(function(pt) { return pt.name === t.name; });
+            var _hist45 = beefCutHistory(t.name);
             beefCutRows.push({
               name: t.name, primal: "Trim", item: "",
               loads: t.trades || null, lbs: t.lbs || null,
-              latest: t.avg, prev: prevT ? prevT.avg : null
+              latest: t.avg, prev: prevT ? prevT.avg : null,
+              prevDay: _hist45.prevDay, prevWeek: _hist45.prevWeek, prevMonth: _hist45.prevMonth, prevYear: _hist45.prevYear
             });
           });
 
@@ -2370,10 +2516,12 @@ function CutoutPage({ ready }) {
           (bt.national || []).forEach(function(t) {
             if (!t.avg) return;
             var prevT = (btPrev.national || []).find(function(pt) { return pt.name === t.name; });
+            var _hist45 = beefCutHistory(t.name);
             beefCutRows.push({
               name: t.name, primal: "Trim", item: "",
               loads: t.trades || null, lbs: t.lbs || null,
-              latest: t.avg, prev: prevT ? prevT.avg : null
+              latest: t.avg, prev: prevT ? prevT.avg : null,
+              prevDay: _hist45.prevDay, prevWeek: _hist45.prevWeek, prevMonth: _hist45.prevMonth, prevYear: _hist45.prevYear
             });
           });
 
@@ -2387,6 +2535,22 @@ function CutoutPage({ ready }) {
         if (latestRec && latestRec.pork) {
           var lp2 = latestRec.pork;
           var pp2 = prevRec ? prevRec.pork || {} : {};
+
+          // Pork primal historical lookback
+          var _porkPrimalAt = function(rec, primalName) {
+            if (!rec || !rec.pork) return null;
+            var key = primalName.toLowerCase();
+            var v = rec.pork[key];
+            return v != null ? v : null;
+          };
+          var porkPrimalHistory = function(primalName) {
+            return {
+              prevDay: _porkPrimalAt(prevDayRec, primalName),
+              prevWeek: _porkPrimalAt(prevWeekRec, primalName),
+              prevMonth: _porkPrimalAt(prevMonthRec, primalName),
+              prevYear: _porkPrimalAt(prevYearRec, primalName),
+            };
+          };
 
           var porkPrimalRows = {};
           ["Loin","Butt","Picnic","Rib","Ham","Belly"].forEach(function(name) {
@@ -2450,11 +2614,13 @@ function CutoutPage({ ready }) {
               if (!guideCut) return; // Not in guide, skip
               if (!cut.avg) return; // No price
               var prevCut = (pp2[secKey] || []).find(function(pc) { return pc.name === cut.name; });
+              var _histp = porkCutHistory(cut.name);
               porkCutRows.push({
                 name: cut.name, primal: guideCut.primal, item: "",
                 loads: null, lbs: cut.lbs || null,
                 latest: cut.avg, low: cut.low, high: cut.high,
-                prev: prevCut ? prevCut.avg : null
+                prev: prevCut ? prevCut.avg : null,
+                prevDay: _histp.prevDay, prevWeek: _histp.prevWeek, prevMonth: _histp.prevMonth, prevYear: _histp.prevYear
               });
             });
           });
@@ -2932,8 +3098,10 @@ function CutoutPage({ ready }) {
               <th style={{ textAlign: "left", padding: "8px 12px", fontWeight: 500, fontSize: 11, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)" }}>Product</th>
               <th style={{ textAlign: "right", padding: "8px 10px", fontWeight: 500, fontSize: 11, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)" }}>Loads</th>
               <th style={{ textAlign: "right", padding: "8px 10px", fontWeight: 500, fontSize: 11, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)" }}>Latest</th>
-              <th style={{ textAlign: "right", padding: "8px 10px", fontWeight: 500, fontSize: 11, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)" }}>{prevLabel}</th>
-              <th style={{ textAlign: "right", padding: "8px 12px", fontWeight: 500, fontSize: 11, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)" }}>{chgLabel}</th>
+              <th style={{ textAlign: "right", padding: "8px 10px", fontWeight: 500, fontSize: 11, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)" }}>Prev day <div style={{ fontSize: 9, fontWeight: 400, color: "var(--color-text-tertiary)", textTransform: "none" }}>{prevDayLabel}</div></th>
+              <th style={{ textAlign: "right", padding: "8px 10px", fontWeight: 500, fontSize: 11, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)" }}>Prev week <div style={{ fontSize: 9, fontWeight: 400, color: "var(--color-text-tertiary)", textTransform: "none" }}>{prevWeekLabel}</div></th>
+              <th style={{ textAlign: "right", padding: "8px 10px", fontWeight: 500, fontSize: 11, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)" }}>Prev month <div style={{ fontSize: 9, fontWeight: 400, color: "var(--color-text-tertiary)", textTransform: "none" }}>{prevMonthLabel}</div></th>
+              <th style={{ textAlign: "right", padding: "8px 12px", fontWeight: 500, fontSize: 11, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)" }}>Prev year <div style={{ fontSize: 9, fontWeight: 400, color: "var(--color-text-tertiary)", textTransform: "none" }}>{prevYearLabel2}</div></th>
             </tr>
           </thead>
           <tbody>
@@ -2957,14 +3125,31 @@ function CutoutPage({ ready }) {
                   </td>
                   <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)" }}></td>
                   <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 500, color: "var(--color-text-primary)" }}>{primalLatest != null ? `${primalLatest.toFixed(2)}` : "—"}</td>
-                  <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-secondary)" }}>{primalPrev != null ? `${primalPrev.toFixed(2)}` : "—"}</td>
-                  <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 500,
-                    color: primalChg != null ? (primalChg > 0 ? "#639922" : primalChg < 0 ? "#A32D2D" : "var(--color-text-tertiary)") : "var(--color-text-tertiary)",
-                  }}>{primalChg != null ? `${primalChg > 0 ? "+" : ""}${primalChg.toFixed(2)}` : "—"}</td>
+                  {(function() {
+                    var hist = (typeof beefPrimalHistory === "function") ? beefPrimalHistory(primalName) : { prevDay: null, prevWeek: null, prevMonth: null, prevYear: null };
+                    var renderCell = function(comp, key, lastCol) {
+                      var pad = lastCol ? "8px 12px" : "8px 10px";
+                      if (primalLatest == null || comp == null) {
+                        return <td key={key} style={{ padding: pad, textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)" }}>—</td>;
+                      }
+                      var d = primalLatest - comp;
+                      var col = d > 0 ? "#639922" : d < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
+                      return (<td key={key} style={{ padding: pad, textAlign: "right", fontFamily: "var(--font-mono)" }}>
+                        <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{comp.toFixed(2)}</div>
+                        <div style={{ fontSize: 9.5, fontWeight: 500, color: col }}>{d > 0 ? "+" : ""}{d.toFixed(2)}</div>
+                      </td>);
+                    };
+                    return [
+                      renderCell(hist.prevDay != null ? hist.prevDay : primalPrev, "pd", false),
+                      renderCell(hist.prevWeek, "pw", false),
+                      renderCell(hist.prevMonth, "pm", false),
+                      renderCell(hist.prevYear, "py", true),
+                    ];
+                  })()}
                 </tr>
                 {isPrimalSelected && (
                   <tr key={`primal-chart-${primalName}`}>
-                    <td colSpan={5} style={{ padding: "12px 16px 16px", background: "var(--color-background-secondary)" }}>
+                    <td colSpan={7} style={{ padding: "12px 16px 16px", background: "var(--color-background-secondary)" }}>
                       <ExpandChartRow
                         chartId={"beefprimal_" + primalName + "_" + period}
                         title={primalName + " primal — seasonal"}
@@ -3007,14 +3192,29 @@ function CutoutPage({ ready }) {
                       </td>
                       <td style={{ padding: "6px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-secondary)" }}>{p.loads != null ? p.loads.toLocaleString() : ""}</td>
                       <td style={{ padding: "6px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 500, color: "var(--color-text-primary)" }}>{latest != null ? `${latest.toFixed(2)}` : "—"}</td>
-                      <td style={{ padding: "6px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-secondary)" }}>{prev != null ? `${prev.toFixed(2)}` : "—"}</td>
-                      <td style={{ padding: "6px 12px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 500,
-                        color: chg != null ? (chg > 0 ? "#639922" : chg < 0 ? "#A32D2D" : "var(--color-text-tertiary)") : "var(--color-text-tertiary)",
-                      }}>{chg != null ? `${chg > 0 ? "+" : ""}${chg.toFixed(2)}` : "—"}</td>
+                      {(function() {
+                        var renderCell = function(comp, key) {
+                          if (latest == null || comp == null) {
+                            return <td key={key} style={{ padding: "6px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)" }}>—</td>;
+                          }
+                          var d = latest - comp;
+                          var col = d > 0 ? "#639922" : d < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
+                          return (<td key={key} style={{ padding: "6px 10px", textAlign: "right", fontFamily: "var(--font-mono)" }}>
+                            <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{comp.toFixed(2)}</div>
+                            <div style={{ fontSize: 9.5, fontWeight: 500, color: col }}>{d > 0 ? "+" : ""}{d.toFixed(2)}</div>
+                          </td>);
+                        };
+                        return [
+                          renderCell(p.prevDay != null ? p.prevDay : prev, "pd"),
+                          renderCell(p.prevWeek, "pw"),
+                          renderCell(p.prevMonth, "pm"),
+                          renderCell(p.prevYear, "py"),
+                        ];
+                      })()}
                     </tr>
                     {isSelected && (
                       <tr key={`chart-beef-${primalName}-${si}`}>
-                        <td colSpan={5} style={{ padding: "12px 16px 16px", background: "var(--color-background-secondary)" }}>
+                        <td colSpan={7} style={{ padding: "12px 16px 16px", background: "var(--color-background-secondary)" }}>
                           <ExpandChartRow
                             chartId={"beefcut_" + primalName + "_" + si + "_" + period}
                             title={(p.name || "") + (p.item ? " (" + p.item + ")" : "")}
@@ -3106,8 +3306,10 @@ function CutoutPage({ ready }) {
               <th style={{ textAlign: "left", padding: "8px 12px", fontWeight: 500, fontSize: 11, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)" }}>Product</th>
               <th style={{ textAlign: "right", padding: "8px 10px", fontWeight: 500, fontSize: 11, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)" }}>Loads</th>
               <th style={{ textAlign: "right", padding: "8px 10px", fontWeight: 500, fontSize: 11, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)" }}>Latest</th>
-              <th style={{ textAlign: "right", padding: "8px 10px", fontWeight: 500, fontSize: 11, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)" }}>{prevLabel}</th>
-              <th style={{ textAlign: "right", padding: "8px 12px", fontWeight: 500, fontSize: 11, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)" }}>{chgLabel}</th>
+              <th style={{ textAlign: "right", padding: "8px 10px", fontWeight: 500, fontSize: 11, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)" }}>Prev day <div style={{ fontSize: 9, fontWeight: 400, color: "var(--color-text-tertiary)", textTransform: "none" }}>{prevDayLabel}</div></th>
+              <th style={{ textAlign: "right", padding: "8px 10px", fontWeight: 500, fontSize: 11, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)" }}>Prev week <div style={{ fontSize: 9, fontWeight: 400, color: "var(--color-text-tertiary)", textTransform: "none" }}>{prevWeekLabel}</div></th>
+              <th style={{ textAlign: "right", padding: "8px 10px", fontWeight: 500, fontSize: 11, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)" }}>Prev month <div style={{ fontSize: 9, fontWeight: 400, color: "var(--color-text-tertiary)", textTransform: "none" }}>{prevMonthLabel}</div></th>
+              <th style={{ textAlign: "right", padding: "8px 12px", fontWeight: 500, fontSize: 11, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)" }}>Prev year <div style={{ fontSize: 9, fontWeight: 400, color: "var(--color-text-tertiary)", textTransform: "none" }}>{prevYearLabel2}</div></th>
             </tr>
           </thead>
           <tbody>
@@ -3131,14 +3333,31 @@ function CutoutPage({ ready }) {
                   </td>
                   <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)" }}></td>
                   <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 500, color: "var(--color-text-primary)" }}>{primalLatest != null ? `${primalLatest.toFixed(2)}` : "—"}</td>
-                  <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-secondary)" }}>{primalPrev != null ? `${primalPrev.toFixed(2)}` : "—"}</td>
-                  <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 500,
-                    color: primalChg != null ? (primalChg > 0 ? "#639922" : primalChg < 0 ? "#A32D2D" : "var(--color-text-tertiary)") : "var(--color-text-tertiary)",
-                  }}>{primalChg != null ? `${primalChg > 0 ? "+" : ""}${primalChg.toFixed(2)}` : "—"}</td>
+                  {(function() {
+                    var hist = (typeof porkPrimalHistory === "function") ? porkPrimalHistory(primalName) : { prevDay: null, prevWeek: null, prevMonth: null, prevYear: null };
+                    var renderCell = function(comp, key, lastCol) {
+                      var pad = lastCol ? "8px 12px" : "8px 10px";
+                      if (primalLatest == null || comp == null) {
+                        return <td key={key} style={{ padding: pad, textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)" }}>—</td>;
+                      }
+                      var d = primalLatest - comp;
+                      var col = d > 0 ? "#639922" : d < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
+                      return (<td key={key} style={{ padding: pad, textAlign: "right", fontFamily: "var(--font-mono)" }}>
+                        <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{comp.toFixed(2)}</div>
+                        <div style={{ fontSize: 9.5, fontWeight: 500, color: col }}>{d > 0 ? "+" : ""}{d.toFixed(2)}</div>
+                      </td>);
+                    };
+                    return [
+                      renderCell(hist.prevDay != null ? hist.prevDay : primalPrev, "pd", false),
+                      renderCell(hist.prevWeek, "pw", false),
+                      renderCell(hist.prevMonth, "pm", false),
+                      renderCell(hist.prevYear, "py", true),
+                    ];
+                  })()}
                 </tr>
                 {isPorkPrimalSelected && (
                   <tr key={`pork-primal-chart-${primalName}`}>
-                    <td colSpan={5} style={{ padding: "12px 16px 16px", background: "var(--color-background-secondary)" }}>
+                    <td colSpan={7} style={{ padding: "12px 16px 16px", background: "var(--color-background-secondary)" }}>
                       <ExpandChartRow
                         chartId={"porkprimal_" + primalName + "_" + period}
                         title={primalName + " primal — seasonal"}
@@ -3181,14 +3400,29 @@ function CutoutPage({ ready }) {
                       </td>
                       <td style={{ padding: "6px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-secondary)" }}>{p.loads != null ? p.loads.toLocaleString() : ""}</td>
                       <td style={{ padding: "6px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 500, color: "var(--color-text-primary)" }}>{latest != null ? `${latest.toFixed(2)}` : "—"}</td>
-                      <td style={{ padding: "6px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-secondary)" }}>{prev != null ? `${prev.toFixed(2)}` : "—"}</td>
-                      <td style={{ padding: "6px 12px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 500,
-                        color: chg != null ? (chg > 0 ? "#639922" : chg < 0 ? "#A32D2D" : "var(--color-text-tertiary)") : "var(--color-text-tertiary)",
-                      }}>{chg != null ? `${chg > 0 ? "+" : ""}${chg.toFixed(2)}` : "—"}</td>
+                      {(function() {
+                        var renderCell = function(comp, key) {
+                          if (latest == null || comp == null) {
+                            return <td key={key} style={{ padding: "6px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)" }}>—</td>;
+                          }
+                          var d = latest - comp;
+                          var col = d > 0 ? "#639922" : d < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
+                          return (<td key={key} style={{ padding: "6px 10px", textAlign: "right", fontFamily: "var(--font-mono)" }}>
+                            <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>{comp.toFixed(2)}</div>
+                            <div style={{ fontSize: 9.5, fontWeight: 500, color: col }}>{d > 0 ? "+" : ""}{d.toFixed(2)}</div>
+                          </td>);
+                        };
+                        return [
+                          renderCell(p.prevDay != null ? p.prevDay : prev, "pd"),
+                          renderCell(p.prevWeek, "pw"),
+                          renderCell(p.prevMonth, "pm"),
+                          renderCell(p.prevYear, "py"),
+                        ];
+                      })()}
                     </tr>
                     {isSelected && (
                       <tr key={`chart-pork-${primalName}-${si}`}>
-                        <td colSpan={5} style={{ padding: "12px 16px 16px", background: "var(--color-background-secondary)" }}>
+                        <td colSpan={7} style={{ padding: "12px 16px 16px", background: "var(--color-background-secondary)" }}>
                           <ExpandChartRow
                             chartId={"porkcut_" + primalName + "_" + si + "_" + period}
                             title={p.name || ""}

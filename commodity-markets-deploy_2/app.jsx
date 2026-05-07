@@ -1643,6 +1643,7 @@ function CattleOnFeedPage({ ready }) {
   const [range, setRange] = useState("5");
   const [monthFilter, setMonthFilter] = useState("all");
   const [heifersMonth, setHeifersMonth] = useState("all");
+  const [heifersRange, setHeifersRange] = useState("5");
   const [hiddenYrs, setHiddenYrs] = useState(new Set());
 
   useEffect(function() { setHiddenYrs(new Set()); }, [mode, range, monthFilter]);
@@ -1739,15 +1740,23 @@ function CattleOnFeedPage({ ready }) {
   const hfStats = headerStats("heifersOnFeed");
 
   // ── Chart builder ──
-  function mkCofChart(sid, isPct, modeOverride, monthFilterOverride) {
+  function mkCofChart(sid, isPct, modeOverride, monthFilterOverride, rangeOverride) {
     return function(canvas) {
       if (!cofData || !cofData.series[sid]) return;
       const series = cofData.series[sid].years;
       const effMode = modeOverride || mode;
       const effMonthFilter = monthFilterOverride !== undefined ? monthFilterOverride : monthFilter;
+      const effRange = rangeOverride !== undefined ? rangeOverride : range;
+      // Compute display years for THIS chart based on effRange
+      let chartDisplayYears = availYears;
+      if (effRange !== "all") {
+        const n = parseInt(effRange);
+        chartDisplayYears = availYears.filter(function(y) { return y >= curYear - n; });
+      }
+      const chartYearsAsc = chartDisplayYears.slice().sort(function(a, b) { return a - b; });
 
       if (effMode === "seasonal") {
-        const datasets = displayYearsAsc.map(function(yr) {
+        const datasets = chartYearsAsc.map(function(yr) {
           const data = series[String(yr)] || [];
           return {
             label: String(yr),
@@ -1793,7 +1802,7 @@ function CattleOnFeedPage({ ready }) {
         });
       } else {
         // Contiguous mode
-        const yearsVisible = displayYearsAsc.filter(function(yr) { return !hiddenYrs.has(String(yr)); });
+        const yearsVisible = chartYearsAsc.filter(function(yr) { return !hiddenYrs.has(String(yr)); });
         if (yearsVisible.length === 0) {
           new Chart(canvas, { type: "line", data: { labels: [], datasets: [] }, options: { responsive: true, maintainAspectRatio: false } });
           return;
@@ -1840,7 +1849,7 @@ function CattleOnFeedPage({ ready }) {
             data: allPoints,
             borderColor: "#2563EB",
             borderWidth: 1.8,
-            pointRadius: effMonthFilter === "all" ? 0 : 3,
+            pointRadius: 0,
             tension: 0,
             spanGaps: true,
             fill: false,
@@ -2001,27 +2010,41 @@ function CattleOnFeedPage({ ready }) {
     {/* 2x2 chart grid */}
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
       {CHARTS.map(function(ch) {
-        // Heifers chart is always contiguous with its own month filter (Jan/Apr/Jul/Oct or all)
+        // Heifers chart is always contiguous with its own month filter and range
         const isHeifers = ch.key === "heifersOnFeed";
         const chMode = isHeifers ? "contiguous" : mode;
         const chMonth = isHeifers ? heifersMonth : monthFilter;
+        const chRange = isHeifers ? heifersRange : range;
+        const dropSt = { padding: "4px 22px 4px 8px", fontSize: 12, fontWeight: 500, border: "1px solid var(--color-border-secondary)", borderRadius: 4, background: "var(--color-background-primary)", color: "var(--color-text-primary)", fontFamily: "inherit", cursor: "pointer", appearance: "none", backgroundImage: "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 12 12'><path d='M3 4.5l3 3 3-3' stroke='%23666' stroke-width='1.5' fill='none'/></svg>\")", backgroundRepeat: "no-repeat", backgroundPosition: "right 6px center" };
+        const lblSt = { fontSize: 10, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.4px" };
         return (<div key={ch.key}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6, gap: 8, flexWrap: "wrap" }}>
             <div style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text-primary)" }}>{ch.label} <span style={{ fontSize: 11, fontWeight: 400, color: "var(--color-text-tertiary)" }}>({ch.yLabel})</span></div>
             {isHeifers && (
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <span style={{ fontSize: 10, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.4px" }}>Quarter</span>
-                <select value={heifersMonth} onChange={function(e){ setHeifersMonth(e.target.value); }} style={{ padding: "4px 22px 4px 8px", fontSize: 12, fontWeight: 500, border: "1px solid var(--color-border-secondary)", borderRadius: 4, background: "var(--color-background-primary)", color: "var(--color-text-primary)", fontFamily: "inherit", cursor: "pointer", appearance: "none", backgroundImage: "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 12 12'><path d='M3 4.5l3 3 3-3' stroke='%23666' stroke-width='1.5' fill='none'/></svg>\")", backgroundRepeat: "no-repeat", backgroundPosition: "right 6px center" }}>
-                  <option value="all">All</option>
-                  <option value="Jan">Jan</option>
-                  <option value="Apr">Apr</option>
-                  <option value="Jul">Jul</option>
-                  <option value="Oct">Oct</option>
-                </select>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={lblSt}>Range</span>
+                  <select value={heifersRange} onChange={function(e){ setHeifersRange(e.target.value); }} style={dropSt}>
+                    <option value="3">3 Year</option>
+                    <option value="5">5 Year</option>
+                    <option value="10">10 Year</option>
+                    <option value="all">All</option>
+                  </select>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={lblSt}>Quarter</span>
+                  <select value={heifersMonth} onChange={function(e){ setHeifersMonth(e.target.value); }} style={dropSt}>
+                    <option value="all">All</option>
+                    <option value="Jan">Jan</option>
+                    <option value="Apr">Apr</option>
+                    <option value="Jul">Jul</option>
+                    <option value="Oct">Oct</option>
+                  </select>
+                </div>
               </div>
             )}
           </div>
-          {ready && <ChartBox id={"cof_" + ch.key + "_" + chMode + "_" + range + "_" + chMonth + "_" + hk} height={240} renderChart={mkCofChart(ch.key, ch.isPct, chMode, chMonth)} deps={"cof_" + ch.key + "_" + chMode + "_" + range + "_" + chMonth + "_" + hk + "_" + cofLoaded} />}
+          {ready && <ChartBox id={"cof_" + ch.key + "_" + chMode + "_" + chRange + "_" + chMonth + "_" + hk} height={240} renderChart={mkCofChart(ch.key, ch.isPct, chMode, chMonth, chRange)} deps={"cof_" + ch.key + "_" + chMode + "_" + chRange + "_" + chMonth + "_" + hk + "_" + cofLoaded} />}
         </div>);
       })}
     </div>

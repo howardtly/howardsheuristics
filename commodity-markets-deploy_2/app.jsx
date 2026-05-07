@@ -1296,6 +1296,45 @@ function InteractiveLegend({ items, hidden, onToggle }) {
   );
 }
 
+// ── Global date formatters ──
+// Centralized date formatting to ensure consistency across all pages.
+// Use fmtDate() for short dates (e.g., "Apr 21, 2026")
+// Use fmtDateLong() for long dates (e.g., "April 21, 2026")
+const _MONTHS_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const _MONTHS_LONG = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+function _parseAnyDate(input) {
+  if (!input) return null;
+  if (input instanceof Date) return isNaN(input) ? null : input;
+  const s = String(input).trim();
+  // ISO format YYYY-MM-DD
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]));
+  // US format MM/DD/YYYY or M/D/YYYY
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (m) return new Date(parseInt(m[3]), parseInt(m[1]) - 1, parseInt(m[2]));
+  // Fall back to native parse (handles "May 6, 2025", etc.)
+  const d = new Date(s);
+  return isNaN(d) ? null : d;
+}
+function fmtDate(input) {
+  const d = _parseAnyDate(input);
+  if (!d) return "";
+  return _MONTHS_SHORT[d.getMonth()] + " " + d.getDate() + ", " + d.getFullYear();
+}
+function fmtDateLong(input) {
+  const d = _parseAnyDate(input);
+  if (!d) return "";
+  return _MONTHS_LONG[d.getMonth()] + " " + d.getDate() + ", " + d.getFullYear();
+}
+function fmtDateRange(start, end, long) {
+  const fmt = long ? fmtDateLong : fmtDate;
+  const s = fmt(start), e = fmt(end);
+  if (!s && !e) return "";
+  if (!s) return e;
+  if (!e) return s;
+  return s + " – " + e;
+}
+
 function useToggle() {
   const [hidden, setHidden] = useState(new Set());
   const toggle = useCallback((key) => { setHidden(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; }); }, []);
@@ -2282,27 +2321,6 @@ function CutoutPage({ ready }) {
             return null;
           };
 
-          var beefSectionGetters = [
-            function(r) { return (r.beef || {}).choice_cuts; },
-            function(r) { return (r.beef || {}).select_cuts; },
-            function(r) { return (r.beef || {}).choice_select_cuts; },
-            function(r) { return (r.beef || {}).ground_beef; },
-            function(r) { return (r.beef || {}).trimmings_2453; },
-            function(r) { return (r.beef_trimmings || {}).national; },
-          ];
-          var porkSectionGetters = [
-            function(r) { return (r.pork || {}).loin_cuts; },
-            function(r) { return (r.pork || {}).butt_cuts; },
-            function(r) { return (r.pork || {}).picnic_cuts; },
-            function(r) { return (r.pork || {}).ham_cuts; },
-            function(r) { return (r.pork || {}).belly_cuts; },
-            function(r) { return (r.pork || {}).sparerib_cuts; },
-            function(r) { return (r.pork || {}).trim_cuts; },
-            function(r) { return (r.pork || {}).jowl_cuts; },
-            function(r) { return (r.pork || {}).variety_cuts; },
-            function(r) { return (r.pork || {}).added_ingredients_cuts; },
-          ];
-
           var _lookbackDate = function(days) {
             if (!latestRecDate) return null;
             var d = new Date(latestRecDate);
@@ -2314,46 +2332,62 @@ function CutoutPage({ ready }) {
           var prevMonthRec = _findRecAtOrBefore(_lookbackDate(30));
           var prevYearRec = _findRecAtOrBefore(_lookbackDate(365));
 
-          // Pre-build cut maps for each lookback record (beef + pork share these via different getters)
-          var beefMaps = {
-            prevDay: _recLookup(prevDayRec, beefSectionGetters),
-            prevWeek: _recLookup(prevWeekRec, beefSectionGetters),
-            prevMonth: _recLookup(prevMonthRec, beefSectionGetters),
-            prevYear: _recLookup(prevYearRec, beefSectionGetters),
+          // Helper: convert a Date to a "M/D" label matching seasonal.dates format
+          var _dateToMD = function(d) {
+            if (!d) return null;
+            return (d.getMonth() + 1) + "/" + d.getDate();
           };
-          var porkMaps = {
-            prevDay: _recLookup(prevDayRec, porkSectionGetters),
-            prevWeek: _recLookup(prevWeekRec, porkSectionGetters),
-            prevMonth: _recLookup(prevMonthRec, porkSectionGetters),
-            prevYear: _recLookup(prevYearRec, porkSectionGetters),
+          var _dateToYear = function(d) { return d ? d.getFullYear() : null; };
+
+          // Look up a cut value at a target Date using seasonal data
+          // Walks backwards through seasonal.dates if exact date not found (handles weekends/holidays)
+          var seasonalLookup = function(cutMapKey, cutName, targetDate) {
+            if (!targetDate || !meatData || !meatData.seasonal || !meatData.seasonal.years) return null;
+            var n = _normCut(cutName);
+            var targetYear = targetDate.getFullYear();
+            var targetMD = _dateToMD(targetDate);
+            // Search the year matching targetDate first; fall back across year boundaries
+            for (var attempt = 0; attempt < 30; attempt++) {
+              // attempt counts days walked back from targetDate
+              var trial = new Date(targetDate);
+              trial.setDate(trial.getDate() - attempt);
+              var y = trial.getFullYear();
+              var md = _dateToMD(trial);
+              var yd = meatData.seasonal.years.find(function(sy) { return sy.year === y; });
+              if (!yd) continue;
+              var dates = yd.dates || [];
+              var cuts = yd[cutMapKey];
+              if (!cuts || !cuts[n]) continue;
+              // Find this date's index. dates are like "1/4", "1/5", ...
+              var idx = dates.indexOf(md);
+              if (idx < 0) continue;
+              var v = cuts[n][idx];
+              if (v != null) return v;
+            }
+            return null;
           };
 
-          // Helper: get a cut's lookback values
           var beefCutHistory = function(cutName) {
-            var n = _normCut(cutName);
+            var prevDayDate = prevDayRec ? _parseDate(prevDayRec.date) : null;
             return {
-              prevDay: beefMaps.prevDay[n] != null ? beefMaps.prevDay[n] : null,
-              prevWeek: beefMaps.prevWeek[n] != null ? beefMaps.prevWeek[n] : null,
-              prevMonth: beefMaps.prevMonth[n] != null ? beefMaps.prevMonth[n] : null,
-              prevYear: beefMaps.prevYear[n] != null ? beefMaps.prevYear[n] : null,
+              prevDay: seasonalLookup("cuts_beef", cutName, prevDayDate),
+              prevWeek: seasonalLookup("cuts_beef", cutName, _lookbackDate(7)),
+              prevMonth: seasonalLookup("cuts_beef", cutName, _lookbackDate(30)),
+              prevYear: seasonalLookup("cuts_beef", cutName, _lookbackDate(365)),
             };
           };
           var porkCutHistory = function(cutName) {
-            var n = _normCut(cutName);
+            var prevDayDate = prevDayRec ? _parseDate(prevDayRec.date) : null;
             return {
-              prevDay: porkMaps.prevDay[n] != null ? porkMaps.prevDay[n] : null,
-              prevWeek: porkMaps.prevWeek[n] != null ? porkMaps.prevWeek[n] : null,
-              prevMonth: porkMaps.prevMonth[n] != null ? porkMaps.prevMonth[n] : null,
-              prevYear: porkMaps.prevYear[n] != null ? porkMaps.prevYear[n] : null,
+              prevDay: seasonalLookup("cuts_pork", cutName, prevDayDate),
+              prevWeek: seasonalLookup("cuts_pork", cutName, _lookbackDate(7)),
+              prevMonth: seasonalLookup("cuts_pork", cutName, _lookbackDate(30)),
+              prevYear: seasonalLookup("cuts_pork", cutName, _lookbackDate(365)),
             };
           };
-          // Format lookback dates for column headers
+          // Format lookback dates for column headers — uses global fmtDate ("Apr 21, 2026")
           var fmtDateMD = function(rec) {
-            if (!rec) return "—";
-            var d = _parseDate(rec.date);
-            if (!d) return "—";
-            var mo = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()];
-            return mo + " " + d.getDate();
+            return rec ? fmtDate(rec.date) : "—";
           };
           var prevDayLabel = fmtDateMD(prevDayRec);
           var prevWeekLabel = fmtDateMD(prevWeekRec);
@@ -2968,14 +3002,8 @@ function CutoutPage({ ready }) {
   const spreadPD = { val: sub(choicePD.val, selectPD.val), date: choicePD.date };
   const spreadPW = { val: sub(choicePW.val, selectPW.val), date: choicePW.date };
   const spreadPY = { val: sub(choicePY.val, selectPY.val), date: choicePY.date };
-  // Format date "04/30/2026" → "Apr 30"
-  function fmtMD(d) {
-    if (!d) return "";
-    const p = d.split("/");
-    if (p.length !== 3) return d;
-    const m = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][parseInt(p[0]) - 1] || "";
-    return m + " " + parseInt(p[1]);
-  }
+  // Format date "04/30/2026" → "Apr 30, 2026" via global fmtDate
+  const fmtMD = fmtDate;
 
   const CutoutCard = ({ label, cur, asOfDate, pd, pw, py }) => {
     const diffLine = function(lbl, comp) {
@@ -2993,7 +3021,7 @@ function CutoutPage({ ready }) {
     return (<div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px", minWidth: 0 }}>
       <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.4px" }}>{label} <span style={{ textTransform: "none", letterSpacing: 0 }}>($/cwt)</span></div>
       <div style={{ fontSize: 22, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 2 }}>{cur != null ? cur.toFixed(2) : "—"}</div>
-      {asOfDate && <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", marginBottom: 6 }}>as of {fmtMD(asOfDate)}, {asOfDate.split("/")[2]}</div>}
+      {asOfDate && <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", marginBottom: 6 }}>as of {fmtMD(asOfDate)}</div>}
       <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 5 }}>
         {diffLine("vs. prior day", pd)}
         {diffLine("vs. prior week", pw)}
@@ -4060,7 +4088,7 @@ function CropProgressPage({ ready }) {
     return (<div style={{background:"var(--color-background-secondary)",borderRadius:"var(--border-radius-md)",padding:"12px 14px",minWidth:0}}>
       <div style={{fontSize:11,color:"var(--color-text-secondary)",marginBottom:3,textTransform:"uppercase",letterSpacing:"0.4px"}}>{label}</div>
       <div style={{fontSize:22,fontWeight:500,color:"var(--color-text-primary)",marginBottom:4}}>{info.cur != null ? info.cur+"%" : "—"}</div>
-      {info.date && <div style={{fontSize:10,color:"var(--color-text-tertiary)",marginBottom:6}}>as of Week #{info.wk} (~{info.date})</div>}
+      {info.date && <div style={{fontSize:10,color:"var(--color-text-tertiary)",marginBottom:6}}>as of Week #{info.wk} (~{fmtDate(info.date)})</div>}
       <div style={{borderTop:"0.5px solid var(--color-border-tertiary)",paddingTop:5}}>
         {diffLine("vs. last week", info.prevWk)}
         {diffLine("vs. last year", info.prev)}
@@ -4403,7 +4431,7 @@ function EthanolPage({ ready }) {
     return (<div style={{background:"var(--color-background-secondary)",borderRadius:"var(--border-radius-md)",padding:"12px 14px",minWidth:0}}>
       <div style={{fontSize:11,color:"var(--color-text-secondary)",marginBottom:3,textTransform:"uppercase",letterSpacing:"0.4px"}}>{label}</div>
       <div style={{fontSize:22,fontWeight:500,color:"var(--color-text-primary)",marginBottom:2}}>{info.cur != null ? (isGal ? info.cur.toLocaleString(undefined, {minimumFractionDigits:1, maximumFractionDigits:1}) : info.cur.toLocaleString()) : "—"}<span style={{fontSize:12,fontWeight:400,color:"var(--color-text-secondary)",marginLeft:4}}>{unitLabel}</span></div>
-      {info.date && <div style={{fontSize:10,color:"var(--color-text-tertiary)",marginBottom:6}}>as of {info.date}</div>}
+      {info.date && <div style={{fontSize:10,color:"var(--color-text-tertiary)",marginBottom:6}}>as of {fmtDate(info.date)}</div>}
       <div style={{borderTop:"0.5px solid var(--color-border-tertiary)",paddingTop:5}}>
         {diffLine("vs. last week", info.prevWk)}
         {diffLine("vs. last year", info.lastYr)}
@@ -4714,7 +4742,7 @@ function FatsOilsPage({ ready }) {
     return (<div style={{background:"var(--color-background-secondary)",borderRadius:"var(--border-radius-md)",padding:"12px 14px",minWidth:0}}>
       <div style={{fontSize:11,color:"var(--color-text-secondary)",marginBottom:3,textTransform:"uppercase",letterSpacing:"0.4px"}}>{label}</div>
       <div style={{fontSize:22,fontWeight:500,color:"var(--color-text-primary)",marginBottom:2}}>{info.cur != null ? info.cur.toLocaleString() : "—"}<span style={{fontSize:12,fontWeight:400,color:"var(--color-text-secondary)",marginLeft:4}}>{unitLabel}</span></div>
-      {info.date && <div style={{fontSize:10,color:"var(--color-text-tertiary)",marginBottom:6}}>as of {info.date}</div>}
+      {info.date && <div style={{fontSize:10,color:"var(--color-text-tertiary)",marginBottom:6}}>as of {fmtDate(info.date)}</div>}
       <div style={{borderTop:"0.5px solid var(--color-border-tertiary)",paddingTop:5}}>
         {diffLine("vs. last month", info.prevMo)}
         {diffLine("vs. last year", info.lastYr)}
@@ -5089,10 +5117,10 @@ function COTSummaryPage() {
     downloadCSV("cot_disaggregated_summary.csv", headers, rows);
   };
 
-  // Date range label
+  // Date range label — uses global fmtDateRange for "April 21, 2026 – April 28, 2026"
   const dateLabel = cotMeta && cotMeta.weeks && cotMeta.weeks.length >= 2
-    ? `${cotMeta.weeks[cotMeta.weeks.length - 2]} – ${cotMeta.weeks[cotMeta.weeks.length - 1]}`
-    : "03/03/2026 – 03/10/2026";
+    ? fmtDateRange(cotMeta.weeks[cotMeta.weeks.length - 2], cotMeta.weeks[cotMeta.weeks.length - 1], true)
+    : fmtDateRange("2026-03-03", "2026-03-10", true);
 
   return (<div>
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
@@ -5268,7 +5296,7 @@ function COTDetailPage({ ready, commodityId }) {
   };
 
   return (<div>
-    <div style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginBottom: 14 }}>{d.exchange} — {d.contract} per contract — as of {COT_WEEKS[li]}, 2026</div>
+    <div style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginBottom: 14 }}>{d.exchange} — {d.contract} per contract — as of {fmtDate(COT_WEEKS[li] + ", 2026")}</div>
 
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 8 }}>
       <MetricCard label="Producer net" value={`${(d.producer.net[li] / 1000).toFixed(1)}K`} sub="contracts" />
@@ -6346,7 +6374,7 @@ function DroughtPage({ ready }) {
           <div key={id} style={{background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px", minWidth: 0, borderLeft: "3px solid " + d.color}}>
             <div style={{fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.4px"}}>{d.label}</div>
             <div style={{fontSize: 22, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 4}}>{cur != null ? cur + "%" : "—"}</div>
-            {d.latest_date && <div style={{fontSize: 10, color: "var(--color-text-tertiary)", marginBottom: 6}}>as of {d.latest_date}</div>}
+            {d.latest_date && <div style={{fontSize: 10, color: "var(--color-text-tertiary)", marginBottom: 6}}>as of {fmtDate(d.latest_date)}</div>}
             <div style={{borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 5}}>
               {React.createElement(DiffLine, {label: "vs. last week", comp: prevWk})}
               {React.createElement(DiffLine, {label: "vs. last year", comp: lastYrVal})}
@@ -6557,7 +6585,7 @@ function ExportInspectionsPage({ ready }) {
     return (<div style={{background:"var(--color-background-secondary)",borderRadius:"var(--border-radius-md)",padding:"12px 14px",minWidth:0}}>
       <div style={{fontSize:11,color:"var(--color-text-secondary)",marginBottom:3,textTransform:"uppercase",letterSpacing:"0.4px"}}>{label}</div>
       <div style={{fontSize:22,fontWeight:500,color:"var(--color-text-primary)",marginBottom:2}}>{curVal != null ? (isBu ? curVal.toLocaleString(undefined, {minimumFractionDigits:1, maximumFractionDigits:1}) : curVal.toLocaleString()) : "—"}<span style={{fontSize:12,fontWeight:400,color:"var(--color-text-secondary)",marginLeft:4}}>{unitLabel}</span></div>
-      {cardInfo.date && <div style={{fontSize:10,color:"var(--color-text-tertiary)",marginBottom:6}}>as of {cardInfo.date}</div>}
+      {cardInfo.date && <div style={{fontSize:10,color:"var(--color-text-tertiary)",marginBottom:6}}>as of {fmtDate(cardInfo.date)}</div>}
       <div style={{borderTop:"0.5px solid var(--color-border-tertiary)",paddingTop:5}}>
         {comparisons.map(function(c2, i) {
           if (curVal == null || c2.val == null) return null;
@@ -6862,7 +6890,7 @@ function ExportSalesPage({ ready }) {
     return (<div style={{background:"var(--color-background-secondary)",borderRadius:"var(--border-radius-md)",padding:"12px 14px",minWidth:0}}>
       <div style={{fontSize:11,color:"var(--color-text-secondary)",marginBottom:3,textTransform:"uppercase",letterSpacing:"0.4px"}}>{label}</div>
       <div style={{fontSize:22,fontWeight:500,color:"var(--color-text-primary)",marginBottom:2}}>{fmtVal(info.cur)}<span style={{fontSize:12,fontWeight:400,color:"var(--color-text-secondary)",marginLeft:4}}>{unitLabel}</span></div>
-      {info.date && <div style={{fontSize:10,color:"var(--color-text-tertiary)",marginBottom:6}}>as of {info.date}</div>}
+      {info.date && <div style={{fontSize:10,color:"var(--color-text-tertiary)",marginBottom:6}}>as of {fmtDate(info.date)}</div>}
       <div style={{borderTop:"0.5px solid var(--color-border-tertiary)",paddingTop:5}}>
         {diffLine("vs. last week", info.prevWk)}
         {diffLine("vs. last year", info.lastYr)}

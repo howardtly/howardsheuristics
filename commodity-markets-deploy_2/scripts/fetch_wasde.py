@@ -1252,6 +1252,9 @@ def _parse_grain_page(ws, comm_id, section_marker=None):
     else:
         stop_row = len(all_rows)
 
+    # Debug: log all row labels seen on this page
+    seen_labels = []
+    unmatched_labels = []
     for i in range(header_row_idx + 1, stop_row):
         row = all_rows[i]
         if not row: continue
@@ -1267,12 +1270,15 @@ def _parse_grain_page(ws, comm_id, section_marker=None):
         if label_upper == "TOTAL" and section_marker:
             break
 
+        seen_labels.append(label_raw)
         matched_label = None
         for key, display in LABEL_MAP.items():
             if key in label_lower:
                 matched_label = display
                 break
-        if not matched_label: continue
+        if not matched_label:
+            unmatched_labels.append(label_raw)
+            continue
 
         values = []
         for ci in sorted_cols:
@@ -1292,8 +1298,11 @@ def _parse_grain_page(ws, comm_id, section_marker=None):
             if not any(r["label"] == matched_label for r in rows_out):
                 rows_out.append(rd)
 
+    # Debug: report what we saw
+    if unmatched_labels:
+        print(f"  {comm_id}: unmatched WASDE labels: {unmatched_labels[:10]}")
     if not rows_out:
-        print(f"  {comm_id}: no data rows matched")
+        print(f"  {comm_id}: no data rows matched (saw {len(seen_labels)} labels)")
         return None
 
     # Stocks/use

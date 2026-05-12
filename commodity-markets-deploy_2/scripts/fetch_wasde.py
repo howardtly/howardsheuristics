@@ -1208,11 +1208,6 @@ def _parse_grain_page(ws, comm_id, section_marker=None):
     years = sorted_mys
 
     print(f"  {comm_id}: years = {years} (cols {sorted_cols})")
-    if comm_id == "wheat":
-        print(f"    DEBUG wheat header row {header_row_idx}: {[str(c)[:20] if c is not None else 'None' for c in all_rows[header_row_idx][:15]]}")
-        # Print row right above headers too in case there are merged year headers
-        if header_row_idx > 0:
-            print(f"    DEBUG wheat row {header_row_idx-1}: {[str(c)[:20] if c is not None else 'None' for c in all_rows[header_row_idx-1][:15]]}")
 
     # Label matching
     LABEL_MAP = {
@@ -1285,17 +1280,27 @@ def _parse_grain_page(ws, comm_id, section_marker=None):
             unmatched_labels.append(label_raw)
             continue
 
-        # DEBUG: dump the row for acreage/yield to see raw column values
-        if comm_id == "wheat" and matched_label in ("Area planted", "Area harvested", "Yield per harvested acre"):
-            print(f"    DEBUG wheat {matched_label!r}: row = {[str(c)[:15] if c is not None else 'None' for c in row[:15]]}")
-
         values = []
         for ci in sorted_cols:
             v = row[ci] if ci < len(row) else None
             if v is not None:
                 try:
-                    values.append(round(float(v), 1))
-                except:
+                    # Strip footnote markers (*, †, /N) and parenthetical notes before parsing
+                    if isinstance(v, str):
+                        v_clean = v.strip()
+                        # Common WASDE footnote suffixes: "43.8 *", "1,234 1/", "5.2 (proj)"
+                        import re as _re
+                        v_clean = _re.sub(r"\s*[*†‡§¶]+\s*$", "", v_clean)  # asterisk-style
+                        v_clean = _re.sub(r"\s+\d+/\s*$", "", v_clean)     # numeric footnote refs like " 4/"
+                        v_clean = _re.sub(r"\s*\([^)]+\)\s*$", "", v_clean) # trailing parens
+                        v_clean = v_clean.replace(",", "")
+                        if v_clean.upper() in ("NA", "N/A", "-", "—", ""):
+                            values.append(None)
+                            continue
+                        values.append(round(float(v_clean), 1))
+                    else:
+                        values.append(round(float(v), 1))
+                except (ValueError, TypeError):
                     values.append(None)
             else:
                 values.append(None)

@@ -1208,6 +1208,11 @@ def _parse_grain_page(ws, comm_id, section_marker=None):
     years = sorted_mys
 
     print(f"  {comm_id}: years = {years} (cols {sorted_cols})")
+    if comm_id == "wheat":
+        print(f"    DEBUG wheat header row {header_row_idx}: {[str(c)[:20] if c is not None else 'None' for c in all_rows[header_row_idx][:15]]}")
+        # Print row right above headers too in case there are merged year headers
+        if header_row_idx > 0:
+            print(f"    DEBUG wheat row {header_row_idx-1}: {[str(c)[:20] if c is not None else 'None' for c in all_rows[header_row_idx-1][:15]]}")
 
     # Label matching
     LABEL_MAP = {
@@ -1279,6 +1284,10 @@ def _parse_grain_page(ws, comm_id, section_marker=None):
         if not matched_label:
             unmatched_labels.append(label_raw)
             continue
+
+        # DEBUG: dump the row for acreage/yield to see raw column values
+        if comm_id == "wheat" and matched_label in ("Area planted", "Area harvested", "Yield per harvested acre"):
+            print(f"    DEBUG wheat {matched_label!r}: row = {[str(c)[:15] if c is not None else 'None' for c in row[:15]]}")
 
         values = []
         for ci in sorted_cols:

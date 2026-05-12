@@ -13,7 +13,14 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(SCRIPT_DIR)
 OUTPUT_DIR = os.path.join(REPO_ROOT, "data")
 
-HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
+    "Accept": "*/*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "identity",
+    "Referer": "https://www.usda.gov/oce/commodity-markets/wasde",
+    "Connection": "keep-alive",
+}
 
 CORN_URL = "https://www.ers.usda.gov/media/5764/feed-grains-yearbook-tables-all-years.xlsx?v=77939"
 OILCROPS_URLS = [
@@ -35,8 +42,9 @@ def fetch_url(url, timeout=60, retries=3, delay=10):
                 return data
         except urllib.error.HTTPError as e:
             print(f"  HTTP {e.code}")
-            if e.code in (404, 403, 410):
-                return None  # Not found / forbidden — no point retrying
+            if e.code in (404, 410):
+                return None  # Definitely not there — no retry
+            # 403/5xx may be transient (CDN edge nodes / rate limits). Retry with backoff.
             if attempt < retries:
                 time.sleep(delay)
         except Exception as e:
@@ -1032,7 +1040,14 @@ def build_wasde_report_urls():
         mm = f"{m:02d}"
         yy = f"{y % 100:02d}"
         yyyy = str(y)
+        # Primary USDA host
         urls.append(f"https://www.usda.gov/oce/commodity/wasde/wasde{mm}{yy}.xls")
+        # USDA mirror via downloads subdomain (sometimes works when www.usda.gov 403s)
+        urls.append(f"https://downloads.usda.gov/oce/commodity/wasde/wasde{mm}{yy}.xls")
+        # USDA Markets directory (newer naming used since 2024)
+        urls.append(f"https://www.usda.gov/sites/default/files/documents/wasde{mm}{yy}.xls")
+        urls.append(f"https://www.usda.gov/sites/default/files/wasde{mm}{yy}.xls")
+        # Cornell mirror (historical fallback)
         urls.append(f"https://usda.library.cornell.edu/apod/wasde{mm}{yy}.xls")
     return urls
 

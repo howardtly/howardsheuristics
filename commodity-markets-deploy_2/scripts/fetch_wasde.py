@@ -1537,6 +1537,27 @@ def main():
     if "world_fetched_at" in existing:
         result["world_fetched_at"] = existing["world_fetched_at"]
 
+    # Track commodities that already have current/future MY data — never overwrite them with yearbook
+    # (yearbook lags by one MY for new crop years, so overwriting would lose 2026/27 etc.)
+    current_year = datetime.now().year
+    result["_existing_protected"] = []
+    for cid, entry in result.get("us", {}).items():
+        years = entry.get("years", []) if isinstance(entry, dict) else []
+        for y in years:
+            # Match either "2026/27" or "2027" formats
+            try:
+                if "/" in str(y):
+                    yr = int(str(y)[:4])
+                else:
+                    yr = int(str(y))
+                if yr >= current_year:
+                    result["_existing_protected"].append(cid)
+                    break
+            except (ValueError, TypeError):
+                pass
+    if result["_existing_protected"]:
+        print(f"  Protected commodities (have ≥{current_year} data): {result['_existing_protected']}")
+
     # ══════════════════════════════════════════════════════════
     # TIER 1: Monthly WASDE Report (primary, time-sensitive)
     # ══════════════════════════════════════════════════════════
@@ -1549,7 +1570,8 @@ def main():
     wasde_source = None
     
     for url in wasde_urls:
-        data = fetch_url(url, timeout=15, retries=1)
+        # 3 retries with 15s backoff helps when CDN edge nodes are 403-throttling temporarily
+        data = fetch_url(url, timeout=30, retries=3, delay=15)
         if data:
             wasde_data = data
             wasde_source = url
@@ -1609,8 +1631,9 @@ def main():
     if data:
         r = parse_corn(data)
         if r:
-            if "corn" in result.get("_wasde_updated", []):
-                # WASDE already updated — merge yearbook as base, preserving WASDE values
+            protected = result.get("_wasde_updated", []) + result.get("_existing_protected", [])
+            if "corn" in protected:
+                # WASDE-updated or has future-year data — merge yearbook as base, preserving newer values
                 _merge_yearbook_base(result["us"]["corn"], r)
             else:
                 result["us"]["corn"] = r
@@ -1636,7 +1659,8 @@ def main():
                 for fn, parser in [("soybeans", parse_soybeans), ("soybean_meal", parse_soymeal), ("soybean_oil", parse_soyoil)]:
                     r = parser(wb)
                     if r:
-                        if fn in result.get("_wasde_updated", []):
+                        protected = result.get("_wasde_updated", []) + result.get("_existing_protected", [])
+                        if fn in protected:
                             _merge_yearbook_base(result["us"][fn], r)
                         else:
                             result["us"][fn] = r
@@ -1650,7 +1674,8 @@ def main():
     if data:
         r = parse_wheat(data)
         if r:
-            if "wheat" in result.get("_wasde_updated", []):
+            protected = result.get("_wasde_updated", []) + result.get("_existing_protected", [])
+            if "wheat" in protected:
                 _merge_yearbook_base(result["us"]["wheat"], r)
             else:
                 result["us"]["wheat"] = r
@@ -1663,8 +1688,13 @@ def main():
             existing_livestock[sp] = existing["us"][sp]
     livestock_results = fetch_livestock_data(fetch_url, fetch_with_fallbacks, existing_livestock)
     for sp, ldata in livestock_results.items():
-        # Always use fresh yearbook data for livestock (avoids stale quarterly data)
-        result["us"][sp] = ldata
+        # Use fresh yearbook data for livestock UNLESS WASDE-updated or has future-year data
+        protected = result.get("_wasde_updated", []) + result.get("_existing_protected", [])
+        if sp in protected:
+            # Merge yearbook as base, preserving newer (WASDE/existing) values
+            _merge_yearbook_base(result["us"][sp], ldata)
+        else:
+            result["us"][sp] = ldata
         print(f"  {sp}: {len(result['us'].get(sp, {}).get('years', []))} years")
     if not livestock_results:
         print("  WARNING: No livestock data returned!")
@@ -1705,6 +1735,7 @@ def main():
         print(f"  {cid}: {len(yrs)} years ({yrs[0] if yrs else '?'}..{yrs[-1] if yrs else '?'}), {total} rows")
 
     result.pop("_wasde_updated", None)
+    result.pop("_existing_protected", None)
     result.pop("_wasde_livestock", None)
     print(f"\nWriting {output_file}")
     with open(output_file, "w") as f:

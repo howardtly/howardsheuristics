@@ -1394,17 +1394,28 @@ def _parse_meats_page(ws, results):
             
             yr = current_yr
 
-            # We want the Apr row (latest estimate) or the row without a month (actuals)
-            is_apr = "apr" in month_val.lower()
+            # Accept any monthly estimate OR no-month (actuals). Later rows for same year overwrite —
+            # WASDE lists multiple monthly estimates per year vertically; the LAST one is the freshest.
+            ml = month_val.lower()
+            has_month = any(m in ml for m in ("jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"))
             is_no_month = month_val == "" and yr is not None
 
-            if (is_apr or is_no_month) and yr and 2020 <= yr <= 2030:
+            if (has_month or is_no_month) and yr and 2020 <= yr <= 2030:
                 def to_f(v):
                     if v is None: return None
-                    try: return round(float(v), 1)
+                    try:
+                        if isinstance(v, str):
+                            s = v.strip()
+                            import re as _re
+                            s = _re.sub(r"\s*[*†‡§¶]+\s*$", "", s)
+                            s = _re.sub(r"\s+\d+/\s*$", "", s)
+                            s = s.replace(",", "")
+                            if s.upper() in ("NA", "N/A", "-", "—", ""): return None
+                            return round(float(s), 1)
+                        return round(float(v), 1)
                     except: return None
 
-                years_data[str(yr)] = {
+                new_row = {
                     "beg_stocks": to_f(row[3]) if len(row) > 3 else None,
                     "production": to_f(row[4]) if len(row) > 4 else None,
                     "imports": to_f(row[5]) if len(row) > 5 else None,
@@ -1414,9 +1425,27 @@ def _parse_meats_page(ws, results):
                     "total_use": to_f(row[9]) if len(row) > 9 else None,
                     "per_capita": to_f(row[10]) if len(row) > 10 else None,
                 }
+                # If existing entry for this year has more non-null values than new, keep existing.
+                # Otherwise prefer new (latest estimate).
+                existing_entry = years_data.get(str(yr))
+                if existing_entry is None:
+                    years_data[str(yr)] = new_row
+                else:
+                    new_nonnull = sum(1 for v in new_row.values() if v is not None)
+                    ex_nonnull = sum(1 for v in existing_entry.values() if v is not None)
+                    if new_nonnull >= ex_nonnull:
+                        years_data[str(yr)] = new_row
 
         if not years_data:
             print(f"  {species_id}: no data extracted from meats page")
+            continue
+
+        # Drop years where all metric values are None (e.g., 2027 column header present
+        # but no actual data rows yet from WASDE)
+        years_data = {y: d for y, d in years_data.items()
+                      if any(v is not None for v in d.values())}
+        if not years_data:
+            print(f"  {species_id}: all years had empty data, skipping")
             continue
 
         years = sorted(years_data.keys())
@@ -1544,6 +1573,36 @@ def main():
 
     # Track commodities that already have current/future MY data — never overwrite them with yearbook
     # (yearbook lags by one MY for new crop years, so overwriting would lose 2026/27 etc.)
+    # Scrub: drop year columns where every row has None across every section.
+    # Prevents accumulating empty trailing columns (e.g., a 2027 column with no data).
+    def _scrub_empty_year_columns(entry):
+        if not isinstance(entry, dict): return
+        years = entry.get("years", [])
+        sections = entry.get("sections", [])
+        if not years or not sections: return
+        # For each year index, check if every row in every section is None.
+        keep_mask = [False] * len(years)
+        for section in sections:
+            for row in section.get("rows", []):
+                values = row.get("values", [])
+                for yi, v in enumerate(values):
+                    if yi < len(keep_mask) and v is not None:
+                        keep_mask[yi] = True
+        if all(keep_mask): return  # No empty columns
+        dropped = [years[i] for i in range(len(years)) if not keep_mask[i]]
+        # Filter years array
+        entry["years"] = [years[i] for i in range(len(years)) if keep_mask[i]]
+        # Filter all row values arrays
+        for section in sections:
+            for row in section.get("rows", []):
+                vals = row.get("values", [])
+                row["values"] = [vals[i] for i in range(len(vals)) if i < len(keep_mask) and keep_mask[i]]
+        if dropped:
+            print(f"  Scrubbed empty year columns: {dropped}")
+
+    for cid, entry in result.get("us", {}).items():
+        _scrub_empty_year_columns(entry)
+
     current_year = datetime.now().year
     result["_existing_protected"] = []
     for cid, entry in result.get("us", {}).items():

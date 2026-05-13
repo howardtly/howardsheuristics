@@ -1600,9 +1600,8 @@ def main():
         if dropped:
             print(f"  Scrubbed empty year columns: {dropped}")
 
-    for cid, entry in result.get("us", {}).items():
-        _scrub_empty_year_columns(entry)
-
+    # Note: scrub disabled at startup. We only scrub after a successful WASDE fetch, to avoid
+    # losing legitimate columns when WASDE is temporarily unavailable (403 throttling, etc.)
     current_year = datetime.now().year
     result["_existing_protected"] = []
     for cid, entry in result.get("us", {}).items():
@@ -1797,6 +1796,12 @@ def main():
         yrs = d.get("years", [])
         total = sum(len(s.get("rows", [])) for s in d.get("sections", []))
         print(f"  {cid}: {len(yrs)} years ({yrs[0] if yrs else '?'}..{yrs[-1] if yrs else '?'}), {total} rows")
+
+    # If WASDE succeeded, scrub any year columns where ALL values are None
+    # (handles cases where the parser produced a header but no data after dedup)
+    if result.get("_wasde_updated"):
+        for cid, entry in result.get("us", {}).items():
+            _scrub_empty_year_columns(entry)
 
     result.pop("_wasde_updated", None)
     result.pop("_existing_protected", None)

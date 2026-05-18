@@ -2173,6 +2173,66 @@ function ExpandChartRow(props) {
   );
 }
 
+const BEEF_IMPS_MAP = {
+            "109E  1": "Rib", "112A  3": "Rib",
+            "113C  1": "Chuck", "114  1": "Chuck", "114A  3": "Chuck", "116A  3": "Chuck",
+            "120  1": "Brisket",
+            "160  1": "Round", "161  1": "Round", "167A  4": "Round",
+            "168  1": "Round", "168  3": "Round", "169  5": "Round",
+            "170  1": "Round", "171B  3": "Round", "171C  3": "Round",
+            "174  3": "Loin", "175  3": "Loin", "180  3": "Loin",
+            "184  1": "Loin", "184  3": "Loin", "184B  3": "Loin",
+            "185A  4": "Loin", "185B  1": "Loin", "185C  1": "Loin",
+            "185D  4": "Loin", "189A  4": "Loin", "191A  4": "Loin",
+            "193  4": "Flank",
+            "121D  4": "Plate", "121C  4": "Plate", "121E  6": "Plate",
+            "123A  3": "Plate", "130  4": "Plate"
+          };
+
+const PORK_GUIDE_CUTS = [
+            // Loin
+            { match: "1/4 Trimmed Loin VAC", primal: "Loin", section: "loin_cuts", exact: true },
+            { match: "1/8 Trimmed Loin VAC", primal: "Loin", section: "loin_cuts", exact: true },
+            { match: "Bone-in CC, Tender-in Loin", primal: "Loin", section: "loin_cuts" },
+            { match: "Bnls CC Strap-on", primal: "Loin", section: "loin_cuts" },
+            { match: "Bnls CC Strap-off", primal: "Loin", section: "loin_cuts" },
+            { match: "Boneless Sirloin", primal: "Loin", section: "loin_cuts" },
+            { match: "Tenderloin", primal: "Loin", section: "loin_cuts" },
+            { match: "Backribs 2.0#/up VAC", primal: "Loin", section: "loin_cuts" },
+            { match: "Backribs 2.0#/up 1 Pc", primal: "Loin", section: "loin_cuts" },
+            // Butt
+            { match: "1/4 Trim Butt VAC", primal: "Butt", section: "butt_cuts", exact: true },
+            { match: "1/4 Trim Butt Combo", primal: "Butt", section: "butt_cuts" },
+            // Sparerib
+            { match: "Trmd Sparerib - LGT", primal: "Rib", section: "sparerib_cuts", exact: true },
+            { match: "Trmd Sparerib - MED", primal: "Rib", section: "sparerib_cuts" },
+            { match: "St Louis", primal: "Rib", section: "sparerib_cuts" },
+            { match: "BBQ Style", primal: "Rib", section: "sparerib_cuts" },
+            // Ham
+            { match: "17-20# Trmd Selected Ham", primal: "Ham", section: "ham_cuts" },
+            { match: "20-23# Trmd Selected Ham", primal: "Ham", section: "ham_cuts" },
+            { match: "23-27# Trmd Selected Ham", primal: "Ham", section: "ham_cuts" },
+            { match: "3 Muscle Ham", primal: "Ham", section: "ham_cuts" },
+            { match: "4 Muscle Ham", primal: "Ham", section: "ham_cuts" },
+            { match: "Insides", primal: "Ham", section: "ham_cuts" },
+            { match: "Outsides", primal: "Ham", section: "ham_cuts" },
+            { match: "Knuckles", primal: "Ham", section: "ham_cuts" },
+            { match: "Lite Butt", primal: "Ham", section: "ham_cuts" },
+            { match: "Outer Shank", primal: "Ham", section: "ham_cuts" },
+            { match: "Inner Shank", primal: "Ham", section: "ham_cuts" },
+            // Belly
+            { match: "Derind Belly 9-13#", primal: "Belly", section: "belly_cuts" },
+            { match: "Derind Belly 13-17#", primal: "Belly", section: "belly_cuts" },
+            // Jowl
+            { match: "Skinned Combo", primal: "Jowl", section: "jowl_cuts" },
+            // Trim
+            { match: "42% Trim Combo", primal: "Trim", section: "trim_cuts" },
+            { match: "72% Trim Combo", primal: "Trim", section: "trim_cuts" },
+            { match: "72% Trim Boxed", primal: "Trim", section: "trim_cuts" },
+          ];
+
+
+
 function CutoutPage({ ready }) {
   const [tab, setTab] = useState("cattle");
   const [hCutout, tCutout] = useToggle();
@@ -2424,22 +2484,7 @@ function CutoutPage({ ready }) {
 
           // ── Beef cut mapping per RJO/USDA Meat Deli Planning Guide ──
           // IMPS codes that appear in the guide, mapped to primal
-          var BEEF_IMPS_MAP = {
-            "109E  1": "Rib", "112A  3": "Rib",
-            "113C  1": "Chuck", "114  1": "Chuck", "114A  3": "Chuck", "116A  3": "Chuck",
-            "120  1": "Brisket",
-            "160  1": "Round", "161  1": "Round", "167A  4": "Round",
-            "168  1": "Round", "168  3": "Round", "169  5": "Round",
-            "170  1": "Round", "171B  3": "Round", "171C  3": "Round",
-            "174  3": "Loin", "175  3": "Loin", "180  3": "Loin",
-            "184  1": "Loin", "184  3": "Loin", "184B  3": "Loin",
-            "185A  4": "Loin", "185B  1": "Loin", "185C  1": "Loin",
-            "185D  4": "Loin", "189A  4": "Loin", "191A  4": "Loin",
-            "193  4": "Flank",
-            "121D  4": "Plate", "121C  4": "Plate", "121E  6": "Plate",
-            "123A  3": "Plate", "130  4": "Plate"
-          };
-          // Also match by partial IMPS (API sometimes has extra spaces)
+                  // Also match by partial IMPS (API sometimes has extra spaces)
           function findImps(name) {
             var m = name.match(/\(([^)]+)\)/);
             return m ? m[1].trim() : "";
@@ -2595,49 +2640,7 @@ function CutoutPage({ ready }) {
           });
 
           // ── Pork cut mapping per RJO/USDA Meat Deli Planning Guide ──
-          var PORK_GUIDE_CUTS = [
-            // Loin
-            { match: "1/4 Trimmed Loin VAC", primal: "Loin", section: "loin_cuts", exact: true },
-            { match: "1/8 Trimmed Loin VAC", primal: "Loin", section: "loin_cuts", exact: true },
-            { match: "Bone-in CC, Tender-in Loin", primal: "Loin", section: "loin_cuts" },
-            { match: "Bnls CC Strap-on", primal: "Loin", section: "loin_cuts" },
-            { match: "Bnls CC Strap-off", primal: "Loin", section: "loin_cuts" },
-            { match: "Boneless Sirloin", primal: "Loin", section: "loin_cuts" },
-            { match: "Tenderloin", primal: "Loin", section: "loin_cuts" },
-            { match: "Backribs 2.0#/up VAC", primal: "Loin", section: "loin_cuts" },
-            { match: "Backribs 2.0#/up 1 Pc", primal: "Loin", section: "loin_cuts" },
-            // Butt
-            { match: "1/4 Trim Butt VAC", primal: "Butt", section: "butt_cuts", exact: true },
-            { match: "1/4 Trim Butt Combo", primal: "Butt", section: "butt_cuts" },
-            // Sparerib
-            { match: "Trmd Sparerib - LGT", primal: "Rib", section: "sparerib_cuts", exact: true },
-            { match: "Trmd Sparerib - MED", primal: "Rib", section: "sparerib_cuts" },
-            { match: "St Louis", primal: "Rib", section: "sparerib_cuts" },
-            { match: "BBQ Style", primal: "Rib", section: "sparerib_cuts" },
-            // Ham
-            { match: "17-20# Trmd Selected Ham", primal: "Ham", section: "ham_cuts" },
-            { match: "20-23# Trmd Selected Ham", primal: "Ham", section: "ham_cuts" },
-            { match: "23-27# Trmd Selected Ham", primal: "Ham", section: "ham_cuts" },
-            { match: "3 Muscle Ham", primal: "Ham", section: "ham_cuts" },
-            { match: "4 Muscle Ham", primal: "Ham", section: "ham_cuts" },
-            { match: "Insides", primal: "Ham", section: "ham_cuts" },
-            { match: "Outsides", primal: "Ham", section: "ham_cuts" },
-            { match: "Knuckles", primal: "Ham", section: "ham_cuts" },
-            { match: "Lite Butt", primal: "Ham", section: "ham_cuts" },
-            { match: "Outer Shank", primal: "Ham", section: "ham_cuts" },
-            { match: "Inner Shank", primal: "Ham", section: "ham_cuts" },
-            // Belly
-            { match: "Derind Belly 9-13#", primal: "Belly", section: "belly_cuts" },
-            { match: "Derind Belly 13-17#", primal: "Belly", section: "belly_cuts" },
-            // Jowl
-            { match: "Skinned Combo", primal: "Jowl", section: "jowl_cuts" },
-            // Trim
-            { match: "42% Trim Combo", primal: "Trim", section: "trim_cuts" },
-            { match: "72% Trim Combo", primal: "Trim", section: "trim_cuts" },
-            { match: "72% Trim Boxed", primal: "Trim", section: "trim_cuts" },
-          ];
-
-          var porkCutRows = [];
+                  var porkCutRows = [];
           var porkSectionKeys = ["loin_cuts","butt_cuts","picnic_cuts","ham_cuts","belly_cuts","sparerib_cuts","jowl_cuts","trim_cuts"];
           porkSectionKeys.forEach(function(secKey) {
             (lp2[secKey] || []).forEach(function(cut) {
@@ -3475,8 +3478,9 @@ function CutoutPage({ ready }) {
   </div>);
 }
 
-function MeatPriceChartsPage({ meatData }) {
+function MeatPriceChartsPage({ ready }) {
   // ── State ──
+  const [meatData, setMeatData] = useState(null);
   const [commodity, setCommodity] = useState("beef");      // "beef" | "pork"
   const [primal, setPrimal] = useState("__choice_cutout__"); // special keys for cutouts, else primal name
   const [cut, setCut] = useState("__primal__");             // "__primal__" = primal composite, else cut name
@@ -3484,6 +3488,14 @@ function MeatPriceChartsPage({ meatData }) {
   const [chartMode, setChartMode] = useState("seasonal");   // seasonal | contiguous
   const [range, setRange] = useState("5");                  // 3 | 5 | 10 | all
   const [hidden, toggleHidden] = useToggle();
+
+  // Load meat prices JSON
+  useEffect(function() {
+    fetch("data/meat_prices.json?t=" + Date.now())
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(data) { if (data) setMeatData(data); })
+      .catch(function() {});
+  }, []);
 
   // ── Discover available cuts from meatData.seasonal latest year ──
   const cutsInventory = useMemo(function() {

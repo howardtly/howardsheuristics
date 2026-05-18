@@ -1160,7 +1160,9 @@ const NAV_SECTIONS = [
     icon: <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7V5.5L4.5 6.5"/><path d="M7 7V5.5L5.5 6.5"/><path d="M3 7c-.5 0-1 .4-1 1v1.5c0 .4.3.7.7.7H4"/><path d="M4 7h2c.5 0 1 .4 1 1v0"/><rect x="4" y="8" width="12" height="5" rx="1"/><path d="M16 9.5h1.5c.3 0 .5.2.5.5v1c0 .3-.2.5-.5.5H16"/><circle cx="4" cy="7.8" r="0.5" fill="currentColor" stroke="none"/><circle cx="6" cy="7.8" r="0.5" fill="currentColor" stroke="none"/><path d="M5.5 13v2.5M8 13v2.5M12.5 13v2.5M15 13v2.5"/></svg>,
     children: [
       { id: "livestock-wasde", label: "WASDE balance sheets" },
-      { id: "cutout", label: "Boxed beef & pork prices" }, { id: "slaughter", label: "Slaughter" },
+      { id: "cutout", label: "Boxed beef & pork prices" },
+      { id: "meat-price-charts", label: "USDA meat price charts" },
+      { id: "slaughter", label: "Slaughter" },
       { id: "cold-storage", label: "Cold storage" }, { id: "on-feed", label: "Cattle on feed" },
       { id: "hogs-pigs", label: "Hogs & pigs" },
     ],
@@ -3068,18 +3070,6 @@ function CutoutPage({ ready }) {
         <CutoutCard label="Choice–select spread" cur={spreadCur} asOfDate={choiceLastDate} pd={spreadPD} pw={spreadPW} py={spreadPY} />
         <CutoutCard label="Comprehensive cutout" cur={compCur} asOfDate={compLastDate} pd={compPD} pw={compPW} py={compPY} />
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-        <div>
-          <h3 style={{ fontSize: 15, fontWeight: 500, color: "var(--color-text-primary)", margin: "0 0 12px" }}>Choice cutout</h3>
-          {chartMode === "seasonal" && <InteractiveLegend items={seasonLegend} hidden={hChoice} onToggle={tChoice} />}
-          {ready && <ChartBox id={`cut_choice_${period}_${chartMode}`} height={340} renderChart={mkSeasonalChart(cutoutView, hChoice)} deps={`${period}_${chartMode}_${[...hChoice].join()}_${meatData ? "live" : "syn"}`} />}
-        </div>
-        <div>
-          <h3 style={{ fontSize: 15, fontWeight: 500, color: "var(--color-text-primary)", margin: "0 0 12px" }}>Comprehensive cutout</h3>
-          {chartMode === "seasonal" && <InteractiveLegend items={seasonLegend} hidden={hComp} onToggle={tComp} />}
-          {ready && <ChartBox id={`cut_comp_${period}_${chartMode}`} height={340} renderChart={mkSeasonalChart(compViewData, hComp)} deps={`comp_${period}_${chartMode}_${[...hComp].join()}_${meatData ? "live" : "syn"}`} />}
-        </div>
-      </div>
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 28, marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
         <div>
@@ -3204,10 +3194,9 @@ function CutoutPage({ ready }) {
                   const chg = latest != null && prev != null ? latest - prev : null;
                   const isSelected = selectedProduct === (primalName + "_" + si);
                   return (<>
-                    <tr key={primalName + "_" + si} onClick={() => setSelectedProduct(isSelected ? null : (primalName + "_" + si))} style={{
-                      cursor: "pointer", borderBottom: "0.5px solid var(--color-border-tertiary)",
-                      background: isSelected ? "var(--color-background-info)" : "transparent",
-                      transition: "background 0.1s",
+                    <tr key={primalName + "_" + si} style={{
+                      borderBottom: "0.5px solid var(--color-border-tertiary)",
+                      background: "transparent",
                     }}
                     onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = "var(--color-background-secondary)"; }}
                     onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = "transparent"; }}
@@ -3285,14 +3274,12 @@ function CutoutPage({ ready }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10, marginBottom: 8 }}>
         <MetricCard label="Pork cutout ($/cwt)" value={`${livePorkLatest.toFixed(2)}`} sub="" trend={3.2} />
       </div>
-      <SectionTitle right={<ChartModeToggle mode={chartMode} setMode={setChartMode} />}>Pork cutout</SectionTitle>
-      {chartMode === "seasonal" && <InteractiveLegend items={seasonLegend} hidden={hPorkCutout} onToggle={tPorkCutout} />}
-      {ready && <ChartBox id={`cut_pork_${period}_${chartMode}`} height={340} renderChart={mkSeasonalChart(porkCutoutView, hPorkCutout)} deps={`${period}_${chartMode}_${[...hPorkCutout].join()}_${meatData ? "live" : "syn"}`} />}
+      <SectionTitle>Pork product prices</SectionTitle>
 
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 28, marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 0, marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
         <div>
           <h3 style={{ fontSize: 15, fontWeight: 500, color: "var(--color-text-primary)", margin: "0 0 2px" }}>Pork product prices</h3>
-          <div style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>Click any product to view seasonal comparison chart</div>
+          <div style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}></div>
         </div>
         <DownloadBtn onClick={() => {
           if (chartMode === "contiguous") {
@@ -3412,10 +3399,9 @@ function CutoutPage({ ready }) {
                   const chg = latest != null && prev != null ? latest - prev : null;
                   const isSelected = selectedPorkProduct === (primalName + "_" + si);
                   return (<>
-                    <tr key={`pork-${primalName}-${si}`} onClick={() => setSelectedPorkProduct(isSelected ? null : (primalName + "_" + si))} style={{
-                      cursor: "pointer", borderBottom: "0.5px solid var(--color-border-tertiary)",
-                      background: isSelected ? "var(--color-background-info)" : "transparent",
-                      transition: "background 0.1s",
+                    <tr key={`pork-${primalName}-${si}`} style={{
+                      borderBottom: "0.5px solid var(--color-border-tertiary)",
+                      background: "transparent",
                     }}
                     onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = "var(--color-background-secondary)"; }}
                     onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = "transparent"; }}
@@ -3488,6 +3474,603 @@ function CutoutPage({ ready }) {
     </div>)}
   </div>);
 }
+
+function MeatPriceChartsPage({ meatData }) {
+  // ── State ──
+  const [commodity, setCommodity] = useState("beef");      // "beef" | "pork"
+  const [primal, setPrimal] = useState("__choice_cutout__"); // special keys for cutouts, else primal name
+  const [cut, setCut] = useState("__primal__");             // "__primal__" = primal composite, else cut name
+  const [period, setPeriod] = useState("daily");            // daily | weekly | monthly
+  const [chartMode, setChartMode] = useState("seasonal");   // seasonal | contiguous
+  const [range, setRange] = useState("5");                  // 3 | 5 | 10 | all
+  const [hidden, toggleHidden] = useToggle();
+
+  // ── Discover available cuts from meatData.seasonal latest year ──
+  const cutsInventory = useMemo(function() {
+    if (!meatData || !meatData.seasonal || !meatData.seasonal.years) return null;
+    const years = meatData.seasonal.years.filter(function(y){ return typeof y.year === "number"; });
+    if (!years.length) return null;
+    // Collect all cuts seen across all years (current may not have every cut yet)
+    const beefCuts = {}, porkCuts = {};
+    years.forEach(function(y) {
+      if (y.cuts_beef) Object.keys(y.cuts_beef).forEach(function(k){ beefCuts[k] = true; });
+      if (y.cuts_pork) Object.keys(y.cuts_pork).forEach(function(k){ porkCuts[k] = true; });
+    });
+    return {
+      beef: Object.keys(beefCuts).sort(),
+      pork: Object.keys(porkCuts).sort(),
+    };
+  }, [meatData]);
+
+  // ── Determine primal for each cut by parsing IMPS code or matching guide ──
+  function primalForBeefCut(cutName) {
+    // IMPS code at end like "(109E 3)" or middle "Round, outside round (171B 3)"
+    const m = cutName.match(/\((\d+[A-Z]?)\s+(\d)\)/);
+    if (m) {
+      const code = m[1] + "  " + m[2];
+      if (BEEF_IMPS_MAP[code]) return BEEF_IMPS_MAP[code];
+    }
+    // Fall back to prefix match
+    const lower = cutName.toLowerCase();
+    if (lower.startsWith("rib,")) return "Rib";
+    if (lower.startsWith("chuck,")) return "Chuck";
+    if (lower.startsWith("brisket")) return "Brisket";
+    if (lower.startsWith("round,")) return "Round";
+    if (lower.startsWith("loin,")) return "Loin";
+    if (lower.startsWith("plate") || lower.startsWith("short plate")) return "Plate";
+    if (lower.startsWith("flank")) return "Flank";
+    if (lower.indexOf("ground") >= 0 || lower.indexOf("trim") >= 0 || lower.indexOf("50cl") >= 0 || lower.indexOf("90cl") >= 0 || lower.indexOf("85cl") >= 0 || lower.indexOf("65cl") >= 0) return "Trim";
+    return "Other";
+  }
+  function primalForPorkCut(cutName) {
+    const found = PORK_GUIDE_CUTS.find(function(g) {
+      if (g.exact) return cutName === g.match;
+      return cutName.indexOf(g.match) >= 0;
+    });
+    if (found) return found.primal;
+    const lower = cutName.toLowerCase();
+    if (lower.indexOf("trim") >= 0 || lower.indexOf("42%") >= 0 || lower.indexOf("72%") >= 0) return "Trim";
+    if (lower.indexOf("jowl") >= 0) return "Jowl";
+    return "Other";
+  }
+
+  // ── Build the primal → [cuts] map for the selected commodity ──
+  const primalMap = useMemo(function() {
+    if (!cutsInventory) return {};
+    const cuts = commodity === "beef" ? cutsInventory.beef : cutsInventory.pork;
+    const map = {};
+    cuts.forEach(function(name) {
+      const p = commodity === "beef" ? primalForBeefCut(name) : primalForPorkCut(name);
+      if (!map[p]) map[p] = [];
+      map[p].push(name);
+    });
+    return map;
+  }, [cutsInventory, commodity]);
+
+  // ── Special "primal" entries for cutouts (top of dropdown) ──
+  const cutoutOptions = commodity === "beef"
+    ? [
+        { key: "__choice_cutout__", label: "Choice cutout" },
+        { key: "__select_cutout__", label: "Select cutout" },
+        { key: "__comp_cutout__",   label: "Comprehensive cutout" },
+      ]
+    : [
+        { key: "__pork_cutout__", label: "Pork cutout" },
+      ];
+
+  // Reset primal/cut when commodity changes
+  useEffect(function() {
+    if (commodity === "beef") {
+      setPrimal("__choice_cutout__");
+    } else {
+      setPrimal("__pork_cutout__");
+    }
+    setCut("__primal__");
+  }, [commodity]);
+
+  // Reset cut when primal changes
+  useEffect(function() {
+    setCut("__primal__");
+  }, [primal]);
+
+  // ── Resolve which data series to plot ──
+  // Returns { label, getYearVals(year), getYearDates(year) }
+  function resolveSeries() {
+    const years = meatData && meatData.seasonal && meatData.seasonal.years ? meatData.seasonal.years : [];
+    function yearObj(y) { return years.find(function(yr){ return yr.year === y; }); }
+
+    // Cutouts (special)
+    const cutoutKeys = {
+      "__choice_cutout__": { label: "Choice cutout ($/cwt)", series: "beef_choice" },
+      "__select_cutout__": { label: "Select cutout ($/cwt)", series: "beef_select" },
+      "__comp_cutout__":   { label: "Comprehensive cutout ($/cwt)", series: "beef_comp" },
+      "__pork_cutout__":   { label: "Pork cutout ($/cwt)", series: "pork_carcass" },
+    };
+    if (cutoutKeys[primal]) {
+      const sk = cutoutKeys[primal];
+      return {
+        label: sk.label,
+        getYearVals: function(y) { const yo = yearObj(y); return yo ? (yo[sk.series] || []) : []; },
+        getYearDates: function(y) { const yo = yearObj(y); return yo ? (yo.dates || []) : []; },
+      };
+    }
+
+    // Primal composite (when cut === "__primal__")
+    if (cut === "__primal__") {
+      // Beef primals: beef_rib, beef_chuck, beef_round, beef_loin, beef_brisket, beef_plate, beef_flank
+      // Pork primals: pork_loin, pork_butt, pork_picnic, pork_rib, pork_ham, pork_belly, pork_jowl
+      const seriesKey = (commodity === "beef" ? "beef_" : "pork_") + primal.toLowerCase();
+      return {
+        label: commodity === "beef" ? primal + " primal ($/cwt)" : primal + " primal ($/cwt)",
+        getYearVals: function(y) { const yo = yearObj(y); return yo ? (yo[seriesKey] || []) : []; },
+        getYearDates: function(y) { const yo = yearObj(y); return yo ? (yo.dates || []) : []; },
+      };
+    }
+
+    // Individual cut
+    const cutsKey = commodity === "beef" ? "cuts_beef" : "cuts_pork";
+    return {
+      label: cut + " ($/cwt)",
+      getYearVals: function(y) {
+        const yo = yearObj(y);
+        if (!yo || !yo[cutsKey]) return [];
+        return yo[cutsKey][cut] || [];
+      },
+      getYearDates: function(y) { const yo = yearObj(y); return yo ? (yo.dates || []) : []; },
+    };
+  }
+
+  // ── Year list for chart (current + N prior) ──
+  const allAvailYears = meatData && meatData.seasonal && meatData.seasonal.years
+    ? meatData.seasonal.years.filter(function(y){ return typeof y.year === "number"; }).map(function(y){ return y.year; }).sort(function(a,b){ return a-b; })
+    : [];
+  const curYear = allAvailYears.length ? allAvailYears[allAvailYears.length - 1] : new Date().getFullYear();
+  const yearsToShow = range === "all"
+    ? allAvailYears
+    : allAvailYears.filter(function(y){ return y >= curYear - parseInt(range); });
+
+  // ── Aggregation: convert daily values to weekly (last value of week) or monthly ──
+  function aggregate(dates, values, mode) {
+    if (mode === "daily") return { dates: dates, values: values };
+    // dates are "M/D" strings (no year). We need to group.
+    // For weekly: group by ISO week ending Friday (or just every 5 trading days).
+    // Simple approach: take every Nth value (5 for weekly, ~21 for monthly).
+    if (mode === "weekly") {
+      // Find Friday positions or just take every 5th data point.
+      // Better: group by "week ending" — take last data point in each 7-day calendar window.
+      const out = { dates: [], values: [] };
+      let i = 0;
+      while (i < dates.length) {
+        // Find the last non-null value in the next 5 trading days
+        const end = Math.min(i + 5, dates.length);
+        let lastIdx = -1;
+        for (let j = i; j < end; j++) {
+          if (values[j] != null) lastIdx = j;
+        }
+        if (lastIdx >= 0) {
+          out.dates.push(dates[lastIdx]);
+          out.values.push(values[lastIdx]);
+        }
+        i = end;
+      }
+      return out;
+    }
+    if (mode === "monthly") {
+      // Group by month (first part of "M/D")
+      const out = { dates: [], values: [] };
+      const byMonth = {};
+      dates.forEach(function(d, idx) {
+        if (!d) return;
+        const m = d.split("/")[0];
+        if (!byMonth[m]) byMonth[m] = [];
+        if (values[idx] != null) byMonth[m].push({ d: d, v: values[idx], idx: idx });
+      });
+      // Sort months numerically
+      Object.keys(byMonth).sort(function(a,b){ return parseInt(a) - parseInt(b); }).forEach(function(m) {
+        const arr = byMonth[m];
+        if (arr.length) {
+          // Average values for the month
+          const sum = arr.reduce(function(acc, x){ return acc + x.v; }, 0);
+          out.dates.push(m + "/15"); // Mid-month label
+          out.values.push(sum / arr.length);
+        }
+      });
+      return out;
+    }
+    return { dates: dates, values: values };
+  }
+
+  // ── Series legend (one entry per year) ──
+  const yearColors = ["#A32D2D","#D85A30","#E8A735","#639922","#1D9E75","#378ADD","#534AB7","#8B5CF6","#EC4899","#6B7280","#0EA5E9","#14B8A6"];
+  const seasonLegend = yearsToShow.map(function(y, i) {
+    const isLast = i === yearsToShow.length - 1;
+    return {
+      key: "yr" + i,
+      label: String(y),
+      color: isLast ? "#333" : yearColors[i % yearColors.length],
+    };
+  });
+
+  const series = resolveSeries();
+
+  // ── Build chart data per year, then aggregate ──
+  const perYear = useMemo(function() {
+    return yearsToShow.map(function(y) {
+      const raw = aggregate(series.getYearDates(y), series.getYearVals(y), period);
+      return { year: y, dates: raw.dates, values: raw.values };
+    });
+  }, [yearsToShow.join(","), commodity, primal, cut, period, meatData]);
+
+  // ── Chart renderer ──
+  function mkChart(canvas) {
+    if (!canvas) return;
+    // x-axis: use longest year's dates as labels (seasonal mode)
+    const longest = perYear.reduce(function(acc, py) {
+      return py.dates.length > acc.length ? py.dates : acc;
+    }, []);
+    const labels = longest;
+
+    if (chartMode === "contiguous") {
+      // Concatenate visible years
+      const visibleYears = perYear.filter(function(py, i) { return !hidden.has("yr" + i); });
+      const allLabels = [];
+      const allValues = [];
+      const yearMidpoints = [];
+      const yearBoundaries = [];
+      visibleYears.forEach(function(py) {
+        const start = allLabels.length;
+        py.dates.forEach(function(d, j) {
+          allLabels.push(d + "/" + py.year);
+          allValues.push(py.values[j]);
+        });
+        const mid = start + Math.floor(py.dates.length / 2);
+        yearMidpoints.push({ idx: mid, label: String(py.year) });
+        if (start > 0) yearBoundaries.push(start - 1);
+      });
+
+      new Chart(canvas, {
+        type: "line",
+        data: {
+          labels: allLabels,
+          datasets: [{
+            label: series.label,
+            data: allValues,
+            borderColor: "#378ADD",
+            backgroundColor: "#378ADD",
+            borderWidth: 1.8,
+            pointRadius: 0,
+            tension: 0.2,
+            spanGaps: false,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false }, tooltip: { mode: "index", intersect: false } },
+          scales: {
+            x: {
+              ticks: {
+                autoSkip: false,
+                maxRotation: visibleYears.length > 8 ? 90 : 0,
+                callback: function(val, idx) {
+                  for (let i = 0; i < yearMidpoints.length; i++) {
+                    if (yearMidpoints[i].idx === idx) return yearMidpoints[i].label;
+                  }
+                  return "";
+                },
+                font: { size: 10 },
+              },
+              grid: {
+                color: function(ctx) {
+                  return yearBoundaries.indexOf(ctx.index) >= 0 ? "rgba(0,0,0,0.15)" : "transparent";
+                },
+              },
+            },
+            y: {
+              ticks: { font: { size: 10 }, callback: function(v){ return "$" + v.toFixed(2); } },
+              grid: { color: "rgba(0,0,0,0.06)" },
+            },
+          },
+        },
+      });
+      return;
+    }
+
+    // Seasonal: each year is one dataset, x = day-of-year
+    const datasets = perYear.map(function(py, i) {
+      if (hidden.has("yr" + i)) return null;
+      const isCurrent = i === perYear.length - 1;
+      const color = isCurrent ? "#333" : yearColors[i % yearColors.length];
+      // Align values to longest labels by date
+      const dataByDate = {};
+      py.dates.forEach(function(d, j) { dataByDate[d] = py.values[j]; });
+      const aligned = labels.map(function(d){ return dataByDate[d] != null ? dataByDate[d] : null; });
+      return {
+        label: String(py.year),
+        data: aligned,
+        borderColor: color,
+        backgroundColor: color,
+        borderWidth: isCurrent ? 2.2 : 1.5,
+        pointRadius: 0,
+        tension: 0.2,
+        spanGaps: false,
+      };
+    }).filter(function(x){ return x !== null; });
+
+    // Month axis: build tick positions from labels (M/D strings)
+    const monthMids = {};
+    labels.forEach(function(d, idx) {
+      const m = d.split("/")[0];
+      if (!monthMids[m]) monthMids[m] = [];
+      monthMids[m].push(idx);
+    });
+    const monthLabels = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const monthTickIdxs = {};
+    Object.keys(monthMids).forEach(function(m) {
+      const arr = monthMids[m];
+      monthTickIdxs[arr[Math.floor(arr.length / 2)]] = monthLabels[parseInt(m)] || m;
+    });
+
+    new Chart(canvas, {
+      type: "line",
+      data: { labels: labels, datasets: datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { mode: "index", intersect: false } },
+        scales: {
+          x: {
+            ticks: {
+              autoSkip: false,
+              maxRotation: 0,
+              callback: function(val, idx) { return monthTickIdxs[idx] || ""; },
+              font: { size: 11 },
+            },
+            grid: { color: "rgba(0,0,0,0.04)" },
+          },
+          y: {
+            ticks: { font: { size: 10 }, callback: function(v){ return "$" + v.toFixed(2); } },
+            grid: { color: "rgba(0,0,0,0.06)" },
+          },
+        },
+      },
+    });
+  }
+
+  // ── Data table below chart (Urner Barry style) ──
+  // Use a common "period axis" — the dates from the most recent (current) year
+  const curYearObj = perYear.find(function(py){ return py.year === curYear; });
+  const tableDates = curYearObj ? curYearObj.dates.slice() : [];
+  // For each period date, get value from each year
+  function valForYear(yearObj, periodDate) {
+    if (!yearObj) return null;
+    const idx = yearObj.dates.indexOf(periodDate);
+    if (idx < 0) return null;
+    return yearObj.values[idx];
+  }
+  // 5-Yr Avg per row (excluding current year)
+  function fiveYrAvg(rowValues) {
+    // rowValues includes all years; exclude the last (current)
+    const histVals = rowValues.slice(0, -1).filter(function(v){ return v != null; }).slice(-5);
+    if (!histVals.length) return null;
+    return histVals.reduce(function(a,b){ return a+b; }, 0) / histVals.length;
+  }
+  // Date formatter for table rows
+  function fmtTableDate(md) {
+    if (!md) return "";
+    const parts = md.split("/");
+    if (parts.length < 2) return md;
+    return parts[0] + "/" + parts[1] + "/" + curYear;
+  }
+
+  // ── Summary stats per year column ──
+  function statsFor(yearVals) {
+    const nn = yearVals.filter(function(v){ return v != null; });
+    if (!nn.length) return { min: null, max: null, avg: null, sum: null, ytdAvg: null, ytdSum: null };
+    const min = Math.min.apply(null, nn);
+    const max = Math.max.apply(null, nn);
+    const sum = nn.reduce(function(a,b){ return a+b; }, 0);
+    const avg = sum / nn.length;
+    return { min: min, max: max, avg: avg, sum: sum, ytdAvg: avg, ytdSum: sum };
+  }
+  // YTD bound: count up to today's calendar date across all years
+  const today = new Date();
+  const todayMD = (today.getMonth() + 1) + "/" + today.getDate();
+  function isBeforeOrEqualToday(md) {
+    if (!md) return false;
+    const parts = md.split("/");
+    if (parts.length < 2) return false;
+    const m = parseInt(parts[0]), d = parseInt(parts[1]);
+    if (m < today.getMonth() + 1) return true;
+    if (m === today.getMonth() + 1) return d <= today.getDate();
+    return false;
+  }
+  function ytdStatsFor(yearObj) {
+    if (!yearObj) return { min: null, max: null, avg: null, sum: null };
+    const yvals = [];
+    yearObj.dates.forEach(function(d, i) {
+      if (isBeforeOrEqualToday(d) && yearObj.values[i] != null) {
+        yvals.push(yearObj.values[i]);
+      }
+    });
+    if (!yvals.length) return { min: null, max: null, avg: null, sum: null };
+    return {
+      min: Math.min.apply(null, yvals),
+      max: Math.max.apply(null, yvals),
+      avg: yvals.reduce(function(a,b){ return a+b; }, 0) / yvals.length,
+      sum: yvals.reduce(function(a,b){ return a+b; }, 0),
+    };
+  }
+  const colStats = perYear.map(function(py) {
+    return { full: statsFor(py.values), ytd: ytdStatsFor(py) };
+  });
+
+  // ── CSV download ──
+  function downloadCSV() {
+    const headers = ["Period"].concat(perYear.map(function(py){ return String(py.year); })).concat(["5-Yr Avg"]);
+    const rows = [headers];
+    tableDates.forEach(function(d) {
+      const rowVals = perYear.map(function(py){ return valForYear(py, d); });
+      const avg = fiveYrAvg(rowVals);
+      rows.push([fmtTableDate(d)].concat(rowVals.map(function(v){ return v != null ? v.toFixed(3) : ""; })).concat([avg != null ? avg.toFixed(3) : ""]));
+    });
+    const csv = rows.map(function(r){ return r.join(","); }).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "meat_price_" + commodity + "_" + (cut !== "__primal__" ? cut : primal) + "_" + period + ".csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // ── UI ──
+  const dropdownStyle = {
+    padding: "5px 24px 5px 9px",
+    fontSize: 12,
+    fontWeight: 500,
+    border: "1px solid var(--color-border-secondary)",
+    borderRadius: 4,
+    background: "var(--color-background-primary)",
+    color: "var(--color-text-primary)",
+    fontFamily: "inherit",
+    cursor: "pointer",
+    appearance: "none",
+    backgroundImage: "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 12 12'><path d='M3 4.5l3 3 3-3' stroke='%23666' stroke-width='1.5' fill='none'/></svg>\")",
+    backgroundRepeat: "no-repeat",
+    backgroundPosition: "right 7px center",
+    minWidth: 100,
+  };
+  const labelStyle = { fontSize: 10, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.4px" };
+
+  // Combine primal selector options: cutouts at top, then primals
+  const primalOptions = [].concat(cutoutOptions).concat(
+    (commodity === "beef" ? BEEF_PRIMAL_ORDER : PORK_PRIMAL_ORDER).filter(function(p){ return primalMap[p]; })
+      .map(function(p){ return { key: p, label: p + " primal" }; })
+  );
+  // Cuts in current primal
+  const cutsInPrimal = primalMap[primal] || [];
+  // Shortname for display
+  function shortName(name) {
+    return name.replace(/\s*\([^)]+\)/, "").replace(/^\s*\d+[A-Z]?\s+\d\s+/, "").trim();
+  }
+
+  return (<div>
+    {/* Controls row */}
+    <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 14, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <span style={labelStyle}>Commodity</span>
+        <select value={commodity} onChange={function(e){ setCommodity(e.target.value); }} style={dropdownStyle}>
+          <option value="beef">Beef</option>
+          <option value="pork">Pork</option>
+        </select>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <span style={labelStyle}>Primal</span>
+        <select value={primal} onChange={function(e){ setPrimal(e.target.value); }} style={Object.assign({}, dropdownStyle, { minWidth: 160 })}>
+          {primalOptions.map(function(opt){ return <option key={opt.key} value={opt.key}>{opt.label}</option>; })}
+        </select>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <span style={labelStyle}>Cut</span>
+        <select value={cut} onChange={function(e){ setCut(e.target.value); }} disabled={primal.indexOf("__") === 0} style={Object.assign({}, dropdownStyle, { minWidth: 240, opacity: primal.indexOf("__") === 0 ? 0.4 : 1 })}>
+          <option value="__primal__">{primal.indexOf("__") === 0 ? "—" : "Primal composite"}</option>
+          {cutsInPrimal.map(function(c){ return <option key={c} value={c}>{shortName(c)}</option>; })}
+        </select>
+      </div>
+      <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+        {["daily","weekly","monthly"].map(function(p) {
+          const active = period === p;
+          return <button key={p} onClick={function(){ setPeriod(p); }} style={{
+            padding: "5px 12px", fontSize: 11, fontWeight: 500,
+            border: "1px solid " + (active ? "#2563EB" : "var(--color-border-secondary)"),
+            borderRadius: 4,
+            background: active ? "#2563EB" : "transparent",
+            color: active ? "#fff" : "var(--color-text-secondary)",
+            cursor: "pointer", textTransform: "capitalize"
+          }}>{p}</button>;
+        })}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <span style={labelStyle}>Range</span>
+        <select value={range} onChange={function(e){ setRange(e.target.value); }} style={dropdownStyle}>
+          <option value="3">3 Year</option>
+          <option value="5">5 Year</option>
+          <option value="10">10 Year</option>
+          <option value="all">All</option>
+        </select>
+      </div>
+      <ChartModeToggle mode={chartMode} setMode={setChartMode} />
+      <div style={{ marginLeft: "auto" }}>
+        <button onClick={downloadCSV} style={{ padding: "6px 12px", fontSize: 12, fontWeight: 500, color: "#639922", background: "transparent", border: "1px solid #639922", borderRadius: 4, cursor: "pointer" }}>↓ Download CSV</button>
+      </div>
+    </div>
+
+    {/* Chart title + legend */}
+    <h3 style={{ fontSize: 15, fontWeight: 500, color: "var(--color-text-primary)", margin: "0 0 12px" }}>{series.label}</h3>
+    {chartMode === "seasonal" && <InteractiveLegend items={seasonLegend} hidden={hidden} onToggle={toggleHidden} />}
+
+    {/* Chart */}
+    <ChartBox id={"meatchart_" + commodity + "_" + primal + "_" + cut + "_" + period + "_" + chartMode + "_" + range}
+              height={420}
+              renderChart={mkChart}
+              deps={commodity + "_" + primal + "_" + cut + "_" + period + "_" + chartMode + "_" + range + "_" + [...hidden].join() + "_" + (meatData ? "live" : "syn")} />
+
+    {/* Data table — Urner Barry style */}
+    <div style={{ marginTop: 24, overflowX: "auto" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11.5 }}>
+        <thead>
+          <tr style={{ background: "var(--color-background-secondary)" }}>
+            <th style={{ textAlign: "left", padding: "8px 12px", fontWeight: 500, fontSize: 11, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)", position: "sticky", left: 0, background: "var(--color-background-secondary)" }}>Period</th>
+            {perYear.map(function(py){
+              const isCur = py.year === curYear;
+              return <th key={py.year} style={{ textAlign: "right", padding: "8px 14px", fontWeight: 500, fontSize: 11, color: isCur ? "#378ADD" : "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)" }}>{py.year}</th>;
+            })}
+            <th style={{ textAlign: "right", padding: "8px 14px", fontWeight: 500, fontSize: 11, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)" }}>5-Yr Avg</th>
+          </tr>
+        </thead>
+        <tbody>
+          {tableDates.map(function(d, i) {
+            const rowVals = perYear.map(function(py){ return valForYear(py, d); });
+            const avg = fiveYrAvg(rowVals);
+            return (<tr key={d} style={{ background: i % 2 === 0 ? "transparent" : "var(--color-background-secondary)" }}>
+              <td style={{ padding: "5px 12px", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-primary)", position: "sticky", left: 0, background: i % 2 === 0 ? "var(--color-background-primary)" : "var(--color-background-secondary)" }}>{fmtTableDate(d)}</td>
+              {rowVals.map(function(v, j) {
+                const isCur = perYear[j].year === curYear;
+                return <td key={j} style={{ padding: "5px 14px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: isCur ? "#378ADD" : "var(--color-text-secondary)", fontWeight: isCur ? 500 : 400 }}>{v != null ? v.toFixed(3) : "—"}</td>;
+              })}
+              <td style={{ padding: "5px 14px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-secondary)" }}>{avg != null ? avg.toFixed(3) : "—"}</td>
+            </tr>);
+          })}
+          {/* Summary rows */}
+          {[
+            { label: "Min", get: function(s){ return s.full.min; } },
+            { label: "Max", get: function(s){ return s.full.max; } },
+            { label: "YTD Avg", get: function(s){ return s.ytd.avg; } },
+            { label: "Avg", get: function(s){ return s.full.avg; } },
+            { label: "YTD Sum", get: function(s){ return s.ytd.sum; } },
+            { label: "Sum", get: function(s){ return s.full.sum; } },
+          ].map(function(sumRow, ri) {
+            return (<tr key={"sum_" + ri} style={{ background: ri === 0 ? "var(--color-background-tertiary, #f0f0f0)" : (ri % 2 === 0 ? "var(--color-background-tertiary, #f0f0f0)" : "var(--color-background-secondary)"), borderTop: ri === 0 ? "2px solid var(--color-border-primary)" : "none" }}>
+              <td style={{ padding: "6px 12px", fontWeight: 600, fontSize: 11.5, color: "var(--color-text-primary)", position: "sticky", left: 0, background: ri === 0 ? "var(--color-background-tertiary, #f0f0f0)" : (ri % 2 === 0 ? "var(--color-background-tertiary, #f0f0f0)" : "var(--color-background-secondary)") }}>{sumRow.label}</td>
+              {colStats.map(function(s, j) {
+                const v = sumRow.get(s);
+                const isCur = perYear[j].year === curYear;
+                return <td key={j} style={{ padding: "6px 14px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11.5, fontWeight: 600, color: isCur ? "#378ADD" : "var(--color-text-primary)" }}>{v != null ? v.toFixed(3) : "—"}</td>;
+              })}
+              <td style={{ padding: "6px 14px" }}></td>
+            </tr>);
+          })}
+        </tbody>
+      </table>
+    </div>
+
+    <div style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 12 }}>
+      Source: USDA AMS daily wholesale meat reports. Values in cents/lb for cuts, $/cwt for cutouts.
+    </div>
+  </div>);
+}
+
 
 function SlaughterPage({ ready }) {
   const [species, setSpecies] = useState("cattle");
@@ -7128,6 +7711,7 @@ const PAGES = {
   "drought": { title: "U.S. Drought Monitor", component: DroughtPage },
   "on-feed": { title: "Cattle on feed", component: CattleOnFeedPage },
   "cutout": { title: "Boxed beef & pork prices", component: CutoutPage },
+  "meat-price-charts": { title: "USDA meat price charts", component: MeatPriceChartsPage },
   "slaughter": { title: "Slaughter", component: SlaughterPage },
   "cold-storage": { title: "Cold storage", component: ColdStoragePage },
   "hogs-pigs": { title: "Hogs & pigs", component: HogsPigsPage },

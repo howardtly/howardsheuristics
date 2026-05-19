@@ -3614,37 +3614,29 @@ function MeatPriceChartsPage({ ready }) {
     return [];
   })();
 
-  // If current product key isn't in current options (e.g. category just changed), fix it.
+  // Compute an effective product: fall back to first valid option if `product` isn't in the current options.
+  // This avoids race conditions when the user changes Category — the new category's defaults apply
+  // synchronously in the render rather than waiting for an effect tick.
+  const productKeys = productOptions.map(function(o){ return o.key; });
+  const effectiveProduct = productKeys.includes(product) ? product : (productOptions[0] ? productOptions[0].key : null);
+  // Keep state in sync so the dropdown shows the right selection (next tick is fine for state).
   useEffect(function() {
-    if (productOptions.length === 0) return;
-    const keys = productOptions.map(function(o){ return o.key; });
-    if (!keys.includes(product) || product === "__first__") {
-      setProduct(productOptions[0].key);
+    if (effectiveProduct && effectiveProduct !== product) {
+      setProduct(effectiveProduct);
     }
-  }, [category, commodity, productOptions.length]);
+  }, [effectiveProduct]);
 
   // Reset category & product when commodity changes
   useEffect(function() {
     setCategory("cutout");
+    setProduct(commodity === "beef" ? "__choice_cutout__" : "__pork_cutout__");
   }, [commodity]);
 
-  // Set default product when category or commodity changes
-  useEffect(function() {
-    if (category === "cutout") {
-      setProduct(commodity === "beef" ? "__choice_cutout__" : "__pork_cutout__");
-    } else if (category === "primal") {
-      setProduct(commodity === "beef" ? "Rib" : "Loin");
-    } else if (category === "cuts") {
-      setProduct("__first__");  // placeholder; computed below when productOptions resolves
-    } else if (category === "trims") {
-      setProduct("__first__");
-    }
-  }, [category, commodity]);
-
   // ── Resolve which data series to plot based on category + product ──
-  // Returns { label, getYearVals(year), getYearDates(year) }
+  // Uses effectiveProduct (the validated product key) instead of raw state to avoid race conditions.
   function resolveSeries() {
     const years = meatData && meatData.seasonal && meatData.seasonal.years ? meatData.seasonal.years : [];
+    const pkey = effectiveProduct;
     function yearObj(y) { return years.find(function(yr){ return yr.year === y; }); }
 
     // Category: cutout
@@ -3655,7 +3647,7 @@ function MeatPriceChartsPage({ ready }) {
         "__comp_cutout__":   { label: "Comprehensive cutout ($/cwt)", series: "beef_comp" },
         "__pork_cutout__":   { label: "Pork cutout ($/cwt)", series: "pork_carcass" },
       };
-      const sk = cutoutKeys[product] || cutoutKeys["__choice_cutout__"];
+      const sk = cutoutKeys[pkey] || cutoutKeys["__choice_cutout__"];
       return {
         label: sk.label,
         getYearVals: function(y) { const yo = yearObj(y); return yo ? (yo[sk.series] || []) : []; },
@@ -3663,24 +3655,24 @@ function MeatPriceChartsPage({ ready }) {
       };
     }
 
-    // Category: primal — product is a primal name like "Rib"
+    // Category: primal — pkey is a primal name like "Rib"
     if (category === "primal") {
-      const seriesKey = (commodity === "beef" ? "beef_" : "pork_") + (product || "").toLowerCase();
+      const seriesKey = (commodity === "beef" ? "beef_" : "pork_") + (pkey || "").toLowerCase();
       return {
-        label: product + " primal ($/cwt)",
+        label: (pkey || "") + " primal ($/cwt)",
         getYearVals: function(y) { const yo = yearObj(y); return yo ? (yo[seriesKey] || []) : []; },
         getYearDates: function(y) { const yo = yearObj(y); return yo ? (yo.dates || []) : []; },
       };
     }
 
-    // Category: cuts or trims — product is a cut name (key into cuts_beef / cuts_pork)
+    // Category: cuts or trims — pkey is a cut name (key into cuts_beef / cuts_pork)
     const cutsKey = commodity === "beef" ? "cuts_beef" : "cuts_pork";
     return {
-      label: shortName(product || "") + " ($/cwt)",
+      label: shortName(pkey || "") + " ($/cwt)",
       getYearVals: function(y) {
         const yo = yearObj(y);
         if (!yo || !yo[cutsKey]) return [];
-        return yo[cutsKey][product] || [];
+        return yo[cutsKey][pkey] || [];
       },
       getYearDates: function(y) { const yo = yearObj(y); return yo ? (yo.dates || []) : []; },
     };
@@ -3911,18 +3903,22 @@ function MeatPriceChartsPage({ ready }) {
       };
     }).filter(function(x){ return x !== null; });
 
-    // Month axis: build tick positions from labels (M/D strings)
-    const monthMids = {};
+    // Month axis: build tick + gridline positions from labels (M/D strings)
+    const monthIdxs = {};  // month number -> array of label indices in that month
     labels.forEach(function(d, idx) {
       const m = d.split("/")[0];
-      if (!monthMids[m]) monthMids[m] = [];
-      monthMids[m].push(idx);
+      if (!monthIdxs[m]) monthIdxs[m] = [];
+      monthIdxs[m].push(idx);
     });
     const monthLabels = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    // Month label sits at the MIDDLE of each month's range
     const monthTickIdxs = {};
-    Object.keys(monthMids).forEach(function(m) {
-      const arr = monthMids[m];
+    // Gridline sits at the FIRST of each month (except January — the Y-axis itself is Jan 1)
+    const monthGridIdxs = {};
+    Object.keys(monthIdxs).forEach(function(m) {
+      const arr = monthIdxs[m];
       monthTickIdxs[arr[Math.floor(arr.length / 2)]] = monthLabels[parseInt(m)] || m;
+      if (parseInt(m) > 1) monthGridIdxs[arr[0]] = true; // first index of this month
     });
 
     new Chart(canvas, {
@@ -3942,8 +3938,8 @@ function MeatPriceChartsPage({ ready }) {
             },
             grid: {
               color: function(ctx) {
-                // Only show grid lines at month boundaries
-                return monthTickIdxs[ctx.index] ? "rgba(0,0,0,0.12)" : "transparent";
+                // Vertical gridline at the first of each month (except Jan, which is the Y-axis itself)
+                return monthGridIdxs[ctx.index] ? "rgba(0,0,0,0.12)" : "transparent";
               },
               lineWidth: 0.75,
             },
@@ -4038,7 +4034,7 @@ function MeatPriceChartsPage({ ready }) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "meat_price_" + commodity + "_" + category + "_" + (product || "x").replace(/[\\/\\s,()]+/g, "_") + "_" + period + ".csv";
+    a.download = "meat_price_" + commodity + "_" + category + "_" + (effectiveProduct || "x").replace(/[\\/\\s,()]+/g, "_") + "_" + period + ".csv";
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -4083,7 +4079,7 @@ function MeatPriceChartsPage({ ready }) {
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
         <span style={labelStyle}>Product</span>
-        <select value={product} onChange={function(e){ setProduct(e.target.value); }} style={Object.assign({}, dropdownStyle, { minWidth: 240 })}>
+        <select value={effectiveProduct || ""} onChange={function(e){ setProduct(e.target.value); }} style={Object.assign({}, dropdownStyle, { minWidth: 240 })}>
           {productOptions.map(function(opt){ return <option key={opt.key} value={opt.key}>{opt.label}</option>; })}
         </select>
       </div>
@@ -4120,10 +4116,10 @@ function MeatPriceChartsPage({ ready }) {
     {chartMode === "seasonal" && <InteractiveLegend items={seasonLegend} hidden={hidden} onToggle={toggleHidden} />}
 
     {/* Chart */}
-    <ChartBox id={"meatchart_" + commodity + "_" + category + "_" + product + "_" + period + "_" + chartMode + "_" + range}
+    <ChartBox id={"meatchart_" + commodity + "_" + category + "_" + effectiveProduct + "_" + period + "_" + chartMode + "_" + range}
               height={520}
               renderChart={mkChart}
-              deps={commodity + "_" + category + "_" + product + "_" + period + "_" + chartMode + "_" + range + "_" + [...hidden].join() + "_" + (meatData ? "live" : "syn")} />
+              deps={commodity + "_" + category + "_" + effectiveProduct + "_" + period + "_" + chartMode + "_" + range + "_" + [...hidden].join() + "_" + (meatData ? "live" : "syn")} />
 
     {/* Data table — Urner Barry style */}
     <div style={{ marginTop: 24, overflowX: "auto" }}>

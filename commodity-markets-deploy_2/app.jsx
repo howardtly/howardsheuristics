@@ -3481,12 +3481,12 @@ function CutoutPage({ ready }) {
 function MeatPriceChartsPage({ ready }) {
   // ── State ──
   const [meatData, setMeatData] = useState(null);
-  const [commodity, setCommodity] = useState("beef");      // "beef" | "pork"
-  const [primal, setPrimal] = useState("__choice_cutout__"); // special keys for cutouts, else primal name
-  const [cut, setCut] = useState("__primal__");             // "__primal__" = primal composite, else cut name
-  const [period, setPeriod] = useState("daily");            // daily | weekly | monthly
-  const [chartMode, setChartMode] = useState("seasonal");   // seasonal | contiguous
-  const [range, setRange] = useState("5");                  // 3 | 5 | 10 | all
+  const [commodity, setCommodity] = useState("beef");                          // "beef" | "pork"
+  const [category, setCategory] = useState("cutout");                          // "cutout" | "primal" | "cuts" | "trims"
+  const [product, setProduct] = useState("__choice_cutout__");                 // product key for the selected category
+  const [period, setPeriod] = useState("daily");                               // daily | weekly | monthly
+  const [chartMode, setChartMode] = useState("seasonal");                      // seasonal | contiguous
+  const [range, setRange] = useState("5");                                     // 3 | 5 | 10 | all
   const [hidden, toggleHidden] = useToggle();
 
   // Load meat prices JSON
@@ -3544,6 +3544,11 @@ function MeatPriceChartsPage({ ready }) {
     if (lower.indexOf("jowl") >= 0) return "Jowl";
     return "Other";
   }
+  // Shortname for display
+  function shortName(name) {
+    if (!name) return "";
+    return name.replace(/\s*\([^)]+\)/, "").replace(/^\s*\d+[A-Z]?\s+\d\s+/, "").trim();
+  }
 
   // ── Build the primal → [cuts] map for the selected commodity ──
   const primalMap = (function() {
@@ -3558,47 +3563,99 @@ function MeatPriceChartsPage({ ready }) {
     return map;
   })();
 
-  // ── Special "primal" entries for cutouts (top of dropdown) ──
-  const cutoutOptions = commodity === "beef"
-    ? [
-        { key: "__choice_cutout__", label: "Choice cutout" },
-        { key: "__select_cutout__", label: "Select cutout" },
-        { key: "__comp_cutout__",   label: "Comprehensive cutout" },
-      ]
-    : [
-        { key: "__pork_cutout__", label: "Pork cutout" },
-      ];
+  // ── Trim/grind detection: which cuts belong to the "Trims and Grinds" category ──
+  function isTrimOrGrind(cutName) {
+    if (!cutName) return false;
+    const lower = cutName.toLowerCase();
+    return lower.indexOf("ground") >= 0 || lower.indexOf("trim") >= 0
+        || lower.indexOf("50cl") >= 0 || lower.indexOf("65cl") >= 0
+        || lower.indexOf("85cl") >= 0 || lower.indexOf("90cl") >= 0
+        || lower.indexOf("42%") >= 0 || lower.indexOf("72%") >= 0;
+  }
 
-  // Reset primal/cut when commodity changes
-  useEffect(function() {
-    if (commodity === "beef") {
-      setPrimal("__choice_cutout__");
-    } else {
-      setPrimal("__pork_cutout__");
+  // ── Compute product options based on selected category + commodity ──
+  const productOptions = (function() {
+    if (category === "cutout") {
+      return commodity === "beef"
+        ? [
+            { key: "__choice_cutout__", label: "Choice cutout" },
+            { key: "__select_cutout__", label: "Select cutout" },
+            { key: "__comp_cutout__",   label: "Comprehensive cutout" },
+          ]
+        : [
+            { key: "__pork_cutout__", label: "Pork cutout" },
+          ];
     }
-    setCut("__primal__");
+    if (category === "primal") {
+      const order = commodity === "beef" ? BEEF_PRIMAL_ORDER : PORK_PRIMAL_ORDER;
+      // Exclude "Trim" pseudo-primal since trim items are in their own category
+      return order
+        .filter(function(p){ return p !== "Trim"; })
+        .filter(function(p){ return primalMap[p]; })
+        .map(function(p){ return { key: p, label: p }; });
+    }
+    if (category === "cuts") {
+      // All individual cuts NOT in trim/grind
+      if (!cutsInventory) return [];
+      const cuts = commodity === "beef" ? cutsInventory.beef : cutsInventory.pork;
+      return cuts
+        .filter(function(c){ return !isTrimOrGrind(c); })
+        .sort(function(a, b){ return shortName(a).localeCompare(shortName(b)); })
+        .map(function(c){ return { key: c, label: shortName(c) }; });
+    }
+    if (category === "trims") {
+      if (!cutsInventory) return [];
+      const cuts = commodity === "beef" ? cutsInventory.beef : cutsInventory.pork;
+      return cuts
+        .filter(function(c){ return isTrimOrGrind(c); })
+        .sort(function(a, b){ return shortName(a).localeCompare(shortName(b)); })
+        .map(function(c){ return { key: c, label: shortName(c) }; });
+    }
+    return [];
+  })();
+
+  // If current product key isn't in current options (e.g. category just changed), fix it.
+  useEffect(function() {
+    if (productOptions.length === 0) return;
+    const keys = productOptions.map(function(o){ return o.key; });
+    if (!keys.includes(product) || product === "__first__") {
+      setProduct(productOptions[0].key);
+    }
+  }, [category, commodity, productOptions.length]);
+
+  // Reset category & product when commodity changes
+  useEffect(function() {
+    setCategory("cutout");
   }, [commodity]);
 
-  // Reset cut when primal changes
+  // Set default product when category or commodity changes
   useEffect(function() {
-    setCut("__primal__");
-  }, [primal]);
+    if (category === "cutout") {
+      setProduct(commodity === "beef" ? "__choice_cutout__" : "__pork_cutout__");
+    } else if (category === "primal") {
+      setProduct(commodity === "beef" ? "Rib" : "Loin");
+    } else if (category === "cuts") {
+      setProduct("__first__");  // placeholder; computed below when productOptions resolves
+    } else if (category === "trims") {
+      setProduct("__first__");
+    }
+  }, [category, commodity]);
 
-  // ── Resolve which data series to plot ──
+  // ── Resolve which data series to plot based on category + product ──
   // Returns { label, getYearVals(year), getYearDates(year) }
   function resolveSeries() {
     const years = meatData && meatData.seasonal && meatData.seasonal.years ? meatData.seasonal.years : [];
     function yearObj(y) { return years.find(function(yr){ return yr.year === y; }); }
 
-    // Cutouts (special)
-    const cutoutKeys = {
-      "__choice_cutout__": { label: "Choice cutout ($/cwt)", series: "beef_choice" },
-      "__select_cutout__": { label: "Select cutout ($/cwt)", series: "beef_select" },
-      "__comp_cutout__":   { label: "Comprehensive cutout ($/cwt)", series: "beef_comp" },
-      "__pork_cutout__":   { label: "Pork cutout ($/cwt)", series: "pork_carcass" },
-    };
-    if (cutoutKeys[primal]) {
-      const sk = cutoutKeys[primal];
+    // Category: cutout
+    if (category === "cutout") {
+      const cutoutKeys = {
+        "__choice_cutout__": { label: "Choice cutout ($/cwt)", series: "beef_choice" },
+        "__select_cutout__": { label: "Select cutout ($/cwt)", series: "beef_select" },
+        "__comp_cutout__":   { label: "Comprehensive cutout ($/cwt)", series: "beef_comp" },
+        "__pork_cutout__":   { label: "Pork cutout ($/cwt)", series: "pork_carcass" },
+      };
+      const sk = cutoutKeys[product] || cutoutKeys["__choice_cutout__"];
       return {
         label: sk.label,
         getYearVals: function(y) { const yo = yearObj(y); return yo ? (yo[sk.series] || []) : []; },
@@ -3606,26 +3663,24 @@ function MeatPriceChartsPage({ ready }) {
       };
     }
 
-    // Primal composite (when cut === "__primal__")
-    if (cut === "__primal__") {
-      // Beef primals: beef_rib, beef_chuck, beef_round, beef_loin, beef_brisket, beef_plate, beef_flank
-      // Pork primals: pork_loin, pork_butt, pork_picnic, pork_rib, pork_ham, pork_belly, pork_jowl
-      const seriesKey = (commodity === "beef" ? "beef_" : "pork_") + primal.toLowerCase();
+    // Category: primal — product is a primal name like "Rib"
+    if (category === "primal") {
+      const seriesKey = (commodity === "beef" ? "beef_" : "pork_") + (product || "").toLowerCase();
       return {
-        label: commodity === "beef" ? primal + " primal ($/cwt)" : primal + " primal ($/cwt)",
+        label: product + " primal ($/cwt)",
         getYearVals: function(y) { const yo = yearObj(y); return yo ? (yo[seriesKey] || []) : []; },
         getYearDates: function(y) { const yo = yearObj(y); return yo ? (yo.dates || []) : []; },
       };
     }
 
-    // Individual cut
+    // Category: cuts or trims — product is a cut name (key into cuts_beef / cuts_pork)
     const cutsKey = commodity === "beef" ? "cuts_beef" : "cuts_pork";
     return {
-      label: cut + " ($/cwt)",
+      label: shortName(product || "") + " ($/cwt)",
       getYearVals: function(y) {
         const yo = yearObj(y);
         if (!yo || !yo[cutsKey]) return [];
-        return yo[cutsKey][cut] || [];
+        return yo[cutsKey][product] || [];
       },
       getYearDates: function(y) { const yo = yearObj(y); return yo ? (yo.dates || []) : []; },
     };
@@ -3749,7 +3804,7 @@ function MeatPriceChartsPage({ ready }) {
             borderWidth: 1.8,
             pointRadius: 0,
             tension: 0.2,
-            spanGaps: false,
+            spanGaps: true,
           }],
         },
         options: {
@@ -3767,17 +3822,18 @@ function MeatPriceChartsPage({ ready }) {
                   }
                   return "";
                 },
-                font: { size: 10 },
+                font: { size: 12 },
               },
               grid: {
                 color: function(ctx) {
                   return yearBoundaries.indexOf(ctx.index) >= 0 ? "rgba(0,0,0,0.15)" : "transparent";
                 },
+                lineWidth: 0.75,
               },
             },
             y: {
-              ticks: { font: { size: 10 }, callback: function(v){ return "$" + v.toFixed(2); } },
-              grid: { color: "rgba(0,0,0,0.06)" },
+              ticks: { font: { size: 12 }, callback: function(v){ return "$" + v.toFixed(2); } },
+              grid: { color: "rgba(0,0,0,0.08)", lineWidth: 0.75 },
             },
           },
         },
@@ -3802,7 +3858,7 @@ function MeatPriceChartsPage({ ready }) {
         borderWidth: isCurrent ? 2.2 : 1.5,
         pointRadius: 0,
         tension: 0.2,
-        spanGaps: false,
+        spanGaps: true,
       };
     }).filter(function(x){ return x !== null; });
 
@@ -3833,13 +3889,19 @@ function MeatPriceChartsPage({ ready }) {
               autoSkip: false,
               maxRotation: 0,
               callback: function(val, idx) { return monthTickIdxs[idx] || ""; },
-              font: { size: 11 },
+              font: { size: 12 },
             },
-            grid: { color: "rgba(0,0,0,0.04)" },
+            grid: {
+              color: function(ctx) {
+                // Only show grid lines at month boundaries
+                return monthTickIdxs[ctx.index] ? "rgba(0,0,0,0.12)" : "transparent";
+              },
+              lineWidth: 0.75,
+            },
           },
           y: {
-            ticks: { font: { size: 10 }, callback: function(v){ return "$" + v.toFixed(2); } },
-            grid: { color: "rgba(0,0,0,0.06)" },
+            ticks: { font: { size: 12 }, callback: function(v){ return "$" + v.toFixed(2); } },
+            grid: { color: "rgba(0,0,0,0.08)", lineWidth: 0.75 },
           },
         },
       },
@@ -3921,14 +3983,14 @@ function MeatPriceChartsPage({ ready }) {
     tableDates.forEach(function(d) {
       const rowVals = perYear.map(function(py){ return valForYear(py, d); });
       const avg = fiveYrAvg(rowVals);
-      rows.push([fmtTableDate(d)].concat(rowVals.map(function(v){ return v != null ? v.toFixed(3) : ""; })).concat([avg != null ? avg.toFixed(3) : ""]));
+      rows.push([fmtTableDate(d)].concat(rowVals.map(function(v){ return v != null ? v.toFixed(2) : ""; })).concat([avg != null ? avg.toFixed(2) : ""]));
     });
     const csv = rows.map(function(r){ return r.join(","); }).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "meat_price_" + commodity + "_" + (cut !== "__primal__" ? cut : primal) + "_" + period + ".csv";
+    a.download = "meat_price_" + commodity + "_" + category + "_" + (product || "x").replace(/[\\/\\s,()]+/g, "_") + "_" + period + ".csv";
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -3952,18 +4014,6 @@ function MeatPriceChartsPage({ ready }) {
   };
   const labelStyle = { fontSize: 10, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.4px" };
 
-  // Combine primal selector options: cutouts at top, then primals
-  const primalOptions = [].concat(cutoutOptions).concat(
-    (commodity === "beef" ? BEEF_PRIMAL_ORDER : PORK_PRIMAL_ORDER).filter(function(p){ return primalMap[p]; })
-      .map(function(p){ return { key: p, label: p + " primal" }; })
-  );
-  // Cuts in current primal
-  const cutsInPrimal = primalMap[primal] || [];
-  // Shortname for display
-  function shortName(name) {
-    return name.replace(/\s*\([^)]+\)/, "").replace(/^\s*\d+[A-Z]?\s+\d\s+/, "").trim();
-  }
-
   return (<div>
     {/* Controls row */}
     <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 14, flexWrap: "wrap" }}>
@@ -3975,23 +4025,25 @@ function MeatPriceChartsPage({ ready }) {
         </select>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <span style={labelStyle}>Primal</span>
-        <select value={primal} onChange={function(e){ setPrimal(e.target.value); }} style={Object.assign({}, dropdownStyle, { minWidth: 160 })}>
-          {primalOptions.map(function(opt){ return <option key={opt.key} value={opt.key}>{opt.label}</option>; })}
+        <span style={labelStyle}>Category</span>
+        <select value={category} onChange={function(e){ setCategory(e.target.value); }} style={Object.assign({}, dropdownStyle, { minWidth: 150 })}>
+          <option value="cutout">Cutout</option>
+          <option value="primal">Primal</option>
+          <option value="cuts">Individual Cuts</option>
+          <option value="trims">Trims and Grinds</option>
         </select>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <span style={labelStyle}>Cut</span>
-        <select value={cut} onChange={function(e){ setCut(e.target.value); }} disabled={primal.indexOf("__") === 0} style={Object.assign({}, dropdownStyle, { minWidth: 240, opacity: primal.indexOf("__") === 0 ? 0.4 : 1 })}>
-          <option value="__primal__">{primal.indexOf("__") === 0 ? "—" : "Primal composite"}</option>
-          {cutsInPrimal.map(function(c){ return <option key={c} value={c}>{shortName(c)}</option>; })}
+        <span style={labelStyle}>Product</span>
+        <select value={product} onChange={function(e){ setProduct(e.target.value); }} style={Object.assign({}, dropdownStyle, { minWidth: 240 })}>
+          {productOptions.map(function(opt){ return <option key={opt.key} value={opt.key}>{opt.label}</option>; })}
         </select>
       </div>
       <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
         {["daily","weekly","monthly"].map(function(p) {
           const active = period === p;
           return <button key={p} onClick={function(){ setPeriod(p); }} style={{
-            padding: "5px 12px", fontSize: 11, fontWeight: 500,
+            padding: "5px 12px", fontSize: 12, fontWeight: 500,
             border: "1px solid " + (active ? "#2563EB" : "var(--color-border-secondary)"),
             borderRadius: 4,
             background: active ? "#2563EB" : "transparent",
@@ -4020,22 +4072,22 @@ function MeatPriceChartsPage({ ready }) {
     {chartMode === "seasonal" && <InteractiveLegend items={seasonLegend} hidden={hidden} onToggle={toggleHidden} />}
 
     {/* Chart */}
-    <ChartBox id={"meatchart_" + commodity + "_" + primal + "_" + cut + "_" + period + "_" + chartMode + "_" + range}
-              height={420}
+    <ChartBox id={"meatchart_" + commodity + "_" + category + "_" + product + "_" + period + "_" + chartMode + "_" + range}
+              height={520}
               renderChart={mkChart}
-              deps={commodity + "_" + primal + "_" + cut + "_" + period + "_" + chartMode + "_" + range + "_" + [...hidden].join() + "_" + (meatData ? "live" : "syn")} />
+              deps={commodity + "_" + category + "_" + product + "_" + period + "_" + chartMode + "_" + range + "_" + [...hidden].join() + "_" + (meatData ? "live" : "syn")} />
 
     {/* Data table — Urner Barry style */}
     <div style={{ marginTop: 24, overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11.5 }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
         <thead>
           <tr style={{ background: "var(--color-background-secondary)" }}>
-            <th style={{ textAlign: "left", padding: "8px 12px", fontWeight: 500, fontSize: 11, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)", position: "sticky", left: 0, background: "var(--color-background-secondary)" }}>Period</th>
+            <th style={{ textAlign: "left", padding: "8px 12px", fontWeight: 500, fontSize: 12, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)", position: "sticky", left: 0, background: "var(--color-background-secondary)" }}>Period</th>
             {perYear.map(function(py){
               const isCur = py.year === curYear;
-              return <th key={py.year} style={{ textAlign: "right", padding: "8px 14px", fontWeight: 500, fontSize: 11, color: isCur ? "#378ADD" : "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)" }}>{py.year}</th>;
+              return <th key={py.year} style={{ textAlign: "right", padding: "8px 14px", fontWeight: 500, fontSize: 12, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)" }}>{py.year}</th>;
             })}
-            <th style={{ textAlign: "right", padding: "8px 14px", fontWeight: 500, fontSize: 11, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)" }}>5-Yr Avg</th>
+            <th style={{ textAlign: "right", padding: "8px 14px", fontWeight: 500, fontSize: 12, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)" }}>5-Yr Avg</th>
           </tr>
         </thead>
         <tbody>
@@ -4043,12 +4095,12 @@ function MeatPriceChartsPage({ ready }) {
             const rowVals = perYear.map(function(py){ return valForYear(py, d); });
             const avg = fiveYrAvg(rowVals);
             return (<tr key={d} style={{ background: i % 2 === 0 ? "transparent" : "var(--color-background-secondary)" }}>
-              <td style={{ padding: "5px 12px", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-primary)", position: "sticky", left: 0, background: i % 2 === 0 ? "var(--color-background-primary)" : "var(--color-background-secondary)" }}>{fmtTableDate(d)}</td>
+              <td style={{ padding: "5px 12px", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--color-text-primary)", position: "sticky", left: 0, background: i % 2 === 0 ? "var(--color-background-primary)" : "var(--color-background-secondary)" }}>{fmtTableDate(d)}</td>
               {rowVals.map(function(v, j) {
                 const isCur = perYear[j].year === curYear;
-                return <td key={j} style={{ padding: "5px 14px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: isCur ? "#378ADD" : "var(--color-text-secondary)", fontWeight: isCur ? 500 : 400 }}>{v != null ? v.toFixed(3) : "—"}</td>;
+                return <td key={j} style={{ padding: "5px 14px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--color-text-secondary)" }}>{v != null ? v.toFixed(2) : "—"}</td>;
               })}
-              <td style={{ padding: "5px 14px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-secondary)" }}>{avg != null ? avg.toFixed(3) : "—"}</td>
+              <td style={{ padding: "5px 14px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--color-text-secondary)" }}>{avg != null ? avg.toFixed(2) : "—"}</td>
             </tr>);
           })}
           {/* Summary rows */}
@@ -4057,15 +4109,13 @@ function MeatPriceChartsPage({ ready }) {
             { label: "Max", get: function(s){ return s.full.max; } },
             { label: "YTD Avg", get: function(s){ return s.ytd.avg; } },
             { label: "Avg", get: function(s){ return s.full.avg; } },
-            { label: "YTD Sum", get: function(s){ return s.ytd.sum; } },
-            { label: "Sum", get: function(s){ return s.full.sum; } },
           ].map(function(sumRow, ri) {
             return (<tr key={"sum_" + ri} style={{ background: ri === 0 ? "var(--color-background-tertiary, #f0f0f0)" : (ri % 2 === 0 ? "var(--color-background-tertiary, #f0f0f0)" : "var(--color-background-secondary)"), borderTop: ri === 0 ? "2px solid var(--color-border-primary)" : "none" }}>
-              <td style={{ padding: "6px 12px", fontWeight: 600, fontSize: 11.5, color: "var(--color-text-primary)", position: "sticky", left: 0, background: ri === 0 ? "var(--color-background-tertiary, #f0f0f0)" : (ri % 2 === 0 ? "var(--color-background-tertiary, #f0f0f0)" : "var(--color-background-secondary)") }}>{sumRow.label}</td>
+              <td style={{ padding: "6px 12px", fontWeight: 600, fontSize: 12, color: "var(--color-text-primary)", position: "sticky", left: 0, background: ri === 0 ? "var(--color-background-tertiary, #f0f0f0)" : (ri % 2 === 0 ? "var(--color-background-tertiary, #f0f0f0)" : "var(--color-background-secondary)") }}>{sumRow.label}</td>
               {colStats.map(function(s, j) {
                 const v = sumRow.get(s);
                 const isCur = perYear[j].year === curYear;
-                return <td key={j} style={{ padding: "6px 14px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11.5, fontWeight: 600, color: isCur ? "#378ADD" : "var(--color-text-primary)" }}>{v != null ? v.toFixed(3) : "—"}</td>;
+                return <td key={j} style={{ padding: "6px 14px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600, color: "var(--color-text-primary)" }}>{v != null ? v.toFixed(2) : "—"}</td>;
               })}
               <td style={{ padding: "6px 14px" }}></td>
             </tr>);
@@ -4074,7 +4124,7 @@ function MeatPriceChartsPage({ ready }) {
       </table>
     </div>
 
-    <div style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 12 }}>
+    <div style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginTop: 12 }}>
       Source: USDA AMS daily wholesale meat reports. Values in cents/lb for cuts, $/cwt for cutouts.
     </div>
   </div>);

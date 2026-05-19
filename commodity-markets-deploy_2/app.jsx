@@ -3695,55 +3695,98 @@ function MeatPriceChartsPage({ ready }) {
     ? allAvailYears
     : allAvailYears.filter(function(y){ return y >= curYear - parseInt(range); });
 
-  // ── Aggregation: convert daily values to weekly (last value of week) or monthly ──
-  function aggregate(dates, values, mode) {
-    if (mode === "daily") return { dates: dates, values: values };
-    // dates are "M/D" strings (no year). We need to group.
-    // For weekly: group by ISO week ending Friday (or just every 5 trading days).
-    // Simple approach: take every Nth value (5 for weekly, ~21 for monthly).
+  // ── Canonical period axis: same "M/D" labels for every year ──
+  // Daily: all M/D dates that appear in any year's data (sorted)
+  // Weekly: 52 Friday-of-week labels covering Jan 1 – Dec 31
+  // Monthly: 12 mid-month labels (1/15, 2/15, ..., 12/15)
+  function buildPeriodAxis(allYearsData, mode) {
+    if (mode === "monthly") {
+      const out = [];
+      for (let m = 1; m <= 12; m++) out.push(m + "/15");
+      return out;
+    }
     if (mode === "weekly") {
-      // Find Friday positions or just take every 5th data point.
-      // Better: group by "week ending" — take last data point in each 7-day calendar window.
-      const out = { dates: [], values: [] };
-      let i = 0;
-      while (i < dates.length) {
-        // Find the last non-null value in the next 5 trading days
-        const end = Math.min(i + 5, dates.length);
-        let lastIdx = -1;
-        for (let j = i; j < end; j++) {
-          if (values[j] != null) lastIdx = j;
-        }
-        if (lastIdx >= 0) {
-          out.dates.push(dates[lastIdx]);
-          out.values.push(values[lastIdx]);
-        }
-        i = end;
+      // 52 weeks ending on Fridays. Use 2023 as a reference calendar (non-leap, Friday Jan 6).
+      // We just need 52 "M/D" labels evenly spaced ~7 days apart.
+      const out = [];
+      // Start from Jan 6 (first Friday of a typical year) and step by 7 days for 52 weeks.
+      // Use a fixed reference year to compute the M/D labels.
+      const ref = new Date(2023, 0, 6); // Friday Jan 6, 2023
+      for (let w = 0; w < 52; w++) {
+        const d = new Date(ref);
+        d.setDate(d.getDate() + w * 7);
+        out.push((d.getMonth() + 1) + "/" + d.getDate());
       }
       return out;
     }
-    if (mode === "monthly") {
-      // Group by month (first part of "M/D")
-      const out = { dates: [], values: [] };
-      const byMonth = {};
-      dates.forEach(function(d, idx) {
-        if (!d) return;
-        const m = d.split("/")[0];
-        if (!byMonth[m]) byMonth[m] = [];
-        if (values[idx] != null) byMonth[m].push({ d: d, v: values[idx], idx: idx });
-      });
-      // Sort months numerically
-      Object.keys(byMonth).sort(function(a,b){ return parseInt(a) - parseInt(b); }).forEach(function(m) {
-        const arr = byMonth[m];
-        if (arr.length) {
-          // Average values for the month
-          const sum = arr.reduce(function(acc, x){ return acc + x.v; }, 0);
-          out.dates.push(m + "/15"); // Mid-month label
-          out.values.push(sum / arr.length);
-        }
-      });
-      return out;
+    // Daily: union of all dates that appear in any year's data
+    const seen = {};
+    allYearsData.forEach(function(yd) {
+      (yd.dates || []).forEach(function(d) { if (d) seen[d] = true; });
+    });
+    return Object.keys(seen).sort(function(a, b) {
+      const ap = a.split("/"), bp = b.split("/");
+      const am = parseInt(ap[0]), ad = parseInt(ap[1]);
+      const bm = parseInt(bp[0]), bd = parseInt(bp[1]);
+      if (am !== bm) return am - bm;
+      return ad - bd;
+    });
+  }
+
+  // ── Align one year's raw daily values to a canonical period axis ──
+  // For weekly: take the last non-null value within ±3 days of the canonical Friday.
+  // For monthly: average all non-null values within the month.
+  // For daily: just look up by exact M/D.
+  function alignToAxis(yearDates, yearValues, axis, mode) {
+    // Build a date->value map for this year
+    const valByDate = {};
+    yearDates.forEach(function(d, i) {
+      if (d != null && yearValues[i] != null) valByDate[d] = yearValues[i];
+    });
+    // Helper: M/D -> day-of-year (approximate, ignoring leap years)
+    function doy(md) {
+      const p = md.split("/");
+      const m = parseInt(p[0]), d = parseInt(p[1]);
+      const monthOffsets = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+      return monthOffsets[m - 1] + d;
     }
-    return { dates: dates, values: values };
+    if (mode === "daily") {
+      return axis.map(function(d) { return valByDate[d] != null ? valByDate[d] : null; });
+    }
+    if (mode === "weekly") {
+      // For each canonical Friday, find the last non-null daily value within ±3 days (a 7-day window)
+      const dailyDoys = yearDates.map(doy);
+      return axis.map(function(periodDate) {
+        const targetDoy = doy(periodDate);
+        let bestIdx = -1, bestDist = 999;
+        for (let i = 0; i < yearDates.length; i++) {
+          if (yearValues[i] == null) continue;
+          const dist = Math.abs(dailyDoys[i] - targetDoy);
+          if (dist <= 3 && dist < bestDist) {
+            bestDist = dist;
+            bestIdx = i;
+          } else if (dist === bestDist && dailyDoys[i] > (bestIdx >= 0 ? dailyDoys[bestIdx] : -1)) {
+            // tie-break: prefer later in the week
+            bestIdx = i;
+          }
+        }
+        return bestIdx >= 0 ? yearValues[bestIdx] : null;
+      });
+    }
+    if (mode === "monthly") {
+      // Average all non-null values within the month
+      return axis.map(function(periodDate) {
+        const targetMonth = parseInt(periodDate.split("/")[0]);
+        const monthVals = [];
+        yearDates.forEach(function(d, i) {
+          if (!d || yearValues[i] == null) return;
+          if (parseInt(d.split("/")[0]) === targetMonth) monthVals.push(yearValues[i]);
+        });
+        if (!monthVals.length) return null;
+        return monthVals.reduce(function(a, b) { return a + b; }, 0) / monthVals.length;
+      });
+    }
+    return axis.map(function() { return null; });
   }
 
   // ── Series legend (one entry per year) ──
@@ -3760,9 +3803,15 @@ function MeatPriceChartsPage({ ready }) {
   const series = resolveSeries();
 
   // ── Build chart data per year, then aggregate ──
-  const perYear = yearsToShow.map(function(y) {
-    const raw = aggregate(series.getYearDates(y), series.getYearVals(y), period);
-    return { year: y, dates: raw.dates, values: raw.values };
+  // Build raw per-year data first (each year's own date axis)
+  const rawPerYear = yearsToShow.map(function(y) {
+    return { year: y, dates: series.getYearDates(y), values: series.getYearVals(y) };
+  });
+  // Canonical period axis shared by all years
+  const periodAxis = buildPeriodAxis(rawPerYear, period);
+  // Align each year to the canonical axis
+  const perYear = rawPerYear.map(function(py) {
+    return { year: py.year, dates: periodAxis, values: alignToAxis(py.dates, py.values, periodAxis, period) };
   });
 
   // ── Chart renderer ──
@@ -3909,10 +3958,9 @@ function MeatPriceChartsPage({ ready }) {
   }
 
   // ── Data table below chart (Urner Barry style) ──
-  // Use a common "period axis" — the dates from the most recent (current) year
-  const curYearObj = perYear.find(function(py){ return py.year === curYear; });
-  const tableDates = curYearObj ? curYearObj.dates.slice() : [];
-  // For each period date, get value from each year
+  // Use the canonical period axis so all years align on the same rows.
+  const tableDates = periodAxis.slice();
+  // For each period date, get value from each year (perYear values are already aligned to axis).
   function valForYear(yearObj, periodDate) {
     if (!yearObj) return null;
     const idx = yearObj.dates.indexOf(periodDate);

@@ -3498,11 +3498,10 @@ function MeatPriceChartsPage({ ready }) {
   }, []);
 
   // ── Discover available cuts from meatData.seasonal latest year ──
-  const cutsInventory = useMemo(function() {
+  const cutsInventory = (function() {
     if (!meatData || !meatData.seasonal || !meatData.seasonal.years) return null;
     const years = meatData.seasonal.years.filter(function(y){ return typeof y.year === "number"; });
     if (!years.length) return null;
-    // Collect all cuts seen across all years (current may not have every cut yet)
     const beefCuts = {}, porkCuts = {};
     years.forEach(function(y) {
       if (y.cuts_beef) Object.keys(y.cuts_beef).forEach(function(k){ beefCuts[k] = true; });
@@ -3512,7 +3511,7 @@ function MeatPriceChartsPage({ ready }) {
       beef: Object.keys(beefCuts).sort(),
       pork: Object.keys(porkCuts).sort(),
     };
-  }, [meatData]);
+  })();
 
   // ── Determine primal for each cut by parsing IMPS code or matching guide ──
   function primalForBeefCut(cutName) {
@@ -3547,7 +3546,7 @@ function MeatPriceChartsPage({ ready }) {
   }
 
   // ── Build the primal → [cuts] map for the selected commodity ──
-  const primalMap = useMemo(function() {
+  const primalMap = (function() {
     if (!cutsInventory) return {};
     const cuts = commodity === "beef" ? cutsInventory.beef : cutsInventory.pork;
     const map = {};
@@ -3557,7 +3556,7 @@ function MeatPriceChartsPage({ ready }) {
       map[p].push(name);
     });
     return map;
-  }, [cutsInventory, commodity]);
+  })();
 
   // ── Special "primal" entries for cutouts (top of dropdown) ──
   const cutoutOptions = commodity === "beef"
@@ -3706,12 +3705,10 @@ function MeatPriceChartsPage({ ready }) {
   const series = resolveSeries();
 
   // ── Build chart data per year, then aggregate ──
-  const perYear = useMemo(function() {
-    return yearsToShow.map(function(y) {
-      const raw = aggregate(series.getYearDates(y), series.getYearVals(y), period);
-      return { year: y, dates: raw.dates, values: raw.values };
-    });
-  }, [yearsToShow.join(","), commodity, primal, cut, period, meatData]);
+  const perYear = yearsToShow.map(function(y) {
+    const raw = aggregate(series.getYearDates(y), series.getYearVals(y), period);
+    return { year: y, dates: raw.dates, values: raw.values };
+  });
 
   // ── Chart renderer ──
   function mkChart(canvas) {

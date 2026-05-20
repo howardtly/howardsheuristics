@@ -17,7 +17,7 @@ jobs:
 
       - name: Locate and run discovery script
         env:
-          AMS_API_KEY: ${{ secrets.AMS_API_KEY }}
+          MMN_API_KEY: ${{ secrets.MMN_API_KEY }}
         run: |
           echo "=== Repo structure (top 3 levels) ==="
           find . -maxdepth 3 -type d -not -path "./.git*" | sort
@@ -35,6 +35,7 @@ jobs:
           python3 discover_poultry.py
 
       - name: Upload discovery output
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: poultry-discovery

@@ -1,0 +1,34 @@
+name: Discover Poultry
+
+# Manual trigger only — click "Run workflow" from the Actions tab in GitHub.
+on:
+  workflow_dispatch:
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run discovery script
+        env:
+          AMS_API_KEY: ${{ secrets.AMS_API_KEY }}
+        run: |
+          cd scripts
+          python3 discover_poultry.py
+
+      - name: Upload discovery output
+        uses: actions/upload-artifact@v4
+        with:
+          name: poultry-discovery
+          path: |
+            scripts/poultry_summary.txt
+            scripts/poultry_raw_*.json
+          if-no-files-found: warn
+          retention-days: 7

@@ -3856,7 +3856,7 @@ function MeatPriceChartsPage({ ready }) {
   }, []);
 
   // ── Discover available cuts from meatData + poultryData seasonal years ──
-  const cutsInventory = useMemo(function() {
+  const cutsInventory = React.useMemo(function() {
     const beefCuts = {}, porkCuts = {};
     if (meatData && meatData.seasonal && meatData.seasonal.years) {
       meatData.seasonal.years.filter(function(y){ return typeof y.year === "number"; }).forEach(function(y) {
@@ -3903,7 +3903,7 @@ function MeatPriceChartsPage({ ready }) {
   }
 
   // ── Poultry series catalog from meta (charts page shows ALL series incl legacy) ──
-  const poultryCatalog = useMemo(function() {
+  const poultryCatalog = React.useMemo(function() {
     if (!poultryData || !poultryData.meta) return { chicken: [], turkey: [] };
     return {
       chicken: ((poultryData.meta.chicken || {}).series) || [],
@@ -3912,7 +3912,7 @@ function MeatPriceChartsPage({ ready }) {
   }, [poultryData]);
 
   // ── Build the primal → [cuts] map for the selected commodity ──
-  const primalMap = useMemo(function() {
+  const primalMap = React.useMemo(function() {
     const map = {};
     if (commodity === "chicken" || commodity === "turkey") {
       (poultryCatalog[commodity] || []).forEach(function(s) {
@@ -4104,7 +4104,7 @@ function MeatPriceChartsPage({ ready }) {
   const series = resolveSeries();
 
   // ── Build chart data per year, then aggregate ──
-  const perYear = useMemo(function() {
+  const perYear = React.useMemo(function() {
     return yearsToShow.map(function(y) {
       // Poultry data is natively weekly: "weekly" => passthrough (no 5-day grouping); "monthly" => month-group
       var aggMode = isPoultry ? (period === "monthly" ? "monthly" : "daily") : period;

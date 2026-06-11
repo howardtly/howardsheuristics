@@ -1243,6 +1243,27 @@ function DownloadBtn({ onClick, label = "Download CSV" }) {
   );
 }
 
+var PageErrorBoundary = (function() {
+  if (typeof React !== "undefined" && React.Component) {
+    return class extends React.Component {
+      constructor(props) { super(props); this.state = { error: null, info: null }; }
+      static getDerivedStateFromError(error) { return { error: error }; }
+      componentDidCatch(error, info) { this.setState({ error: error, info: info }); }
+      render() {
+        if (this.state.error) {
+          var err = this.state.error;
+          var msg = (err && err.stack) ? err.stack : String(err);
+          var compStack = (this.state.info && this.state.info.componentStack) ? this.state.info.componentStack : "";
+          return React.createElement("div", { style: { padding: 20, fontFamily: "var(--font-mono, monospace)", fontSize: 12, color: "#A32D2D", whiteSpace: "pre-wrap", lineHeight: 1.5 } },
+            "⚠ This page hit a render error:\n\n" + msg + (compStack ? "\n\nComponent stack:" + compStack : ""));
+        }
+        return this.props.children;
+      }
+    };
+  }
+  return function(props) { return props.children; };
+})();
+
 function MetricCard({ label, value, sub, trend }) {
   return (
     <div style={{ background: "var(--color-background-secondary)", borderRadius: "var(--border-radius-md)", padding: "12px 14px", minWidth: 0 }}>
@@ -4161,7 +4182,7 @@ function MeatPriceChartsPage({ ready }) {
               },
             },
             y: {
-              ticks: { font: { size: 10 }, callback: fmtY }, title: { display: true, text: unitLabel, font: { size: 11 } },
+              ticks: { font: { size: 10 }, callback: fmtY }, title: isPoultry ? { display: true, text: unitLabel, font: { size: 11 } } : { display: false },
               grid: { color: "rgba(0,0,0,0.06)" },
             },
           },
@@ -4223,7 +4244,7 @@ function MeatPriceChartsPage({ ready }) {
             grid: { color: "rgba(0,0,0,0.04)" },
           },
           y: {
-            ticks: { font: { size: 10 }, callback: fmtY }, title: { display: true, text: unitLabel, font: { size: 11 } },
+            ticks: { font: { size: 10 }, callback: fmtY }, title: isPoultry ? { display: true, text: unitLabel, font: { size: 11 } } : { display: false },
             grid: { color: "rgba(0,0,0,0.06)" },
           },
         },
@@ -8201,7 +8222,7 @@ function App() {
 
             </div>
           </div>
-          {PageComp && <PageComp ready={chartReady} />}
+          {PageComp && <PageErrorBoundary key={active}><PageComp ready={chartReady} /></PageErrorBoundary>}
         </div>
       </div>
     </div>

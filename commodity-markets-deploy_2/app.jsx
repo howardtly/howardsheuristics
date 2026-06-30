@@ -1160,11 +1160,15 @@ const NAV_SECTIONS = [
     icon: <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7V5.5L4.5 6.5"/><path d="M7 7V5.5L5.5 6.5"/><path d="M3 7c-.5 0-1 .4-1 1v1.5c0 .4.3.7.7.7H4"/><path d="M4 7h2c.5 0 1 .4 1 1v0"/><rect x="4" y="8" width="12" height="5" rx="1"/><path d="M16 9.5h1.5c.3 0 .5.2.5.5v1c0 .3-.2.5-.5.5H16"/><circle cx="4" cy="7.8" r="0.5" fill="currentColor" stroke="none"/><circle cx="6" cy="7.8" r="0.5" fill="currentColor" stroke="none"/><path d="M5.5 13v2.5M8 13v2.5M12.5 13v2.5M15 13v2.5"/></svg>,
     children: [
       { id: "livestock-wasde", label: "WASDE balance sheets" },
-      { id: "cutout", label: "Boxed beef & pork prices" },
-      { id: "meat-price-charts", label: "USDA meat price charts" },
       { id: "slaughter", label: "Slaughter" },
       { id: "cold-storage", label: "Cold storage" }, { id: "on-feed", label: "Cattle on feed" },
       { id: "hogs-pigs", label: "Hogs & pigs" },
+      { subheader: "Pricing" },
+      { id: "pricing-beef", label: "Beef" },
+      { id: "pricing-pork", label: "Pork" },
+      { id: "pricing-chicken", label: "Chicken" },
+      { id: "pricing-turkey", label: "Turkey" },
+      { id: "meat-price-charts", label: "USDA meat price charts" },
     ],
   },
   { id: "energy", label: "Energy",
@@ -2254,13 +2258,13 @@ const PORK_GUIDE_CUTS = [
 
 
 
-function CutoutPage({ ready }) {
-  const [tab, setTab] = useState("cattle");
+function CutoutPage({ ready, species }) {
+  const [tab, setTab] = useState(species || "cattle");
   const [hCutout, tCutout] = useToggle();
   const [hChoice, tChoice] = useToggle();
   const [hComp, tComp] = useToggle();
   const [selectedProduct, setSelectedProduct] = useState(null);
-  const [period, setPeriod] = useState("daily");
+  const [period, setPeriod] = useState((species === "chicken" || species === "turkey") ? "weekly" : "daily");
   const [chartMode, setChartMode] = useState("seasonal");
   const [meatData, setMeatData] = useState(null);
   const [poultryData, setPoultryData] = useState(null);
@@ -3074,12 +3078,12 @@ function CutoutPage({ ready }) {
   return (<div>
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        {!species && <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.4px" }}>Commodity</span>
           <select value={tab} onChange={function(e){ var newTab = e.target.value; setTab(newTab); setSelectedProduct(null); setSelectedPorkProduct(null); setSelectedPoultryProduct(null); if ((newTab === "chicken" || newTab === "turkey") && period === "daily") { setPeriod("weekly"); } }} style={{ padding: "7px 28px 7px 12px", fontSize: 14, fontWeight: 500, border: "1px solid var(--color-border-secondary)", borderRadius: 6, background: "var(--color-background-primary)", color: "var(--color-text-primary)", fontFamily: "inherit", cursor: "pointer", appearance: "none", backgroundImage: "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M3 4.5l3 3 3-3' stroke='%23666' stroke-width='1.5' fill='none'/></svg>\")", backgroundRepeat: "no-repeat", backgroundPosition: "right 8px center" }}>
             {tabs.map(function(t){ return <option key={t.id} value={t.id}>{t.label}</option>; })}
           </select>
-        </div>
+        </div>}
         <div style={{ display: "flex", borderRadius: 6, border: "1px solid var(--color-border-secondary)", overflow: "hidden" }}>
           {[{ id: "daily", label: "Daily" }, { id: "weekly", label: "Weekly" }, { id: "monthly", label: "Monthly" }].map(u => {
             var isPoultryTab = tab === "chicken" || tab === "turkey";
@@ -8130,6 +8134,10 @@ const PAGES = {
   "drought": { title: "U.S. Drought Monitor", component: DroughtPage },
   "on-feed": { title: "Cattle on feed", component: CattleOnFeedPage },
   "cutout": { title: "Boxed beef & pork prices", component: CutoutPage },
+  "pricing-beef": { title: "Beef cutout", component: (p) => <CutoutPage {...p} species="cattle" /> },
+  "pricing-pork": { title: "Pork cutout", component: (p) => <CutoutPage {...p} species="hogs" /> },
+  "pricing-chicken": { title: "Weekly chicken report", component: (p) => <CutoutPage {...p} species="chicken" /> },
+  "pricing-turkey": { title: "Weekly turkey report", component: (p) => <CutoutPage {...p} species="turkey" /> },
   "meat-price-charts": { title: "USDA meat price charts", component: MeatPriceChartsPage },
   "slaughter": { title: "Slaughter", component: SlaughterPage },
   "cold-storage": { title: "Cold storage", component: ColdStoragePage },

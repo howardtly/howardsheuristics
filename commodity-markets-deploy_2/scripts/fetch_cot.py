@@ -38,6 +38,16 @@ COMMODITY_MAP = {
     "LIVE CATTLE": "cot-live-cattle",
     "FEEDER CATTLE": "cot-feeder-cattle",
     "LEAN HOGS": "cot-lean-hogs",
+    # Dairy — CME Class III Milk and Cash-Settled Cheese
+    # Current CFTC name: "MILK, Class III" (matched uppercase). Aliases guard old variants.
+    "MILK, CLASS III": "cot-class3-milk",
+    "MILK CLASS III": "cot-class3-milk",
+    "CLASS III MILK": "cot-class3-milk",
+    # Current CFTC name: "CHEESE (CASH-SETTLED)". Cheese futures launched mid-2010.
+    "CHEESE (CASH-SETTLED)": "cot-cheese",
+    "CHEESE (CASH SETTLED)": "cot-cheese",
+    "CHEESE-CASH SETTLED": "cot-cheese",
+    "CHEESE, CASH-SETTLED": "cot-cheese",
     # Crude oil — renamed post-2022
     # NOTE: "CRUDE OIL, LIGHT SWEET-WTI" is a different smaller contract — do NOT include
     "CRUDE OIL, LIGHT SWEET": "cot-crude-oil",
@@ -67,6 +77,8 @@ COMMODITY_META = {
     "cot-live-cattle":   {"label": "Live Cattle",    "exchange": "CME",  "contract": "40,000 lbs"},
     "cot-feeder-cattle": {"label": "Feeder Cattle",  "exchange": "CME",  "contract": "50,000 lbs"},
     "cot-lean-hogs":     {"label": "Lean Hogs",      "exchange": "CME",  "contract": "40,000 lbs"},
+    "cot-class3-milk":   {"label": "Class III Milk", "exchange": "CME",  "contract": "200,000 lbs"},
+    "cot-cheese":        {"label": "Cash-Settled Cheese", "exchange": "CME", "contract": "20,000 lbs"},
     "cot-crude-oil":     {"label": "Crude Oil",      "exchange": "NYMEX","contract": "1,000 bbl"},
     "cot-heating-oil":   {"label": "Heating Oil",    "exchange": "NYMEX","contract": "42,000 gal"},
     "cot-nat-gas":       {"label": "Natural Gas",    "exchange": "NYMEX","contract": "10,000 MMBtu"},

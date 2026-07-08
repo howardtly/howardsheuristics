@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Fetch daily beef and pork cutout/primal prices from USDA AMS MPR Datamart.
-Reports: 2453 (beef cutout PM), 2451 (boneless beef/trimmings PM), 2498 (pork cutout PM)
+Reports: 2453 (LM_XB403 beef cutout PM), 2451 (LM_XB401 boneless beef/trimmings PM),
+2498 (LM_PK602 pork cutout PM), 2465 (LM_XB463 weekly comprehensive cutout)
 Accumulates daily history in meat_prices.json.
 """
 import json, os, sys, time, urllib.request, urllib.error, urllib.parse
@@ -62,6 +63,22 @@ def parse_beef_cutout(data):
         elif section == "Current Volume":
             result["choice_loads"] = _f(rec.get("choice_volume_loads"))
             result["select_loads"] = _f(rec.get("select_volume_loads"))
+            # Full volume breakdown (pounds + trimmings / ground beef loads).
+            # Exact field names vary slightly across datamart reports, so scan keys.
+            def _vol_field(sub_a, sub_b):
+                for k, v in rec.items():
+                    kl = str(k).lower()
+                    if sub_a in kl and sub_b in kl:
+                        return _f(v)
+                return None
+            result["choice_lbs"] = _vol_field("choice", "pound")
+            result["select_lbs"] = _vol_field("select", "pound")
+            result["trim_loads"] = _vol_field("trim", "load")
+            result["trim_lbs"] = _vol_field("trim", "pound")
+            gl = _vol_field("grind", "load")
+            result["grind_loads"] = gl if gl is not None else _vol_field("ground", "load")
+            gp = _vol_field("grind", "pound")
+            result["grind_lbs"] = gp if gp is not None else _vol_field("ground", "pound")
 
         elif section == "Choice Cuts":
             cuts = []
@@ -408,9 +425,14 @@ def slim_daily_records(daily):
         pork = rec.get("pork", {})
         for k in cut_keys:
             pork.pop(k, None)
-        # Also slim beef_trimmings national list for old records
-        bt = rec.get("beef_trimmings", {})
-        bt.pop("national", None)
+        # Slim beef_trimmings for old records but keep the Fresh 90% line —
+        # it doubles as the "2451 already fetched" marker and preserves the
+        # key FOB plant national boneless series in the raw daily history.
+        bt = rec.get("beef_trimmings")
+        if bt is not None and isinstance(bt.get("national"), list):
+            keep = [it for it in bt["national"]
+                    if it.get("name") and "Fresh" in it["name"] and "90%" in it["name"] and "92" not in it["name"]]
+            bt["national"] = [{"name": it.get("name"), "avg": it.get("avg"), "lbs": it.get("lbs")} for it in keep]
 
 
 def main():
@@ -495,6 +517,30 @@ def main():
         parts = rec["date"].split("/")
         return f"{parts[2]}/{parts[0]}/{parts[1]}"
     daily.sort(key=date_sort_key)
+
+    # ── Enrich older records with report 2451 (LM_XB401 boneless beef & trimmings) ──
+    # The 2451 feed was added recently, so most historical records lack beef_trimmings.
+    # Chip away at the gap each run (newest first, capped) so the FOB plant national
+    # Fresh 90% series backfills across a few nightly runs without blowing up runtime.
+    ENRICH_2451_CAP = 400
+    _missing_2451 = [rec for rec in daily if (rec.get("beef_trimmings") or {}).get("national") is None]
+    _missing_2451.sort(key=date_sort_key, reverse=True)
+    if _missing_2451:
+        _todo = _missing_2451[:ENRICH_2451_CAP]
+        print(f"\n  Enriching {len(_todo)} of {len(_missing_2451)} records missing LM_XB401 trimmings...")
+        _done = 0
+        for rec in _todo:
+            try:
+                trims = fetch_report("2451", rec["date"])
+                parsed = parse_beef_trimmings(trims)
+                # Store an empty marker when the report had nothing for that date,
+                # so we don't refetch it forever.
+                rec["beef_trimmings"] = parsed if parsed else {"national": []}
+                _done += 1
+            except Exception as e:
+                print(f"  ERROR enriching {rec['date']}: {e}")
+            time.sleep(0.3)
+        print(f"  Enriched {_done} records")
 
     # Merge comprehensive cutout from CSV (covers full history)
     load_comp_cutout_csv(daily)

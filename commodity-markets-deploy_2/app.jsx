@@ -1043,6 +1043,10 @@ const COT_GROUPS = [
     { id: "cot-feeder-cattle", label: "Feeder Cattle" },
     { id: "cot-lean-hogs", label: "Lean Hogs" },
   ]},
+  { header: "DAIRY", items: [
+    { id: "cot-class3-milk", label: "Class III Milk" },
+    { id: "cot-cheese", label: "Cash-Settled Cheese" },
+  ]},
   { header: "ENERGIES", items: [
     { id: "cot-crude-oil", label: "Crude Oil" },
     { id: "cot-heating-oil", label: "Heating Oil" },
@@ -6318,6 +6322,7 @@ const COT_COMMODITY_LIST = [
   { id: "cot-mpls-wheat", label: "MN HRS Wheat" },
   { id: "cot-live-cattle", label: "Live Cattle" }, { id: "cot-feeder-cattle", label: "Feeder Cattle" },
   { id: "cot-lean-hogs", label: "Lean Hogs" },
+  { id: "cot-class3-milk", label: "Class III Milk" }, { id: "cot-cheese", label: "Cash-Settled Cheese" },
   { id: "cot-crude-oil", label: "Crude Oil" }, { id: "cot-heating-oil", label: "Heating Oil" },
   { id: "cot-nat-gas", label: "Natural Gas" },
 ];

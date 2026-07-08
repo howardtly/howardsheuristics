@@ -542,6 +542,35 @@ def main():
             time.sleep(0.3)
         print(f"  Enriched {_done} records")
 
+    # ── One-time grade rebuild ──
+    # Old records are slimmed (no per-cut detail), so grade-separated seasonal
+    # series can't be built for history from them directly. Re-fetch report 2453
+    # once for those records; afterward the graded series persist via the seasonal
+    # merge. Retries across runs until it completes (flag stored in seasonal).
+    _ex_seasonal = existing.get("seasonal") or {}
+    _grade_ready = bool(_ex_seasonal.get("cuts_beef_choice_complete"))
+    if not _grade_ready:
+        _stale = [r for r in daily if not (r.get("beef") or {}).get("choice_cuts")]
+        if _stale:
+            print(f"\n  One-time grade rebuild: re-fetching beef cut detail for {len(_stale)} records (report 2453)...")
+            _ok = 0
+            for r in _stale:
+                try:
+                    bp = parse_beef_cutout(fetch_report("2453", r["date"]))
+                    if bp:
+                        r.setdefault("beef", {})
+                        for k in ("choice_cuts", "select_cuts", "choice_select_cuts", "ground_beef", "trimmings_2453"):
+                            if bp.get(k):
+                                r["beef"][k] = bp[k]
+                        _ok += 1
+                except Exception as e:
+                    print(f"    ERROR rebuilding {r['date']}: {e}")
+                time.sleep(0.15)
+            print(f"  Grade rebuild: repopulated {_ok}/{len(_stale)} records")
+            _grade_ready = _ok >= int(len(_stale) * 0.98)
+        else:
+            _grade_ready = True
+
     # Merge comprehensive cutout from CSV (covers full history)
     load_comp_cutout_csv(daily)
 
@@ -556,6 +585,7 @@ def main():
     # Build seasonal data for charts (pre-computed by year)
     # Pass existing seasonal so cut-level data survives incremental runs (historical records are slimmed)
     seasonal = build_seasonal_data(daily, existing.get("seasonal"))
+    seasonal["cuts_beef_choice_complete"] = _grade_ready
 
     # Build latest snapshot
     latest = daily[-1] if daily else None
@@ -611,6 +641,7 @@ def build_seasonal_data(daily, existing_seasonal=None):
 
     # Build aligned arrays per year for beef choice cutout
     seasonal = {"years": [], "labels": []}
+    cut_codes = {}  # normalized cut name -> USDA/IMPS code (for the charting dropdown)
 
     # Use current year's dates as the label template
     if current_year in by_year:
@@ -629,11 +660,15 @@ def build_seasonal_data(daily, existing_seasonal=None):
         # Beef comprehensive cutout (weekly, from 2465)
         yr_data["beef_comp"] = [r.get("beef_comp", {}).get("cutout") for r in yr_records]
 
-        # Beef primals
+        # Beef primals (choice + select composites)
         for primal in ["Rib", "Chuck", "Round", "Loin", "Brisket", "Plate", "Flank"]:
             key = f"beef_{primal.lower()}"
             yr_data[key] = [
                 r.get("beef", {}).get("primals", {}).get(primal, {}).get("choice")
+                for r in yr_records
+            ]
+            yr_data[key + "_select"] = [
+                r.get("beef", {}).get("primals", {}).get(primal, {}).get("select")
                 for r in yr_records
             ]
 
@@ -692,6 +727,53 @@ def build_seasonal_data(daily, existing_seasonal=None):
                 out.append((_norm_cut_name(it.get("name")), it.get("avg")))
             return out
 
+        def beef_items_graded(r):
+            """Yield (name, grade, avg) where grade is 'choice', 'select', or 'both'.
+            Ungraded items (combined C&S, ground beef, trimmings, boneless) count as
+            'both' so they appear under either quality view."""
+            beef = r.get("beef", {}) or {}
+            bt = r.get("beef_trimmings", {}) or {}
+            out = []
+            for it in beef.get("choice_cuts", []) or []:
+                out.append((_norm_cut_name(it.get("name")), "choice", it.get("avg")))
+            for it in beef.get("select_cuts", []) or []:
+                out.append((_norm_cut_name(it.get("name")), "select", it.get("avg")))
+            for sec in ("choice_select_cuts", "ground_beef", "trimmings_2453"):
+                for it in beef.get(sec, []) or []:
+                    out.append((_norm_cut_name(it.get("name")), "both", it.get("avg")))
+            for it in bt.get("national", []) or []:
+                out.append((_norm_cut_name(it.get("name")), "both", it.get("avg")))
+            return out
+
+        def build_graded_series(yr_records):
+            """Like build_item_series but splits beef into (choice, select) dicts."""
+            choice, select = {}, {}
+            def _add(series, idx, dmap):
+                for name, val in dmap.items():
+                    if name not in series:
+                        series[name] = [None] * idx
+                    series[name].append(val)
+                seen = set(dmap.keys())
+                for name in list(series.keys()):
+                    if name not in seen:
+                        series[name].append(None)
+            for idx, r in enumerate(yr_records):
+                cmap, smap = {}, {}
+                for name, grade, avg in beef_items_graded(r):
+                    if not name or avg is None:
+                        continue
+                    if grade in ("choice", "both"):
+                        cmap[name] = avg
+                    if grade in ("select", "both"):
+                        smap[name] = avg
+                _add(choice, idx, cmap)
+                _add(select, idx, smap)
+            for series in (choice, select):
+                for name in series:
+                    while len(series[name]) < len(yr_records):
+                        series[name].append(None)
+            return choice, select
+
         def pork_items(r):
             pork = r.get("pork", {}) or {}
             out = []
@@ -704,6 +786,22 @@ def build_seasonal_data(daily, existing_seasonal=None):
 
         yr_data["cuts_beef"] = build_item_series(yr_records, beef_items)
         yr_data["cuts_pork"] = build_item_series(yr_records, pork_items)
+        _cb_choice, _cb_select = build_graded_series(yr_records)
+        yr_data["cuts_beef_choice"] = _cb_choice
+        yr_data["cuts_beef_select"] = _cb_select
+
+        # Capture USDA/IMPS codes from raw names (e.g. "112A  3") for the charting
+        # dropdown. Best-effort now; complete after the one-time grade rebuild.
+        for r in yr_records:
+            beef = r.get("beef", {}) or {}
+            for sec in ("choice_cuts", "select_cuts", "choice_select_cuts"):
+                for it in beef.get(sec, []) or []:
+                    raw = it.get("name") or ""
+                    m = _re_cut.search(r"\(([^)]+)\)\s*$", raw)
+                    if m:
+                        nm = _norm_cut_name(raw)
+                        if nm and nm not in cut_codes:
+                            cut_codes[nm] = " ".join(m.group(1).split())
 
         # Keep trim_beef / trim_pork as aliases for backward compatibility with existing app code
         yr_data["trim_beef"] = yr_data["cuts_beef"]
@@ -747,7 +845,7 @@ def build_seasonal_data(daily, existing_seasonal=None):
             # For each cut-item series map, merge day-by-day.
             # Align by date_label. If new record has a non-null value at a given day, use it;
             # otherwise carry forward the old value.
-            for map_key in ("cuts_beef", "cuts_pork", "trim_beef", "trim_pork"):
+            for map_key in ("cuts_beef", "cuts_pork", "trim_beef", "trim_pork", "cuts_beef_choice", "cuts_beef_select"):
                 old_map = old_y.get(map_key) or {}
                 new_map = new_y.get(map_key) or {}
                 # Use dates array for alignment
@@ -773,6 +871,13 @@ def build_seasonal_data(daily, existing_seasonal=None):
                                 out.append(None)
                     merged[name] = out
                 new_y[map_key] = merged
+
+    # Union cut codes with previously stored ones (fresh/rebuilt entries win)
+    if existing_seasonal and isinstance(existing_seasonal.get("cut_codes"), dict):
+        merged_codes = dict(existing_seasonal["cut_codes"])
+        merged_codes.update(cut_codes)
+        cut_codes = merged_codes
+    seasonal["cut_codes"] = cut_codes
 
     return seasonal
 

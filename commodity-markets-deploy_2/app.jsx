@@ -2626,22 +2626,14 @@ function CutoutPage({ ready, species }) {
           // These use trim_description instead of item_description
           // Handled via IMPS map above if present in choice_cuts
 
-          // Choice & Select combo cuts (Plate items: skirts, cap & wedge, pectoral)
+          // Choice, Select & Ungraded combo cuts (skirts, cap & wedge, pectoral) -> own section
           (lb2.choice_select_cuts || []).forEach(function(cut) {
             var name = cut.name || "";
-            // Map to Plate primal
             var imps = findImps(name);
-            var primal = impsLookup(imps);
-            if (!primal) {
-              // These items sometimes don't have IMPS in parens, use name matching
-              if (name.indexOf("Plate") >= 0 || name.indexOf("Skirt") >= 0 || name.indexOf("Cap and Wedge") >= 0 || name.indexOf("Pectoral") >= 0) {
-                primal = "Plate";
-              } else primal = "Other";
-            }
             var shortName = name.replace(/\s*\([^)]+\)/, "").replace(/^\s*\d+[A-Z]?\s+\d\s+/, "").trim();
             var prevCut = (pb.choice_select_cuts || []).find(function(pc) { return pc.name === cut.name; });
             beefCutRows.push({
-              name: shortName, primal: primal, item: imps, combined: true, chartable: !!_seasonalCutSet[shortName],
+              name: shortName, primal: "CSU", item: imps, combined: true, chartable: !!_seasonalCutSet[shortName],
               lbs: cut.lbs, trades: cut.trades,
               latest: cut.avg, low: cut.low, high: cut.high,
               prev: prevCut ? prevCut.avg : null,
@@ -2663,11 +2655,24 @@ function CutoutPage({ ready, species }) {
             });
           });
 
-          // Beef trimmings section from report 2453 (full report section, incl. untraded items)
+          // Beef trimmings (report 2453) folded into the combined Boneless section.
+          // Dedup items that are the same as a 2451 boneless line (e.g. "Fresh 50%
+          // lean trimmings" == "Chemical Lean, Fresh 50%") by a normalized key.
+          var _trimKey = function(nm) {
+            var s = (nm || "").toLowerCase();
+            var state = s.indexOf("frozen") >= 0 ? "frozen" : (s.indexOf("fresh") >= 0 ? "fresh" : "");
+            var mm = s.match(/(\d+(?:-\d+)?)\s*%/);
+            var pct = mm ? mm[1] : "";
+            var cat = s.indexOf("bull") >= 0 ? "bull" : ((s.indexOf("chemical lean") >= 0 || s.indexOf("lean trimmings") >= 0) ? "cl" : "other");
+            return cat + ":" + state + ":" + pct;
+          };
+          var _nationalTrimKeys = {};
+          (((latestRec.beef_trimmings || {}).national) || []).forEach(function(t) { _nationalTrimKeys[_trimKey(t.name)] = true; });
           (lb2.trimmings_2453 || []).forEach(function(t) {
+            if (_nationalTrimKeys[_trimKey(t.name)]) return; // duplicate of a boneless (2451) item
             var prevT = (pb.trimmings_2453 || []).find(function(pt) { return pt.name === t.name; });
             beefCutRows.push({
-              name: t.name, primal: "Trim2453", item: "", chartable: !!_seasonalCutSet[t.name],
+              name: t.name, primal: "Boneless", item: "", chartable: !!_seasonalCutSet[t.name],
               lbs: t.lbs, trades: t.trades != null ? t.trades : null,
               latest: t.avg, low: t.low != null ? t.low : null, high: t.high != null ? t.high : null,
               prev: prevT ? prevT.avg : null,
@@ -3205,9 +3210,9 @@ function CutoutPage({ ready, species }) {
       ]);
     });
     rows.push([]);
-    rows.push(["Section", "Description", "Code", "Choice loads", "Choice trades", "Choice low", "Choice high", "Choice avg", "Choice chg", "Select loads", "Select trades", "Select low", "Select high", "Select avg", "Select chg"]);
-    var secOrder = ["Rib", "Chuck", "Brisket", "Round", "Loin", "Plate", "Flank", "Other", "GB", "Trim2453", "Boneless"];
-    var secNames = { GB: "Ground beef - steer/heifer source", Trim2453: "Beef trimmings", Boneless: "Boneless processing beef - FOB plant national", Other: "Other items" };
+    rows.push(["Section", "Description", "Code", "Choice trades", "Choice loads", "Choice pounds", "Choice low", "Choice high", "Choice avg", "Choice chg", "Select trades", "Select loads", "Select pounds", "Select low", "Select high", "Select avg", "Select chg"]);
+    var secOrder = ["Rib", "Chuck", "Brisket", "Round", "Loin", "Plate", "Flank", "Other", "CSU", "GB", "Boneless"];
+    var secNames = { CSU: "Choice, Select & Ungraded Cuts", GB: "Ground beef - steer/heifer source", Boneless: "Boneless processing beef and beef trimmings", Other: "Other items" };
     if ((liveBeefCutRows || []).length) {
       secOrder.forEach(function(sec) {
         (liveBeefCutRows || []).filter(function(r) { return r.primal === sec; }).forEach(function(r) {
@@ -3216,8 +3221,8 @@ function CutoutPage({ ready, species }) {
           var seChg = (se && se.avg != null && se.prev != null) ? (se.avg - se.prev).toFixed(2) : "";
           rows.push([
             secNames[sec] || sec, r.name, r.item || "",
-            _fmtLoads(r.lbs), r.trades != null ? r.trades : "", r.low != null ? r.low : "", r.high != null ? r.high : "", r.latest != null ? r.latest : "", chChg,
-            se ? _fmtLoads(se.lbs) : "", se && se.trades != null ? se.trades : "", se && se.low != null ? se.low : "", se && se.high != null ? se.high : "", se && se.avg != null ? se.avg : "", seChg
+            r.trades != null ? r.trades : "", _fmtLoads(r.lbs), r.lbs != null ? r.lbs : "", r.low != null ? r.low : "", r.high != null ? r.high : "", r.latest != null ? r.latest : "", chChg,
+            se && se.trades != null ? se.trades : "", se ? _fmtLoads(se.lbs) : "", se && se.lbs != null ? se.lbs : "", se && se.low != null ? se.low : "", se && se.high != null ? se.high : "", se && se.avg != null ? se.avg : "", seChg
           ]);
         });
       });
@@ -3252,31 +3257,33 @@ function CutoutPage({ ready, species }) {
       <DownloadBtn onClick={tab === "cattle" ? dlBeefAll : dlCutoutCSV} />
     </div>
     {tab === "cattle" && (function() {
-      var sectionOrder = ["Rib", "Chuck", "Brisket", "Round", "Loin", "Plate", "Flank", "Other", "GB", "Trim2453", "Boneless"];
-      var sectionLabels = { GB: "Ground beef \u2014 steer/heifer source", Trim2453: "Beef trimmings", Boneless: "Boneless processing beef \u2014 FOB plant, national", Other: "Other items" };
+      var sectionOrder = ["Rib", "Chuck", "Brisket", "Round", "Loin", "Plate", "Flank", "Other", "CSU", "GB", "Boneless"];
+      var sectionLabels = { CSU: "Choice, Select & Ungraded Cuts", GB: "Ground beef \u2014 steer/heifer source", Boneless: "Boneless processing beef and beef trimmings", Other: "Other items" };
       var rowsAll = liveBeefCutRows || [];
       var fmtLoadsNum = function(lbs) { return lbs != null ? (lbs / 40000).toFixed(2) : null; };
-      var thSub = { textAlign: "right", padding: "5px 8px", fontWeight: 500, fontSize: 10.5, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)", whiteSpace: "nowrap" };
+      var thSub = { textAlign: "right", padding: "5px 7px", fontWeight: 500, fontSize: 11, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)", whiteSpace: "nowrap" };
+      var fmtN = function(n, dec) { return n == null ? null : Number(n).toLocaleString("en-US", { minimumFractionDigits: dec, maximumFractionDigits: dec }); };
       var numCell = function(val, key, opts) {
         opts = opts || {};
-        return <td key={key} style={{ padding: "6px 8px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-secondary)", borderLeft: opts.divider ? "1px solid var(--color-border-secondary)" : undefined, whiteSpace: "nowrap" }}>{val != null ? val : "\u2014"}</td>;
+        return <td key={key} style={{ padding: "6px 7px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--color-text-secondary)", borderLeft: opts.divider ? "1px solid var(--color-border-secondary)" : undefined, whiteSpace: "nowrap" }}>{val != null ? val : "\u2014"}</td>;
       };
       var avgCell = function(avg, prev, key) {
         var chg = (avg != null && prev != null) ? avg - prev : null;
         var col = chg == null ? "var(--color-text-tertiary)" : chg > 0 ? "#639922" : chg < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
-        return (<td key={key} style={{ padding: "6px 10px 6px 8px", textAlign: "right", fontFamily: "var(--font-mono)", whiteSpace: "nowrap" }}>
-          <div style={{ fontSize: 11.5, fontWeight: 500, color: "var(--color-text-primary)" }}>{avg != null ? avg.toFixed(2) : "\u2014"}</div>
-          {chg != null && <div style={{ fontSize: 9.5, fontWeight: 500, color: col }}>{chg > 0 ? "+" : ""}{chg.toFixed(2)}</div>}
+        return (<td key={key} style={{ padding: "6px 8px 6px 7px", textAlign: "right", fontFamily: "var(--font-mono)", whiteSpace: "nowrap" }}>
+          <div style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-primary)" }}>{avg != null ? fmtN(avg, 2) : "\u2014"}</div>
+          {chg != null && <div style={{ fontSize: 10, fontWeight: 500, color: col }}>{chg > 0 ? "+" : ""}{fmtN(chg, 2)}</div>}
         </td>);
       };
       var rangeCell = function(low, high, key) {
-        return numCell((low != null && high != null) ? (low.toFixed(2) + "\u2013" + high.toFixed(2)) : null, key);
+        return numCell((low != null && high != null) ? (fmtN(low, 2) + "\u2013" + fmtN(high, 2)) : null, key);
       };
       var gradeCells = function(g, kp) {
-        if (!g) return [numCell(null, kp + "l", { divider: true }), numCell(null, kp + "t"), rangeCell(null, null, kp + "r"), avgCell(null, null, kp + "a")];
+        if (!g) return [numCell(null, kp + "t", { divider: true }), numCell(null, kp + "lo"), numCell(null, kp + "lb"), rangeCell(null, null, kp + "r"), avgCell(null, null, kp + "a")];
         return [
-          numCell(fmtLoadsNum(g.lbs), kp + "l", { divider: true }),
-          numCell(g.trades != null ? g.trades : null, kp + "t"),
+          numCell(fmtN(g.trades, 0), kp + "t", { divider: true }),
+          numCell(g.lbs != null ? fmtN(g.lbs / 40000, 2) : null, kp + "lo"),
+          numCell(fmtN(g.lbs, 0), kp + "lb"),
           rangeCell(g.low, g.high, kp + "r"),
           avgCell(g.avg, g.prev, kp + "a"),
         ];
@@ -3304,7 +3311,7 @@ function CutoutPage({ ready, species }) {
                 var _cv = (liveLatest && liveLatest.beef) || {};
                 var groupHead = function(title, val, chg, key) {
                   var col = chg == null ? "var(--color-text-tertiary)" : chg > 0 ? "#639922" : chg < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
-                  return (<th key={key} colSpan={4} style={{ textAlign: "center", padding: "5px 8px 6px", borderBottom: "0.5px solid var(--color-border-secondary)", borderLeft: "1px solid var(--color-border-secondary)" }}>
+                  return (<th key={key} colSpan={5} style={{ textAlign: "center", padding: "5px 8px 6px", borderBottom: "0.5px solid var(--color-border-secondary)", borderLeft: "1px solid var(--color-border-secondary)" }}>
                     <div style={{ fontWeight: 600, fontSize: 11, letterSpacing: "0.5px", color: "var(--color-text-secondary)" }}>{title}</div>
                     <div style={{ fontSize: 11, fontWeight: 500, marginTop: 2, fontFamily: "var(--font-mono)", color: "var(--color-text-primary)" }}>Cutout: {val != null ? val.toFixed(2) : "\u2014"}{chg != null && <span style={{ color: col, marginLeft: 6 }}>{chg > 0 ? "+" : ""}{chg.toFixed(2)}</span>}</div>
                   </th>);
@@ -3313,8 +3320,8 @@ function CutoutPage({ ready, species }) {
               })()}
             </tr>
             <tr style={{ background: "var(--color-background-secondary)" }}>
-              {["Loads", "Trades", "Range", "WTD Avg", "Loads", "Trades", "Range", "WTD Avg"].map(function(h, i) {
-                return <th key={i} style={Object.assign({}, thSub, i % 4 === 0 ? { borderLeft: "1px solid var(--color-border-secondary)" } : {})}>{h}</th>;
+              {["Trades", "Loads", "Pounds", "Range", "WTD Avg", "Trades", "Loads", "Pounds", "Range", "WTD Avg"].map(function(h, i) {
+                return <th key={i} style={Object.assign({}, thSub, i % 5 === 0 ? { borderLeft: "1px solid var(--color-border-secondary)" } : {})}>{h}</th>;
               })}
             </tr>
           </thead>
@@ -3327,8 +3334,8 @@ function CutoutPage({ ready, species }) {
               var headerLabel = sectionLabels[primalName] || (primalName + " primal");
               var canP = isReal && !!pr;
               var nameTdH = <td style={{ padding: "7px 12px", fontWeight: 600, fontSize: 12, color: "var(--color-text-primary)" }}>{headerLabel}</td>;
-              var choiceH = [numCell(null, "pl", { divider: true }), numCell(null, "pt"), rangeCell(null, null, "pr"), avgCell(isReal && pr ? pr.choice : null, isReal && pr ? pr.choicePrev : null, "pca")];
-              var selectH = [numCell(null, "sl", { divider: true }), numCell(null, "st"), rangeCell(null, null, "sr"), avgCell(isReal && pr ? pr.select : null, isReal && pr ? pr.selectPrev : null, "psa")];
+              var choiceH = [numCell(null, "pt", { divider: true }), numCell(null, "plo"), numCell(null, "plb"), rangeCell(null, null, "pr"), avgCell(isReal && pr ? pr.choice : null, isReal && pr ? pr.choicePrev : null, "pca")];
+              var selectH = [numCell(null, "st", { divider: true }), numCell(null, "slo"), numCell(null, "slb"), rangeCell(null, null, "sr"), avgCell(isReal && pr ? pr.select : null, isReal && pr ? pr.selectPrev : null, "psa")];
               return (<React.Fragment key={"sec-" + primalName}>
                 <BeefRow isHeader nameTd={nameTdH} choiceTds={choiceH} selectTds={selectH}
                   canChoice={canP} canSelect={canP}
@@ -3338,7 +3345,7 @@ function CutoutPage({ ready, species }) {
                   var canChart = !!r.chartable;
                   var canSel = canChart && !!r.sel;
                   var nameTd = (
-                    <td title={canChart ? "Click a Choice or Select cell to chart it" : undefined} style={{ padding: "6px 12px 6px 24px", fontSize: 12 }}>
+                    <td title={canChart ? "Click a Choice or Select cell to chart it" : undefined} style={{ padding: "6px 8px 6px 14px", fontSize: 12 }}>
                       <span style={{ color: "var(--color-text-primary)" }}>{r.name}</span>{r.item ? <span style={{ color: "var(--color-text-tertiary)", fontSize: 10, marginLeft: 5 }}>{r.item}</span> : null}{r.combined ? <span style={{ color: "var(--color-text-tertiary)", fontSize: 9, marginLeft: 5, border: "0.5px solid var(--color-border-secondary)", borderRadius: 3, padding: "0 3px" }}>{"C&S"}</span> : null}
                     </td>
                   );
@@ -3351,7 +3358,7 @@ function CutoutPage({ ready, species }) {
                 })}
               </React.Fragment>);
             }) : (
-              <tr><td colSpan={9} style={{ padding: 24, textAlign: "center", color: "var(--color-text-tertiary)", fontSize: 12 }}>Loading beef data{"\u2026"}</td></tr>
+              <tr><td colSpan={11} style={{ padding: 24, textAlign: "center", color: "var(--color-text-tertiary)", fontSize: 12 }}>Loading beef data{"\u2026"}</td></tr>
             )}
           </tbody>
         </table>

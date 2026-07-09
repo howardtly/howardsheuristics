@@ -1,19 +1,18 @@
-name: Fetch WASDE Data
+name: Fetch World Balance Sheets (PSD)
 
 on:
   schedule:
-    # Tier 1: WASDE report day — 12:15 PM ET (15 min after release)
-    # Runs 9th-12th of each month to catch the release window
-    - cron: '15 17 9-12 * *'
-    # Tier 2: ERS yearbook refresh — 1st of month (yearbooks update on their own schedule)
-    - cron: '0 12 1 * *'
+    # 13th of each month at 17:15 UTC (12:15 PM ET / 11:15 AM CT) — the day
+    # after the WASDE release window (9th–12th), so U.S. data is already
+    # rebuilt and PSD only re-adds the "world" key on top of fresh data.
+    - cron: '15 17 13 * *'
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  fetch-wasde:
+  fetch-psd-world:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -24,11 +23,12 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
-        run: pip install openpyxl requests
+      # fetch_psd_world.py uses only the Python standard library — no pip install needed.
 
-      - name: Fetch WASDE data
-        run: python commodity-markets-deploy_2/scripts/fetch_wasde.py
+      - name: Fetch PSD world balance sheets
+        env:
+          PSD_API_KEY: ${{ secrets.PSD_API_KEY }}
+        run: python commodity-markets-deploy_2/scripts/fetch_psd_world.py
 
       - name: Commit and push
         run: |
@@ -39,6 +39,8 @@ jobs:
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "Update WASDE data $(date -u +%Y-%m-%d)"
+            git commit -m "Update PSD world balance sheets $(date -u +%Y-%m-%d)"
+            # Rebase onto any commits the WASDE job may have pushed, then push.
+            git pull --rebase origin main
             git push
           fi

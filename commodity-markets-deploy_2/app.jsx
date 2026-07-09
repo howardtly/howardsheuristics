@@ -3312,8 +3312,8 @@ function CutoutPage({ ready, species }) {
                 var groupHead = function(title, val, chg, key) {
                   var col = chg == null ? "var(--color-text-tertiary)" : chg > 0 ? "#639922" : chg < 0 ? "#A32D2D" : "var(--color-text-tertiary)";
                   return (<th key={key} colSpan={5} style={{ textAlign: "center", padding: "5px 8px 6px", borderBottom: "0.5px solid var(--color-border-secondary)", borderLeft: "1px solid var(--color-border-secondary)" }}>
-                    <div style={{ fontWeight: 600, fontSize: 11, letterSpacing: "0.5px", color: "var(--color-text-secondary)" }}>{title}</div>
-                    <div style={{ fontSize: 11, fontWeight: 500, marginTop: 2, fontFamily: "var(--font-mono)", color: "var(--color-text-primary)" }}>Cutout: {val != null ? val.toFixed(2) : "\u2014"}{chg != null && <span style={{ color: col, marginLeft: 6 }}>{chg > 0 ? "+" : ""}{chg.toFixed(2)}</span>}</div>
+                    <div style={{ fontWeight: 600, fontSize: 13, letterSpacing: "0.5px", color: "var(--color-text-secondary)" }}>{title}</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, marginTop: 2, fontFamily: "var(--font-mono)", color: "var(--color-text-primary)" }}>Cutout: {val != null ? val.toFixed(2) : "\u2014"}{chg != null && <span style={{ fontSize: 11, color: col, marginLeft: 6 }}>{chg > 0 ? "+" : ""}{chg.toFixed(2)}</span>}</div>
                   </th>);
                 };
                 return [groupHead("CHOICE", _cv.choice, _cv.choice_chg, "ghC"), groupHead("SELECT", _cv.select, _cv.select_chg, "ghS")];
@@ -3983,6 +3983,35 @@ function mpcAxisTick(value, index, ticks) {
 // ── Searchable select (combobox) ──
 // Renders an optional USDA/IMPS code in lighter text after each cut label, and
 // matches the code when filtering (so typing "112A" finds the ribeye).
+// De-duplicate boneless/trimmings names that denote the same series across the
+// two source reports (report 2453 "Fresh 50% lean trimmings" == report 2451
+// "Chemical Lean, Fresh 50%"). Prefer the 2451 ("Chemical Lean"/"Bull Product")
+// name so the Price charting cut list matches the merged Beef cutout section.
+function dedupeTrimNames(names) {
+  function tk(nm) {
+    var s = (nm || "").toLowerCase();
+    var isTrim = s.indexOf("lean trimmings") >= 0 || s.indexOf("chemical lean") >= 0 || s.indexOf("bull product") >= 0;
+    if (!isTrim) return null;
+    var state = s.indexOf("frozen") >= 0 ? "frozen" : (s.indexOf("fresh") >= 0 ? "fresh" : "");
+    var mm = s.match(/(\d+(?:-\d+)?)\s*%/);
+    var cat = s.indexOf("bull") >= 0 ? "bull" : "cl";
+    return cat + ":" + state + ":" + (mm ? mm[1] : "");
+  }
+  function preferred(nm) { var s = (nm || "").toLowerCase(); return s.indexOf("chemical lean") >= 0 || s.indexOf("bull product") >= 0; }
+  var canon = {};
+  names.forEach(function(nm) {
+    var k = tk(nm); if (k == null) return;
+    if (!(k in canon) || (preferred(nm) && !preferred(canon[k]))) canon[k] = nm;
+  });
+  var seen = {}, out = [];
+  names.forEach(function(nm) {
+    var k = tk(nm);
+    var name = (k == null) ? nm : canon[k];
+    if (!seen[name]) { seen[name] = true; out.push(name); }
+  });
+  return out;
+}
+
 function SearchSelect({ id, options, valueKey, onSelect, minWidth, placeholder }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -4133,9 +4162,9 @@ function MeatPriceChartsPage({ ready }) {
       });
     }
     return {
-      beefChoice: Object.keys(bc).sort(),
-      beefSelect: Object.keys(bs).sort(),
-      beefAny: Object.keys(ba).sort(),
+      beefChoice: dedupeTrimNames(Object.keys(bc).sort()),
+      beefSelect: dedupeTrimNames(Object.keys(bs).sort()),
+      beefAny: dedupeTrimNames(Object.keys(ba).sort()),
       pork: Object.keys(pk).sort(),
     };
   }, [meatData]);
@@ -4386,7 +4415,7 @@ function MeatPriceChartsPage({ ready }) {
     : [];
   const curYear = allAvailYears.length ? allAvailYears[allAvailYears.length - 1] : new Date().getFullYear();
   const rangeN = range === "all" ? allAvailYears.length : parseInt(range);
-  const displayYears = range === "all" ? allAvailYears : allAvailYears.slice(-rangeN);
+  const displayYears = range === "all" ? allAvailYears : allAvailYears.slice(-(rangeN + 1));  // x prior years + current year
   const avgYears = allAvailYears.filter(function(y){ return y < curYear; }).slice(-rangeN);
   const avgColLabel = range === "all" ? "Avg" : range + "-Yr Avg";
 
@@ -4508,7 +4537,7 @@ function MeatPriceChartsPage({ ready }) {
                   }
                   return "";
                 },
-                font: { size: 10 },
+                font: { size: 12 },
               },
               grid: {
                 color: function(ctx) {
@@ -4518,8 +4547,8 @@ function MeatPriceChartsPage({ ready }) {
               },
             },
             y: {
-              ticks: { font: { size: 10 }, callback: mpcAxisTick },
-              title: { display: true, text: unitText, font: { size: 11 } },
+              ticks: { font: { size: 12 }, callback: mpcAxisTick },
+              title: { display: true, text: unitText, font: { size: 12 } },
               grid: { color: "rgba(0,0,0,0.06)" },
             },
           },
@@ -4578,7 +4607,7 @@ function MeatPriceChartsPage({ ready }) {
               autoSkip: false,
               maxRotation: 0,
               callback: function(val, idx) { return monthTickIdxs[idx] || ""; },
-              font: { size: 11 },
+              font: { size: 12 },
             },
             grid: {
               color: function(ctx) {
@@ -4588,8 +4617,8 @@ function MeatPriceChartsPage({ ready }) {
             },
           },
           y: {
-            ticks: { font: { size: 10 }, callback: mpcAxisTick },
-            title: { display: true, text: unitText, font: { size: 11 } },
+            ticks: { font: { size: 12 }, callback: mpcAxisTick },
+            title: { display: true, text: unitText, font: { size: 12 } },
             grid: { color: "rgba(0,0,0,0.06)" },
           },
         },
@@ -4694,7 +4723,7 @@ function MeatPriceChartsPage({ ready }) {
     };
   };
 
-  const thCell = { textAlign: "right", padding: "8px 14px", fontWeight: 500, fontSize: 11, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)", whiteSpace: "nowrap" };
+  const thCell = { textAlign: "right", padding: "8px 14px", fontWeight: 500, fontSize: 12, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)", whiteSpace: "nowrap" };
 
   return (<div>
     {/* Controls row */}
@@ -4725,7 +4754,6 @@ function MeatPriceChartsPage({ ready }) {
         <select value={range} onChange={function(e){ setRange(e.target.value); }} style={dropdownStyle}>
           <option value="3">3 Year</option>
           <option value="5">5 Year</option>
-          <option value="10">10 Year</option>
           <option value="all">All</option>
         </select>
       </div>
@@ -4752,10 +4780,10 @@ function MeatPriceChartsPage({ ready }) {
 
     {/* Data table */}
     <div style={{ marginTop: 24, overflowX: "auto" }}>
-      <table style={{ width: "auto", minWidth: "100%", borderCollapse: "collapse", fontSize: 11.5 }}>
+      <table style={{ width: "auto", minWidth: "100%", borderCollapse: "collapse", fontSize: 12 }}>
         <thead>
           <tr style={{ background: "var(--color-background-secondary)" }}>
-            <th style={{ textAlign: "left", padding: "8px 12px", fontWeight: 500, fontSize: 11, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)", position: "sticky", left: 0, background: "var(--color-background-secondary)", whiteSpace: "nowrap" }}>Period</th>
+            <th style={{ textAlign: "left", padding: "8px 12px", fontWeight: 500, fontSize: 12, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)", position: "sticky", left: 0, background: "var(--color-background-secondary)", whiteSpace: "nowrap" }}>Period</th>
             {perYear.map(function(py){
               return <th key={py.year} style={thCell}>{py.year}</th>;
             })}
@@ -4768,11 +4796,11 @@ function MeatPriceChartsPage({ ready }) {
             const rowVals = perYear.map(function(py){ return py.values[i]; });
             const avg = avgVals[i];
             return (<tr key={d + "_" + i} style={{ background: i % 2 === 0 ? "transparent" : "var(--color-background-secondary)" }}>
-              <td style={{ padding: "5px 12px", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-primary)", position: "sticky", left: 0, background: i % 2 === 0 ? "var(--color-background-primary)" : "var(--color-background-secondary)", whiteSpace: "nowrap" }}>{fmtTableDate(d)}</td>
+              <td style={{ padding: "5px 12px", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--color-text-primary)", position: "sticky", left: 0, background: i % 2 === 0 ? "var(--color-background-primary)" : "var(--color-background-secondary)", whiteSpace: "nowrap" }}>{fmtTableDate(d)}</td>
               {rowVals.map(function(v, j) {
-                return <td key={j} style={{ padding: "5px 14px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>{fmtVal(v)}</td>;
+                return <td key={j} style={{ padding: "5px 14px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>{fmtVal(v)}</td>;
               })}
-              <td style={{ padding: "5px 14px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>{fmtVal(avg)}</td>
+              <td style={{ padding: "5px 14px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>{fmtVal(avg)}</td>
             </tr>);
           })}
           {/* Summary rows */}
@@ -4785,10 +4813,10 @@ function MeatPriceChartsPage({ ready }) {
             { label: "Sum", get: function(s){ return s.full.sum; } },
           ].map(function(sumRow, ri) {
             return (<tr key={"sum_" + ri} style={{ background: ri === 0 ? "var(--color-background-tertiary, #f0f0f0)" : (ri % 2 === 0 ? "var(--color-background-tertiary, #f0f0f0)" : "var(--color-background-secondary)"), borderTop: ri === 0 ? "2px solid var(--color-border-primary)" : "none" }}>
-              <td style={{ padding: "6px 12px", fontWeight: 600, fontSize: 11.5, color: "var(--color-text-primary)", position: "sticky", left: 0, background: ri === 0 ? "var(--color-background-tertiary, #f0f0f0)" : (ri % 2 === 0 ? "var(--color-background-tertiary, #f0f0f0)" : "var(--color-background-secondary)"), whiteSpace: "nowrap" }}>{sumRow.label}</td>
+              <td style={{ padding: "6px 12px", fontWeight: 600, fontSize: 12, color: "var(--color-text-primary)", position: "sticky", left: 0, background: ri === 0 ? "var(--color-background-tertiary, #f0f0f0)" : (ri % 2 === 0 ? "var(--color-background-tertiary, #f0f0f0)" : "var(--color-background-secondary)"), whiteSpace: "nowrap" }}>{sumRow.label}</td>
               {colStats.map(function(s, j) {
                 const v = sumRow.get(s);
-                return <td key={j} style={{ padding: "6px 14px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 11.5, fontWeight: 600, color: "var(--color-text-primary)", whiteSpace: "nowrap" }}>{v != null ? v.toFixed(valDec) : "\u2014"}</td>;
+                return <td key={j} style={{ padding: "6px 14px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600, color: "var(--color-text-primary)", whiteSpace: "nowrap" }}>{v != null ? v.toFixed(valDec) : "\u2014"}</td>;
               })}
               <td style={{ padding: "6px 14px" }}></td>
             </tr>);

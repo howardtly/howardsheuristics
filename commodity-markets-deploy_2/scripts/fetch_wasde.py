@@ -767,6 +767,15 @@ def parse_livestock_outlook(wb_data):
             q = {"I": "Q1", "II": "Q2", "III": "Q3", "IV": "Q4"}.get(qtr, "Annual" if "annual" in qtr.lower() else qtr)
             col_map.append((current_year, q, ci))
 
+    # Diagnostic: show which (year, quarter) columns the source file provides, so
+    # the Action log reveals whether next-year quarterly forecasts are published yet.
+    _by_year = {}
+    for (_y, _q, _ci) in col_map:
+        _by_year.setdefault(_y, []).append(_q)
+    if _by_year:
+        print("  LDPO columns by year: " + ", ".join(
+            f"{_y}[{'/'.join(_by_year[_y])}]" for _y in sorted(_by_year)))
+
     # Detect species rows by section
     SPECIES_ROWS = {}
     section = None
@@ -886,90 +895,102 @@ def merge_ldpo_into_livestock(result, ldpo_data):
                             else:
                                 row["values"].append(None)
 
-    # ── Compute beginning stocks and total supply for quarterly 2026 ──
+    # ── Compute beginning stocks and total supply for quarterly forecast years ──
+    # Runs for the current calendar year and any later projection years that are
+    # present in the data (e.g. 2026 AND 2027). This was previously hardcoded to
+    # 2026, which left newer projection years without computed beginning stocks or
+    # total supply even once their quarterly production data arrived.
+    forecast_start = datetime.now().year
+    QTR_ORDER = ["Jan-Mar", "Apr-Jun", "Jul-Sep", "Oct-Dec"]
+
     for species_id in ["beef", "pork", "broiler", "turkey"]:
         if species_id not in result.get("us", {}):
             continue
         entry = result["us"][species_id]
         sections = entry.get("sections", [])
 
-        # Get annual beginning stocks for 2026 from the annual section
         annual_section = next((s for s in sections if s.get("header", "").lower() in ("annual", "supply and disappearance")), None)
         annual_years = entry.get("years", [])
-        annual_beg_2026 = None
-        if annual_section and "2026" in annual_years:
-            yi_2026 = annual_years.index("2026")
-            beg_row = next((r for r in annual_section.get("rows", []) if r["label"] == "Beginning stocks"), None)
-            if beg_row and yi_2026 < len(beg_row["values"]):
-                annual_beg_2026 = beg_row["values"][yi_2026]
 
-        # Also try to get Q4 ending stocks from previous year as fallback
-        q4_section = next((s for s in sections if s.get("header") == "Oct-Dec"), None)
-        q4_end_stocks_prev = None
-        if q4_section:
-            q4_years = q4_section.get("years", entry.get("years", []))
-            if "2025" in q4_years:
-                yi_q4 = q4_years.index("2025")
-                es_row = next((r for r in q4_section.get("rows", []) if r["label"] == "Ending stocks"), None)
-                if es_row and yi_q4 < len(es_row["values"]):
-                    q4_end_stocks_prev = es_row["values"][yi_q4]
+        # Projection years to compute: current calendar year and beyond, in order
+        forecast_years = sorted(
+            (y for y in annual_years if str(y).isdigit() and int(y) >= forecast_start),
+            key=lambda y: int(y),
+        )
 
-        # Q1 beginning stocks = annual 2026 beginning stocks (or Q4 2025 ending stocks)
-        q1_beg = annual_beg_2026 if annual_beg_2026 is not None else q4_end_stocks_prev
+        for fy in forecast_years:
+            fy_str = str(fy)
+            prev_str = str(int(fy) - 1)
 
-        # Walk through quarters, carrying ending stocks forward as next quarter's beginning
-        QTR_ORDER = ["Jan-Mar", "Apr-Jun", "Jul-Sep", "Oct-Dec"]
-        prev_end_stocks = q1_beg
+            # Q1 beginning stocks = annual beginning stocks for this year
+            annual_beg = None
+            if annual_section and fy_str in annual_years:
+                yi_annual = annual_years.index(fy_str)
+                beg_row = next((r for r in annual_section.get("rows", []) if r["label"] == "Beginning stocks"), None)
+                if beg_row and yi_annual < len(beg_row["values"]):
+                    annual_beg = beg_row["values"][yi_annual]
 
-        for qi, qtr_header in enumerate(QTR_ORDER):
-            qtr_section = next((s for s in sections if s.get("header") == qtr_header), None)
-            if not qtr_section:
-                continue
+            # Fallback: prior-year Q4 ending stocks
+            q4_end_prev = None
+            q4_section = next((s for s in sections if s.get("header") == "Oct-Dec"), None)
+            if q4_section:
+                q4_years = q4_section.get("years", entry.get("years", []))
+                if prev_str in q4_years:
+                    yi_q4 = q4_years.index(prev_str)
+                    es_row = next((r for r in q4_section.get("rows", []) if r["label"] == "Ending stocks"), None)
+                    if es_row and yi_q4 < len(es_row["values"]):
+                        q4_end_prev = es_row["values"][yi_q4]
 
-            sec_years = qtr_section.get("years", entry.get("years", []))
-            if "2026" not in sec_years:
-                continue
-            yi = sec_years.index("2026")
+            q1_beg = annual_beg if annual_beg is not None else q4_end_prev
 
-            # Set beginning stocks
-            if prev_end_stocks is not None:
-                beg_row = next((r for r in qtr_section.get("rows", []) if r["label"] == "Beginning stocks"), None)
-                if beg_row:
-                    while len(beg_row["values"]) <= yi:
-                        beg_row["values"].append(None)
-                    beg_row["values"][yi] = round(prev_end_stocks)
+            # Walk through quarters, carrying ending stocks forward as next quarter's beginning
+            prev_end_stocks = q1_beg
 
-            # Compute total supply = beg + prod + imports
-            beg_val = None
-            prod_val = None
-            imp_val = None
-            for row in qtr_section.get("rows", []):
-                if row["label"] == "Beginning stocks" and yi < len(row["values"]):
-                    beg_val = row["values"][yi]
-                elif row["label"] == "Production" and yi < len(row["values"]):
-                    prod_val = row["values"][yi]
-                elif row["label"] == "Imports" and yi < len(row["values"]):
-                    imp_val = row["values"][yi]
+            for qtr_header in QTR_ORDER:
+                qtr_section = next((s for s in sections if s.get("header") == qtr_header), None)
+                if not qtr_section:
+                    continue
 
-            if beg_val is not None and prod_val is not None:
-                total_supply = round(beg_val + prod_val + (imp_val or 0))
-                ts_row = next((r for r in qtr_section.get("rows", []) if r["label"] == "Total supply"), None)
-                if ts_row:
-                    while len(ts_row["values"]) <= yi:
-                        ts_row["values"].append(None)
-                    ts_row["values"][yi] = total_supply
+                sec_years = qtr_section.get("years", entry.get("years", []))
+                if fy_str not in sec_years:
+                    continue
+                yi = sec_years.index(fy_str)
 
-            # For now, ending stocks are unknown (need cold storage data)
-            # Set prev_end_stocks to None so subsequent quarters show None for beg stocks
-            # until cold storage is wired up
-            es_row = next((r for r in qtr_section.get("rows", []) if r["label"] == "Ending stocks"), None)
-            if es_row and yi < len(es_row["values"]) and es_row["values"][yi] is not None:
-                prev_end_stocks = es_row["values"][yi]
-            else:
-                prev_end_stocks = None
+                # Set beginning stocks
+                if prev_end_stocks is not None:
+                    beg_row = next((r for r in qtr_section.get("rows", []) if r["label"] == "Beginning stocks"), None)
+                    if beg_row:
+                        while len(beg_row["values"]) <= yi:
+                            beg_row["values"].append(None)
+                        beg_row["values"][yi] = round(prev_end_stocks)
 
-        if q1_beg is not None:
-            print(f"  {species_id}: Q1 2026 beg stocks = {q1_beg}, computed total supply for available quarters")
+                # Compute total supply = beg + prod + imports
+                beg_val = prod_val = imp_val = None
+                for row in qtr_section.get("rows", []):
+                    if row["label"] == "Beginning stocks" and yi < len(row["values"]):
+                        beg_val = row["values"][yi]
+                    elif row["label"] == "Production" and yi < len(row["values"]):
+                        prod_val = row["values"][yi]
+                    elif row["label"] == "Imports" and yi < len(row["values"]):
+                        imp_val = row["values"][yi]
+
+                if beg_val is not None and prod_val is not None:
+                    total_supply = round(beg_val + prod_val + (imp_val or 0))
+                    ts_row = next((r for r in qtr_section.get("rows", []) if r["label"] == "Total supply"), None)
+                    if ts_row:
+                        while len(ts_row["values"]) <= yi:
+                            ts_row["values"].append(None)
+                        ts_row["values"][yi] = total_supply
+
+                # Ending stocks unknown (need cold storage data) — stop carrying forward
+                es_row = next((r for r in qtr_section.get("rows", []) if r["label"] == "Ending stocks"), None)
+                if es_row and yi < len(es_row["values"]) and es_row["values"][yi] is not None:
+                    prev_end_stocks = es_row["values"][yi]
+                else:
+                    prev_end_stocks = None
+
+            if q1_beg is not None:
+                print(f"  {species_id}: Q1 {fy_str} beg stocks = {q1_beg}, computed total supply for available quarters")
 
     print(f"  LDPO merge complete")
 

@@ -4391,7 +4391,11 @@ function MeatPriceChartsPage({ ready }) {
     }
 
     // Individual cut (grade-specific series; fall back to legacy cuts_beef pre-rebuild)
-    const cutsKey = isBeef ? (beefGrade === "select" ? "cuts_beef_select" : "cuts_beef_choice") : "cuts_pork";
+    // Ground beef, trimmings and boneless items are grade-neutral, so chart them
+    // from the complete cuts_beef series (the grade-split series are sparse for
+    // these). Graded cuts use the choice/select series for the selected grade.
+    const gradeNeutral = isBeef && primalForBeefCut(cut) === "Trim";
+    const cutsKey = !isBeef ? "cuts_pork" : (gradeNeutral ? "cuts_beef" : (beefGrade === "select" ? "cuts_beef_select" : "cuts_beef_choice"));
     return {
       base: shortName(cut),
       getYearVals: function(y) {
@@ -4809,8 +4813,6 @@ function MeatPriceChartsPage({ ready }) {
             { label: "Max", get: function(s){ return s.full.max; } },
             { label: "YTD Avg", get: function(s){ return s.ytd.avg; } },
             { label: "Avg", get: function(s){ return s.full.avg; } },
-            { label: "YTD Sum", get: function(s){ return s.ytd.sum; } },
-            { label: "Sum", get: function(s){ return s.full.sum; } },
           ].map(function(sumRow, ri) {
             return (<tr key={"sum_" + ri} style={{ background: ri === 0 ? "var(--color-background-tertiary, #f0f0f0)" : (ri % 2 === 0 ? "var(--color-background-tertiary, #f0f0f0)" : "var(--color-background-secondary)"), borderTop: ri === 0 ? "2px solid var(--color-border-primary)" : "none" }}>
               <td style={{ padding: "6px 12px", fontWeight: 600, fontSize: 12, color: "var(--color-text-primary)", position: "sticky", left: 0, background: ri === 0 ? "var(--color-background-tertiary, #f0f0f0)" : (ri % 2 === 0 ? "var(--color-background-tertiary, #f0f0f0)" : "var(--color-background-secondary)"), whiteSpace: "nowrap" }}>{sumRow.label}</td>
@@ -8472,7 +8474,7 @@ const PAGES = {
   "drought": { title: "U.S. Drought Monitor", component: DroughtPage },
   "on-feed": { title: "Cattle on feed", component: CattleOnFeedPage },
   "cutout": { title: "Boxed beef & pork prices", component: CutoutPage },
-  "pricing-beef": { title: "Beef cutout", component: (p) => <CutoutPage {...p} species="cattle" /> },
+  "pricing-beef": { title: "Beef cutout (PM)", component: (p) => <CutoutPage {...p} species="cattle" /> },
   "pricing-pork": { title: "Pork cutout", component: (p) => <CutoutPage {...p} species="hogs" /> },
   "pricing-chicken": { title: "Weekly chicken report", component: (p) => <CutoutPage {...p} species="chicken" /> },
   "pricing-turkey": { title: "Weekly turkey report", component: (p) => <CutoutPage {...p} species="turkey" /> },

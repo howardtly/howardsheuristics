@@ -291,62 +291,75 @@ def parse_beef_comprehensive(data):
 
 
 
-def load_comp_cutout_csv(daily):
-    """Load historical comprehensive cutout from CSV and merge into daily records.
-    CSV has weekly Monday dates with Savg values. Forward-fill to cover each week's trading days.
-    Prefer API data (report 2465) when available; CSV fills gaps."""
-    import csv as csv_mod
+def rebuild_comp_series(daily):
+    """Rebuild the comprehensive-cutout series for every daily record.
+
+    The comprehensive cutout is a WEEKLY figure. Anchors come from report 2465
+    (authoritative — carries a 'grades' block) and the historical Urner Barry CSV;
+    report 2465 wins for any week both cover. Each week's value is carried across
+    that week's trading days, but only up to STALE_DAYS after the most recent
+    anchor, so a stalled source shows a gap instead of a flat line frozen at its
+    last value. Rich 2465 records are preserved; others get {cutout, source}."""
+    import csv as csv_mod, bisect
+    STALE_DAYS = 10
+
+    def _dt(date_str):
+        p = date_str.split("/")
+        return datetime(int(p[2]), int(p[0]), int(p[1]))
+
+    # Anchors already stored on daily records by report 2465 (have a 'grades' block)
+    anchors = {}  # datetime -> (value, priority): 2 = report 2465, 1 = CSV
+    api_n = 0
+    for rec in daily:
+        bc = rec.get("beef_comp")
+        if bc and "grades" in bc and bc.get("cutout") is not None:
+            anchors[_dt(rec["date"])] = (bc["cutout"], 2)
+            api_n += 1
+
+    # Historical CSV weekly anchors (report 2465 wins where both exist)
     csv_path = os.path.join(SCRIPT_DIR, "..", "data", "comp_cutout_historical.csv")
     if not os.path.exists(csv_path):
         csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "comp_cutout_historical.csv")
-    if not os.path.exists(csv_path):
-        print("  comp_cutout_historical.csv not found, skipping CSV merge")
+    csv_n = 0
+    if os.path.exists(csv_path):
+        with open(csv_path) as f:
+            reader = csv_mod.reader(f)
+            next(reader, None); next(reader, None)
+            for row in reader:
+                if not row or not row[0].strip() or "Reminder" in row[0]:
+                    continue
+                try:
+                    dt = datetime.strptime(row[0].strip().replace(" 12:00:00 AM", ""), "%m/%d/%Y")
+                    val = float(row[3].strip())
+                except Exception:
+                    continue
+                if dt not in anchors:
+                    anchors[dt] = (val, 1); csv_n += 1
+    else:
+        print("  comp_cutout_historical.csv not found")
+
+    print(f"  comp anchors: {api_n} from report 2465, {csv_n} from CSV")
+    if not anchors:
         return
 
-    # Parse CSV: date -> cutout value
-    weekly = {}
-    with open(csv_path) as f:
-        reader = csv_mod.reader(f)
-        next(reader)  # skip title row
-        next(reader)  # skip header row
-        for row in reader:
-            if not row or not row[0].strip() or "Reminder" in row[0]:
-                continue
-            try:
-                date_str = row[0].strip().replace(" 12:00:00 AM", "")
-                dt = datetime.strptime(date_str, "%m/%d/%Y")
-                val = float(row[3].strip())
-                weekly[dt] = val
-            except:
-                continue
-
-    print(f"  CSV comp cutout: {len(weekly)} weekly records")
-    if not weekly:
-        return
-
-    # Build a lookup: for any date, find the most recent Monday value
-    sorted_mondays = sorted(weekly.keys())
-
-    def find_weekly_value(dt):
-        """Find the most recent Monday value on or before dt."""
-        for i in range(len(sorted_mondays) - 1, -1, -1):
-            if sorted_mondays[i] <= dt:
-                return weekly[sorted_mondays[i]]
-        return None
-
-    # Merge into daily records where beef_comp is missing
-    filled = 0
+    keys = sorted(anchors.keys())
+    kept = filled = gaps = 0
     for rec in daily:
-        if rec.get("beef_comp") and rec["beef_comp"].get("cutout"):
-            continue  # Already has API data
-        parts = rec["date"].split("/")
-        dt = datetime(int(parts[2]), int(parts[0]), int(parts[1]))
-        val = find_weekly_value(dt)
-        if val:
-            rec["beef_comp"] = {"cutout": val, "source": "csv"}
+        bc = rec.get("beef_comp")
+        if bc and "grades" in bc and bc.get("cutout") is not None:
+            kept += 1
+            continue  # preserve the authoritative 2465 record
+        dt = _dt(rec["date"])
+        i = bisect.bisect_right(keys, dt) - 1
+        if i >= 0 and (dt - keys[i]).days <= STALE_DAYS:
+            val, prio = anchors[keys[i]]
+            rec["beef_comp"] = {"cutout": val, "source": "csv" if prio == 1 else "ffill"}
             filled += 1
-
-    print(f"  CSV merge: filled {filled} daily records with comp cutout")
+        else:
+            if rec.get("beef_comp"):
+                rec["beef_comp"] = None
+            gaps += 1
+    print(f"  comp series: {kept} report-2465 days kept, {filled} forward-filled, {gaps} gaps (> {STALE_DAYS}d stale)")
 
 
 def _f(v):
@@ -577,16 +590,9 @@ def main():
         else:
             _grade_ready = True
 
-    # Merge comprehensive cutout from CSV (covers full history)
-    load_comp_cutout_csv(daily)
-
-    # Forward-fill to cover any remaining gaps
-    last_comp = None
-    for rec in daily:
-        if rec.get("beef_comp") and rec["beef_comp"].get("cutout"):
-            last_comp = rec["beef_comp"]
-        elif last_comp and not rec.get("beef_comp"):
-            rec["beef_comp"] = last_comp
+    # Comprehensive cutout: rebuild the weekly series from report-2465 anchors
+    # (preferred) and the historical CSV, forward-filled with a staleness cap.
+    rebuild_comp_series(daily)
 
     # Build seasonal data for charts (pre-computed by year)
     # Pass existing seasonal so cut-level data survives incremental runs (historical records are slimmed)

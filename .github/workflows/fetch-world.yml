@@ -31,16 +31,34 @@ jobs:
         run: python commodity-markets-deploy_2/scripts/fetch_psd_world.py
 
       - name: Commit and push
+        env:
+          PSD_API_KEY: ${{ secrets.PSD_API_KEY }}
         run: |
           cd commodity-markets-deploy_2
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/
-          if git diff --staged --quiet; then
-            echo "No changes to commit"
-          else
+
+          # data/wasde.json is a generated file that the WASDE job also writes, so
+          # we never text-merge or rebase it (it is minified to one line and would
+          # always conflict). Instead: try to push our output; if main has moved,
+          # hard-reset to the latest main and regenerate 'world' on top of the newest
+          # 'us' data, then retry. The PSD script preserves all keys except 'world',
+          # so this always produces (latest us) + (our fresh world).
+          for attempt in 1 2 3; do
+            git add data/wasde.json
+            if git diff --staged --quiet; then
+              echo "No changes to commit"
+              exit 0
+            fi
             git commit -m "Update PSD world balance sheets $(date -u +%Y-%m-%d)"
-            # Rebase onto any commits the WASDE job may have pushed, then push.
-            git pull --rebase origin main
-            git push
-          fi
+            if git push; then
+              echo "Pushed on attempt $attempt."
+              exit 0
+            fi
+            echo "Push rejected (main advanced) — syncing to latest main and regenerating (attempt $attempt)..."
+            git fetch origin main
+            git reset --hard origin/main
+            python scripts/fetch_psd_world.py
+          done
+          echo "Failed to push after 3 attempts."
+          exit 1

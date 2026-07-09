@@ -67,7 +67,19 @@ COMMODITY_START_YEARS = {
     "soybean_meal": 1980,
     "soybean_oil":  1980,
 }
-CURRENT_YEAR = 2025  # latest marketing year
+def latest_market_year(today=None):
+    """Most recent marketing year for which USDA publishes PSD/WASDE projections.
+
+    New-crop (next marketing year) balance sheets first appear in the May WASDE,
+    so from May onward the current calendar year is the newest published marketing
+    year; before May, the prior calendar year is still the newest. Returns the
+    beginning year of the split-year label (e.g. 2026 -> "2026/27").
+    """
+    today = today or datetime.utcnow()
+    return today.year if today.month >= 5 else today.year - 1
+
+
+CURRENT_YEAR = latest_market_year()  # latest marketing year, derived from today's date
 
 
 def fetch_psd(commodity_code, market_year, retries=3, delay=15):

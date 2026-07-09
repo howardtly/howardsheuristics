@@ -133,6 +133,9 @@ def parse_beef_cutout(data):
                     grinds.append({
                         "name": desc,
                         "avg": _f(r.get("weighted_average")),
+                        "low": _f(r.get("price_range_low")),
+                        "high": _f(r.get("price_range_high")),
+                        "trades": _i(r.get("number_trades")),
                         "lbs": _i(r.get("total_pounds")),
                     })
             result["ground_beef"] = grinds
@@ -145,6 +148,9 @@ def parse_beef_cutout(data):
                     trims.append({
                         "name": desc,
                         "avg": _f(r.get("weighted_average")),
+                        "low": _f(r.get("price_range_low")),
+                        "high": _f(r.get("price_range_high")),
+                        "trades": _i(r.get("number_trades")),
                         "lbs": _i(r.get("total_pounds")),
                     })
             result["trimmings_2453"] = trims

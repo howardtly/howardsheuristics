@@ -1429,6 +1429,14 @@ function WASDETable({ commodity }) {
   const scrollRef = useRef(null);
   const years = commodity.years || MY;
   const fcIdx = years.length - 1;
+  // Optional per-table overrides (used by the livestock page):
+  //  - fcYear: which year column gets the " F" forecast marker; defaults to
+  //    the last column, so existing callers behave exactly as before.
+  //  - blankYears: map of years this table has no data for — those cells
+  //    render empty, letting year columns stay aligned across tables even
+  //    when a section (e.g. Jul-Sep) has no forecast for the newest year.
+  const fcYear = commodity.fcYear || years[fcIdx];
+  const blankYears = commodity.blankYears || null;
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -1465,14 +1473,14 @@ function WASDETable({ commodity }) {
             }}>
               Item
             </th>
-            {years.map((yr, i) => (
+            {years.map((yr) => (
               <th key={yr} style={{
-                background: i === fcIdx ? "var(--color-background-info)" : "var(--color-background-secondary)",
+                background: "var(--color-background-secondary)",
                 padding: "8px 10px", textAlign: "right", fontWeight: 500, fontSize: 12.5,
-                color: i === fcIdx ? "var(--color-text-info)" : "var(--color-text-secondary)",
+                color: "var(--color-text-secondary)",
                 borderBottom: "1.5px solid var(--color-border-primary)", minWidth: 72,
               }}>
-                {yr}{i === fcIdx ? " F" : ""}
+                {yr}{yr === fcYear ? " F" : ""}
               </th>
             ))}
           </tr>
@@ -1505,10 +1513,10 @@ function WASDETable({ commodity }) {
                       padding: "5px 10px", textAlign: "right",
                       fontFamily: "var(--font-mono)", fontSize: 12.5,
                       fontWeight: row.bold ? 600 : 400,
-                      color: vi === fcIdx ? "var(--color-text-info)" : "var(--color-text-primary)",
-                      background: vi === fcIdx ? "rgba(59,130,246,0.04)" : "transparent",
+                      color: "var(--color-text-primary)",
+                      background: "transparent",
                     }}>
-                      {formatVal(v, row)}
+                      {blankYears && blankYears[years[vi]] ? "" : formatVal(v, row)}
                     </td>
                   ))}
                 </tr>
@@ -1536,7 +1544,7 @@ function GlobalWASDEMiniTable({ title, rows, years, fcIdx, formatVal }) {
             <tr style={{ background: "#e8e8e8" }}>
               <th style={{ position: "sticky", left: 0, zIndex: 2, background: "#e8e8e8", padding: "7px 12px", textAlign: "left", fontWeight: 600, fontSize: 12.5, color: "var(--color-text-primary)", borderBottom: "1.5px solid var(--color-border-primary)", borderRight: "0.5px solid var(--color-border-tertiary)", minWidth: 180, letterSpacing: "0.3px" }}>{title}</th>
               {years.map((y, i) => (
-                <th key={y} style={{ background: i === fcIdx ? "var(--color-background-info)" : "#e8e8e8", padding: "7px 10px", textAlign: "right", fontWeight: i === fcIdx ? 600 : 400, fontSize: 12, color: i === fcIdx ? "var(--color-text-info)" : "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)", whiteSpace: "nowrap", minWidth: 72 }}>{i === fcIdx ? y + " F" : y}</th>
+                <th key={y} style={{ background: "#e8e8e8", padding: "7px 10px", textAlign: "right", fontWeight: i === fcIdx ? 600 : 400, fontSize: 12, color: "var(--color-text-secondary)", borderBottom: "1.5px solid var(--color-border-primary)", whiteSpace: "nowrap", minWidth: 72 }}>{i === fcIdx ? y + " F" : y}</th>
               ))}
             </tr>
           </thead>
@@ -1545,7 +1553,7 @@ function GlobalWASDEMiniTable({ title, rows, years, fcIdx, formatVal }) {
               <tr key={ri} style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
                 <td style={{ position: "sticky", left: 0, zIndex: 1, background: "#ffffff", padding: "6px 12px", fontWeight: row.bold ? 600 : 400, fontSize: 13, color: "var(--color-text-primary)", borderRight: "0.5px solid var(--color-border-tertiary)", paddingLeft: row.indent ? 24 : 12 }}>{shortenLabel(row.label)}</td>
                 {row.values.map((v, vi) => (
-                  <td key={vi} style={{ padding: "6px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12.5, fontWeight: row.bold ? 600 : 400, color: vi === fcIdx ? "var(--color-text-info)" : "var(--color-text-secondary)", background: vi === fcIdx ? "rgba(59,130,246,0.04)" : "transparent" }}>{formatVal(v, row)}</td>
+                  <td key={vi} style={{ padding: "6px 10px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: 12.5, fontWeight: row.bold ? 600 : 400, color: "var(--color-text-secondary)", background: "transparent" }}>{formatVal(v, row)}</td>
                 ))}
               </tr>
             ))}
@@ -8398,13 +8406,56 @@ function LivestockWASDEPage() {
 
   var commodity = liveData && liveData[sel] ? liveData[sel] : null;
 
+  // Master year axis: the union of years across every section, so all tables
+  // on the page share identical columns. A section that lacks a year (e.g.
+  // Jul-Sep before its 2027 forecast is published) shows a blank column in
+  // that spot instead of dropping it, keeping years vertically aligned.
+  var masterYears = null;
+  if (commodity) {
+    var yrSeen = {};
+    var yrList = [];
+    commodity.sections.forEach(function(s) {
+      (s.years || commodity.years || []).forEach(function(y) {
+        if (!yrSeen[y]) { yrSeen[y] = true; yrList.push(y); }
+      });
+    });
+    yrList.sort(function(a, b) { return Number(a) - Number(b); });
+    masterYears = yrList;
+  }
+
+  // Re-shape one section onto the master axis: values re-indexed to
+  // masterYears, plus which years are blank and which year carries the
+  // " F" marker (the section's own latest year, not the page's).
+  var alignSection = function(section) {
+    var sectionYears = section.years || commodity.years || [];
+    var idxOf = {};
+    sectionYears.forEach(function(y, i) { idxOf[y] = i; });
+    var blankYears = {};
+    masterYears.forEach(function(y) { if (!(y in idxOf)) blankYears[y] = true; });
+    var rows = section.rows.map(function(r) {
+      var vals = masterYears.map(function(y) {
+        return (y in idxOf) ? r.values[idxOf[y]] : null;
+      });
+      return Object.assign({}, r, { values: vals });
+    });
+    return {
+      rows: rows,
+      blankYears: blankYears,
+      fcYear: sectionYears.length ? sectionYears[sectionYears.length - 1] : null,
+    };
+  };
+
   var dlCSV = function() {
     if (!commodity) return;
-    var headers = ["Item"].concat(commodity.years);
+    // Use the master axis so every section's values line up under the same
+    // year headers (quarterly sections previously exported their own,
+    // shorter values arrays under the annual header row).
+    var headers = ["Item"].concat(masterYears);
     var rows = [];
     commodity.sections.forEach(function(s) {
+      var aligned = alignSection(s);
       rows.push(["--- " + s.header + " ---"]);
-      s.rows.forEach(function(r) {
+      aligned.rows.forEach(function(r) {
         rows.push([r.label].concat(r.values.map(function(v) { return v != null ? v : ""; })));
       });
     });
@@ -8431,13 +8482,15 @@ function LivestockWASDEPage() {
     {commodity ? (
       <div>
         {commodity.sections.map(function(section, si) {
-          var sectionYears = section.years || commodity.years;
+          var aligned = alignSection(section);
           var isAnnual = si === 0;
           var pseudoCommodity = {
             id: commodity.id + "_" + si,
             label: commodity.label,
-            years: sectionYears,
-            sections: [section],
+            years: masterYears,
+            fcYear: aligned.fcYear,
+            blankYears: aligned.blankYears,
+            sections: [{ header: section.header, rows: aligned.rows }],
           };
           return (<div key={si}>
             <h3 style={{ fontSize: isAnnual ? 15 : 14, fontWeight: 500, color: "var(--color-text-primary)", margin: isAnnual ? "0 0 10px" : "28px 0 10px" }}>

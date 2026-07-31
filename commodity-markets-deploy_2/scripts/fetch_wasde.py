@@ -625,10 +625,29 @@ def parse_wheat(wb_data):
 # ERS Meat Supply & Disappearance — single file covers beef, pork, broiler, turkey
 MEAT_SDP_URL = "https://www.ers.usda.gov/media/5531/meat-supply-and-disappearance-tables-historical.xlsx?v=84647"
 
-# ERS Livestock, Dairy & Poultry Outlook — quarterly forecasts
-# Update this URL when a new outlook is published (~monthly)
-# Find latest at: https://www.ers.usda.gov/publications?series=LDPM
-LDPO_URL = "https://ers.usda.gov/sites/default/files/_laserfiche/outlooks/113957/red-meat-and-poultry-forecasts.xlsx?v=94479"
+# ERS Livestock, Dairy & Poultry Outlook — quarterly forecasts.
+#
+# History: this used to pin a single edition's attachment
+#   .../_laserfiche/outlooks/113957/red-meat-and-poultry-forecasts.xlsx
+# ERS keeps old files online, so that URL kept "succeeding" while silently
+# serving the same ~Dec 2025 edition forever — which is why 2027 Jan-Mar /
+# Apr-Jun columns never arrived even after USDA began publishing them.
+# Each monthly LDPO edition gets a brand-new /media/{id}/ URL on the new ERS
+# site, so pinning any per-edition URL can never stay current.
+#
+# Primary source is therefore the *stable* ERS data product "Livestock and
+# Meat Domestic Data" -> "Meat statistics tables, recent", which is updated
+# in place (~27th of each month) with the most recent LDPO tables — the same
+# pattern as MEAT_SDP_URL above. Product page:
+#   https://www.ers.usda.gov/data-products/livestock-and-meat-domestic-data
+# The per-edition workbook is kept only as a fallback; it will drift stale
+# over time, and parse_livestock_outlook() prints a WARNING whenever the
+# parsed columns look older than a current edition should.
+LDPO_URLS = [
+    "https://www.ers.usda.gov/media/5528/meat-statistics-tables-recent.xlsx",
+    # Fallback: July 2026 edition (LDP-M-385) per-edition workbook
+    "https://www.ers.usda.gov/media/29363/us-red-meat-and-poultry-forecasts.xlsx?v=77685",
+]
 
 
 def parse_meat_sdp_sheet(ws, species_label, min_year=1990):
@@ -745,30 +764,167 @@ def parse_meat_sdp_sheet(ws, species_label, min_year=1990):
 
 
 def parse_livestock_outlook(wb_data):
-    """Parse the red-meat-and-poultry-forecasts.xlsx file from LDPO.
-    Returns {species: {field: {(year, quarter): value}}}."""
+    """Parse a workbook containing the LDPO "U.S. red meat and poultry
+    forecasts" table. Returns {species: {field: {(year, quarter): value}}}.
+
+    Handles either source layout:
+      * the per-edition workbook attached to each LDPO publication
+        (single sheet, historically named "RMPFORE"), or
+      * the stable "Meat statistics tables, recent" workbook from the ERS
+        Livestock and Meat Domestic Data product (multiple sheets).
+
+    The forecasts table is located dynamically: on each sheet, the top rows
+    are scanned for a year header row (>=2 cells parsing as 4-digit years)
+    followed immediately by a quarter header row (I/II/III/IV/Annual or
+    Q1..Q4). The first sheet that also yields species production rows wins;
+    sheet names containing "rmpfore" or "forecast" are tried first.
+    """
     import openpyxl
+    import re as _re
     from io import BytesIO
+
+    QTR_TOKEN_MAP = {"I": "Q1", "II": "Q2", "III": "Q3", "IV": "Q4",
+                     "Q1": "Q1", "Q2": "Q2", "Q3": "Q3", "Q4": "Q4"}
+
+    def _find_header_pair(rows):
+        """Index i such that rows[i] holds years and rows[i+1] holds quarters."""
+        for i in range(min(15, max(0, len(rows) - 1))):
+            years_seen = 0
+            for c in (rows[i] or [])[1:]:
+                try:
+                    y = int(float(c))
+                    if 2000 <= y <= 2035:
+                        years_seen += 1
+                except (TypeError, ValueError):
+                    pass
+            if years_seen < 2:
+                continue
+            qtoks = 0
+            for c in (rows[i + 1] or [])[1:]:
+                s = str(c).strip().upper() if c is not None else ""
+                if s in QTR_TOKEN_MAP or "ANNUAL" in s:
+                    qtoks += 1
+            if qtoks >= 3:
+                return i
+        return None
+
+    def _parse_sheet(ws):
+        rows = list(ws.iter_rows(values_only=True))
+        hdr = _find_header_pair(rows)
+        if hdr is None:
+            return None, None
+        year_row, qtr_row = rows[hdr], rows[hdr + 1]
+
+        # Column map: (year, quarter, column index)
+        col_map = []
+        current_year = None
+        for ci in range(1, len(year_row)):
+            yr = year_row[ci]
+            if yr is not None:
+                try:
+                    y = int(float(yr))
+                    if 2000 <= y <= 2035:
+                        current_year = y
+                except (TypeError, ValueError):
+                    pass
+            raw_q = qtr_row[ci] if ci < len(qtr_row) else None
+            q_str = str(raw_q).strip().upper() if raw_q is not None else ""
+            if not (current_year and q_str):
+                continue
+            if q_str in QTR_TOKEN_MAP:
+                col_map.append((current_year, QTR_TOKEN_MAP[q_str], ci))
+            elif "ANNUAL" in q_str:
+                col_map.append((current_year, "Annual", ci))
+
+        if not col_map:
+            return None, None
+
+        # Detect species rows by section. Indentation is no longer required
+        # (the old file indented items with three spaces; other layouts may
+        # not) — section scoping plus keyword matching keeps this safe, and
+        # first-match-wins protects against footnote text re-matching a key.
+        SPECIES_ROWS = {}
+        section = None
+        for i, row in enumerate(rows):
+            if not row or row[0] is None:
+                continue
+            label = str(row[0]).replace("\xa0", " ").strip()
+            if not label:
+                continue
+            if label.startswith("Production"):
+                section = "production"
+            elif label.startswith("Per capita"):
+                section = "per_capita"
+            elif label.startswith("U.S. trade"):
+                section = "trade"
+            elif label.startswith("Market prices"):
+                section = "prices"
+            elif section:
+                sp = label.lower()
+                key = None
+                if section == "production":
+                    if sp.startswith("beef"): key = ("production", "beef")
+                    elif sp.startswith("pork"): key = ("production", "pork")
+                    elif sp.startswith("broiler"): key = ("production", "broiler")
+                    elif sp.startswith("turkey"): key = ("production", "turkey")
+                elif section == "per_capita":
+                    if sp.startswith("beef"): key = ("per_capita", "beef")
+                    elif sp.startswith("pork"): key = ("per_capita", "pork")
+                    elif sp.startswith("broiler"): key = ("per_capita", "broiler")
+                    elif sp.startswith("turkey"): key = ("per_capita", "turkey")
+                elif section == "trade":
+                    if "beef" in sp and "export" in sp: key = ("exports", "beef")
+                    elif "beef" in sp and "import" in sp: key = ("imports", "beef")
+                    elif "pork export" in sp: key = ("exports", "pork")
+                    elif "pork import" in sp: key = ("imports", "pork")
+                    elif "broiler" in sp and "export" in sp: key = ("exports", "broiler")
+                    elif "turkey" in sp and "export" in sp: key = ("exports", "turkey")
+                if key is not None and key not in SPECIES_ROWS:
+                    SPECIES_ROWS[key] = i
+
+        if ("production", "beef") not in SPECIES_ROWS:
+            return None, None
+
+        def extract_values(row_idx):
+            row = rows[row_idx]
+            out = {}
+            for year, qtr, ci in col_map:
+                val = row[ci] if ci < len(row) else None
+                if val is not None:
+                    try:
+                        val = round(float(str(val).replace(",", "").strip()), 1)
+                    except (TypeError, ValueError):
+                        val = None
+                out[(year, qtr)] = val
+            return out
+
+        output = {}
+        for species in ["beef", "pork", "broiler", "turkey"]:
+            species_data = {}
+            for field in ["production", "per_capita", "exports", "imports"]:
+                k = (field, species)
+                if k in SPECIES_ROWS:
+                    species_data[field] = extract_values(SPECIES_ROWS[k])
+            if species_data:
+                output[species] = species_data
+        return output, col_map
+
     wb = openpyxl.load_workbook(BytesIO(wb_data), read_only=True, data_only=True)
-    ws = wb["RMPFORE"] if "RMPFORE" in wb.sheetnames else wb[wb.sheetnames[0]]
-    rows = list(ws.iter_rows(values_only=True))
+    names = list(wb.sheetnames)
+    names.sort(key=lambda n: (0 if _re.search(r"rmpfore|forecast", n, _re.I) else 1))
 
-    # Column map from header rows
-    year_row, qtr_row = rows[1], rows[2]
-    col_map = []
-    current_year = None
-    for ci in range(1, len(year_row)):
-        yr = year_row[ci]
-        if yr is not None:
-            try: current_year = int(float(yr))
-            except: pass
-        qtr = str(qtr_row[ci]).strip() if ci < len(qtr_row) and qtr_row[ci] else ""
-        if current_year and qtr:
-            q = {"I": "Q1", "II": "Q2", "III": "Q3", "IV": "Q4"}.get(qtr, "Annual" if "annual" in qtr.lower() else qtr)
-            col_map.append((current_year, q, ci))
+    output, col_map = None, None
+    for name in names:
+        output, col_map = _parse_sheet(wb[name])
+        if output:
+            print(f"  LDPO: forecasts table found on sheet '{name}'")
+            break
+    if not output:
+        print("  LDPO: no red meat & poultry forecasts table found in workbook")
+        return None
 
-    # Diagnostic: show which (year, quarter) columns the source file provides, so
-    # the Action log reveals whether next-year quarterly forecasts are published yet.
+    # Diagnostic: show which (year, quarter) columns the source provides, so
+    # the Action log reveals whether next-year quarterly forecasts exist yet.
     _by_year = {}
     for (_y, _q, _ci) in col_map:
         _by_year.setdefault(_y, []).append(_q)
@@ -776,58 +932,19 @@ def parse_livestock_outlook(wb_data):
         print("  LDPO columns by year: " + ", ".join(
             f"{_y}[{'/'.join(_by_year[_y])}]" for _y in sorted(_by_year)))
 
-    # Detect species rows by section
-    SPECIES_ROWS = {}
-    section = None
-    for i, row in enumerate(rows):
-        if not row or not row[0]: continue
-        raw_label = str(row[0])
-        label = raw_label.strip()
-        if label.startswith("Production"):
-            section = "production"
-        elif label.startswith("Per capita"):
-            section = "per_capita"
-        elif label.startswith("U.S. trade"):
-            section = "trade"
-        elif label.startswith("Market prices"):
-            section = "prices"
-        elif section and raw_label.startswith("   "):
-            sp = label.lower()
-            if sp.startswith("beef") and section == "production": SPECIES_ROWS[("production", "beef")] = i
-            elif sp.startswith("pork") and section == "production": SPECIES_ROWS[("production", "pork")] = i
-            elif sp.startswith("broiler") and section == "production": SPECIES_ROWS[("production", "broiler")] = i
-            elif sp.startswith("turkey") and section == "production": SPECIES_ROWS[("production", "turkey")] = i
-            elif sp.startswith("beef") and section == "per_capita": SPECIES_ROWS[("per_capita", "beef")] = i
-            elif sp.startswith("pork") and section == "per_capita": SPECIES_ROWS[("per_capita", "pork")] = i
-            elif sp.startswith("broiler") and section == "per_capita": SPECIES_ROWS[("per_capita", "broiler")] = i
-            elif sp.startswith("turkey") and section == "per_capita": SPECIES_ROWS[("per_capita", "turkey")] = i
-            elif "beef" in sp and "export" in sp and section == "trade": SPECIES_ROWS[("exports", "beef")] = i
-            elif "beef" in sp and "import" in sp and section == "trade": SPECIES_ROWS[("imports", "beef")] = i
-            elif "pork export" in sp and section == "trade": SPECIES_ROWS[("exports", "pork")] = i
-            elif "pork import" in sp and section == "trade": SPECIES_ROWS[("imports", "pork")] = i
-            elif "broiler" in sp and "export" in sp and section == "trade": SPECIES_ROWS[("exports", "broiler")] = i
-            elif "turkey" in sp and "export" in sp and section == "trade": SPECIES_ROWS[("exports", "turkey")] = i
-
-    def extract_values(row_idx):
-        row = rows[row_idx]
-        result = {}
-        for year, qtr, ci in col_map:
-            val = row[ci] if ci < len(row) else None
-            if val is not None:
-                try: val = round(float(val), 1)
-                except: val = None
-            result[(year, qtr)] = val
-        return result
-
-    output = {}
-    for species in ["beef", "pork", "broiler", "turkey"]:
-        species_data = {}
-        for field in ["production", "per_capita", "exports", "imports"]:
-            key = (field, species)
-            if key in SPECIES_ROWS:
-                species_data[field] = extract_values(SPECIES_ROWS[key])
-        if species_data:
-            output[species] = species_data
+    # Staleness check: a current edition always carries current-year quarters
+    # and, from ~May onward, next-year Q1/Q2. Warn loudly if not — this is
+    # exactly the failure mode of a pinned URL serving an old edition.
+    qtr_years = [y for (y, q, _c) in col_map if q in ("Q1", "Q2", "Q3", "Q4")]
+    if qtr_years:
+        _now = datetime.now()
+        _newest = max(qtr_years)
+        if _newest < _now.year:
+            print(f"  WARNING: LDPO source looks STALE — newest quarterly year is "
+                  f"{_newest} (today: {_now.strftime('%Y-%m')})")
+        elif _newest == _now.year and _now.month >= 6:
+            print(f"  WARNING: LDPO source has no {_now.year + 1} quarterly columns — "
+                  f"expected by ~May/June; the source may be a stale edition")
 
     print(f"  LDPO: {len(output)} species parsed")
     return output
@@ -882,10 +999,14 @@ def merge_ldpo_into_livestock(result, ldpo_data):
                                     row["values"][yi] = round(val)
                                 break
                     elif qtr != "Annual":
-                        # Year not in section yet — append it
+                        # Year not in section yet — append it. If the section
+                        # has no "years" of its own, give it a decoupled copy
+                        # first so the entry-level annual list is never mutated.
+                        if "years" not in section:
+                            section["years"] = list(sec_years)
+                            sec_years = section["years"]
                         sec_years.append(yr_str)
-                        if section.get("years"):
-                            section["years"] = sec_years
+                        section["years"] = sec_years
                         yi = len(sec_years) - 1
                         for row in section.get("rows", []):
                             while len(row["values"]) < yi:
@@ -945,6 +1066,7 @@ def merge_ldpo_into_livestock(result, ldpo_data):
 
             # Walk through quarters, carrying ending stocks forward as next quarter's beginning
             prev_end_stocks = q1_beg
+            fy_in_quarters = False  # did any quarterly section actually contain this year?
 
             for qtr_header in QTR_ORDER:
                 qtr_section = next((s for s in sections if s.get("header") == qtr_header), None)
@@ -954,6 +1076,7 @@ def merge_ldpo_into_livestock(result, ldpo_data):
                 sec_years = qtr_section.get("years", entry.get("years", []))
                 if fy_str not in sec_years:
                     continue
+                fy_in_quarters = True
                 yi = sec_years.index(fy_str)
 
                 # Set beginning stocks
@@ -989,7 +1112,12 @@ def merge_ldpo_into_livestock(result, ldpo_data):
                 else:
                     prev_end_stocks = None
 
-            if q1_beg is not None:
+            if not fy_in_quarters:
+                # Previously this printed "Q1 <year> beg stocks computed" even
+                # when the LDPO source had no quarterly columns for the year,
+                # which masked the stale-source failure. Be explicit instead.
+                print(f"  {species_id}: {fy_str} — no quarterly columns from LDPO yet; quarterly beg-stocks/total-supply skipped")
+            elif q1_beg is not None:
                 print(f"  {species_id}: Q1 {fy_str} beg stocks = {q1_beg}, computed total supply for available quarters")
 
     print(f"  LDPO merge complete")
@@ -1792,13 +1920,20 @@ def main():
     # ── LDPO Quarterly Forecasts ──
     print("\n-- LDPO QUARTERLY FORECASTS --")
     try:
-        ldpo_raw = fetch_url(LDPO_URL)
-        if ldpo_raw:
+        ldpo_data = None
+        for ldpo_url in LDPO_URLS:
+            ldpo_raw = fetch_url(ldpo_url)
+            if not ldpo_raw:
+                continue
             ldpo_data = parse_livestock_outlook(ldpo_raw)
             if ldpo_data:
-                merge_ldpo_into_livestock(result, ldpo_data)
+                print(f"  LDPO source used: {ldpo_url}")
+                break
+            print("  LDPO: trying next source...")
+        if ldpo_data:
+            merge_ldpo_into_livestock(result, ldpo_data)
         else:
-            print("  LDPO download failed — quarterly forecasts not updated")
+            print("  LDPO: no usable source — quarterly forecasts not updated")
     except Exception as e:
         print(f"  LDPO error: {e}")
 

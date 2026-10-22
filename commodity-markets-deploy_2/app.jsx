@@ -1378,6 +1378,91 @@ function useToggle() {
   return [hidden, toggle];
 }
 
+// ─── Global Chart.js plugin: close the right edge of the plot area ───────────────
+// Most charts on the site only draw vertical gridlines at period boundaries
+// (month / year starts), so the final boundary — the right edge of the plot —
+// never gets a line and the chart looks open-ended. This plugin draws one
+// vertical gridline at chartArea.right on every chart whose x-axis has at
+// least one visible gridline. It copies the colour / width / dash of the
+// strongest existing vertical gridline, draws beneath the data (same layer
+// as the grid), and does nothing when Chart.js already drew a line there.
+function chartCssAlpha(c) {
+  if (c == null) return 0;
+  if (typeof c !== "string") return 1; // gradients / patterns: treat as visible
+  var s = c.trim().toLowerCase();
+  if (s === "" || s === "transparent") return 0;
+  var m = s.match(/^(?:rgba?|hsla?)\(([^)]+)\)$/);
+  if (m) {
+    var p = m[1].split(/[\s,\/]+/).filter(function(t) { return t !== ""; });
+    if (p.length >= 4) { var a = parseFloat(p[3]); if (p[3].indexOf("%") >= 0) a = a / 100; return isNaN(a) ? 1 : a; }
+    return 1;
+  }
+  if (s.charAt(0) === "#") {
+    if (s.length === 5) return parseInt(s.charAt(4) + s.charAt(4), 16) / 255;
+    if (s.length === 9) return parseInt(s.slice(7, 9), 16) / 255;
+  }
+  return 1;
+}
+function chartAlignPixel(chart, pixel, width) {
+  var dpr = chart.currentDevicePixelRatio || 1;
+  var half = width !== 0 ? Math.max(width / 2, 0.5) : 0;
+  return Math.round((pixel - half) * dpr) / dpr + half;
+}
+var RIGHT_EDGE_GRID_PLUGIN = {
+  id: "rightEdgeGrid",
+  beforeDatasetsDraw: function(chart) {
+    var area = chart.chartArea;
+    if (!area || !(area.right > area.left)) return;
+    var scales = chart.scales || {};
+    var keys = Object.keys(scales);
+    for (var k = 0; k < keys.length; k++) {
+      var sc = scales[keys[k]];
+      if (!sc || typeof sc.isHorizontal !== "function" || !sc.isHorizontal()) continue;
+      var gopt = sc.options && sc.options.grid;
+      if (!gopt || gopt.display === false || gopt.drawOnChartArea === false) continue;
+      var items = sc._gridLineItems || [];
+      var best = null, bestA = 0, hasEdge = false;
+      for (var i = 0; i < items.length; i++) {
+        var it = items[i];
+        if (!it || !(it.width > 0)) continue;
+        var a = chartCssAlpha(it.color);
+        if (a <= 0) continue;
+        if (Math.abs(it.x1 - area.right) < 1.5) { hasEdge = true; break; }
+        if (a >= bestA) { bestA = a; best = it; }
+      }
+      if (hasEdge || !best) continue;
+      var w = best.width;
+      // chartArea.right often coincides with the canvas edge (no right padding), where a
+      // line centred on it would be clipped away — nudge it so it stays fully on-canvas.
+      var half = Math.max(w / 2, 0.5);
+      var limit = (chart.width || area.right) - half;
+      var x = chartAlignPixel(chart, Math.min(area.right, limit), w);
+      if (x + half > (chart.width || Infinity)) x -= 1 / (chart.currentDevicePixelRatio || 1);
+      var ctx = chart.ctx;
+      ctx.save();
+      ctx.lineWidth = w;
+      ctx.strokeStyle = best.color;
+      if (typeof ctx.setLineDash === "function") ctx.setLineDash(best.borderDash || []);
+      ctx.lineDashOffset = best.borderDashOffset || 0;
+      ctx.beginPath();
+      ctx.moveTo(x, area.top);
+      ctx.lineTo(x, area.bottom);
+      ctx.stroke();
+      ctx.restore();
+      return; // one horizontal axis per chart is enough
+    }
+  }
+};
+
+// Called once Chart.js is on the page: site-wide defaults + global plugins.
+// Chart.register is idempotent for an already-registered plugin id.
+function installChartGlobals() {
+  if (!window.Chart) return;
+  Chart.defaults.scale.ticks.padding = 4;
+  Chart.defaults.scale.grid.drawTicks = false;
+  Chart.register(RIGHT_EDGE_GRID_PLUGIN);
+}
+
 function ChartBox({ id, height = 260, renderChart, deps }) {
   const renderRef = useRef(renderChart);
   renderRef.current = renderChart;
@@ -8081,25 +8166,36 @@ function ExportSalesPage({ ready }) {
   useEffect(function(){ setHiddenYrs(new Set()); }, [comm, range, country, myType, unit]);
   var toggleYr = function(label) { setHiddenYrs(function(prev){ var next = new Set(prev); if(next.has(label))next.delete(label);else next.add(label); return next; }); };
 
-  var BU_PER_MT = { corn: 39.368, soybeans: 36.744, wheat: 36.744, sorghum: 39.368 };
+  // Alternate (non-metric-ton) unit per commodity. Grains convert to bushels;
+  // soybean meal is traded in short tons (CME contract = 100 ST), so it gets ST.
+  //   f = multiplier from MT; chartDiv = divisor for the chart axis; labels as shown.
+  var ALT_UNIT = {
+    corn:     { f: 39.368,  btn: "Bushels",    card: "bushels",    chart: "M bushels", chartDiv: 1000000, file: "bu" },
+    soybeans: { f: 36.744,  btn: "Bushels",    card: "bushels",    chart: "M bushels", chartDiv: 1000000, file: "bu" },
+    wheat:    { f: 36.744,  btn: "Bushels",    card: "bushels",    chart: "M bushels", chartDiv: 1000000, file: "bu" },
+    sorghum:  { f: 39.368,  btn: "Bushels",    card: "bushels",    chart: "M bushels", chartDiv: 1000000, file: "bu" },
+    soymeal:  { f: 1.10231, btn: "Short Tons", card: "short tons", chart: "1,000 ST",  chartDiv: 1000,    file: "st" },
+  };
+  var alt = ALT_UNIT[comm] || ALT_UNIT.corn;
   var isBu = unit === "bu";
   var conv = function(mt) {
     if (mt == null) return null;
-    if (isBu) return Math.round(mt * BU_PER_MT[comm]);
+    if (isBu) return Math.round(mt * alt.f);
     return Math.round(mt);
   };
-  var cardUnit = isBu ? "bushels" : "MT";
-  var chartUnit = isBu ? "M bushels" : "1,000 MT";
+  var cardUnit = isBu ? alt.card : "MT";
+  var chartUnit = isBu ? alt.chart : "1,000 MT";
   var chartConv = function(mt) {
     if (mt == null) return null;
-    if (isBu) return Math.round(mt * BU_PER_MT[comm] / 1000000 * 10) / 10;
+    if (isBu) return Math.round(mt * alt.f / alt.chartDiv * 10) / 10;
     return Math.round(mt / 1000 * 10) / 10;
   };
 
-  var COMM_OPTS = [{id:"corn",label:"Corn"},{id:"soybeans",label:"Soybeans"},{id:"wheat",label:"Wheat"},{id:"sorghum",label:"Sorghum"}];
+  var COMM_OPTS = [{id:"corn",label:"Corn"},{id:"soybeans",label:"Soybeans"},{id:"soymeal",label:"Soybean Meal"},{id:"wheat",label:"Wheat"},{id:"sorghum",label:"Sorghum"}];
   var myConfig = {
     corn: { startMonth: 9, mktN: ["Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug"] },
     soybeans: { startMonth: 9, mktN: ["Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug"] },
+    soymeal: { startMonth: 10, mktN: ["Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep"] },
     sorghum: { startMonth: 9, mktN: ["Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug"] },
     wheat: { startMonth: 6, mktN: ["Jun","Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May"] },
   };
@@ -8252,8 +8348,19 @@ function ExportSalesPage({ ready }) {
     </div>);
   };
 
-  var mktBounds = [0,30,61,91,122,153,181,212,242,273,303,334];
-  var mktMids = [15,45,76,106,137,167,196,227,257,288,318,349];
+  // Month boundary / mid-point day offsets from the marketing-year start, derived
+  // from the selected commodity's start month so gridlines land on true month starts.
+  var MONTH_LEN = [31,28,31,30,31,30,31,31,30,31,30,31];
+  var mktBounds = [0], mktMids = [];
+  (function() {
+    var acc = 0;
+    for (var mi = 0; mi < 12; mi++) {
+      var len = MONTH_LEN[(cfg.startMonth - 1 + mi) % 12];
+      mktMids.push(Math.floor(acc + len / 2));
+      acc += len;
+      if (mi < 11) mktBounds.push(acc);
+    }
+  })();
 
   var mkChart = function(byMY) { return function(canvas) {
     if (!byMY || Object.keys(byMY).length === 0) return;
@@ -8291,7 +8398,7 @@ function ExportSalesPage({ ready }) {
     var rows = filtered.sort(function(a, b) { return a.d < b.d ? -1 : 1; }).map(function(pt) {
       return [pt.d, myLabel(pt.my), chartConv(pt[nsKey]), chartConv(pt[osKey]), chartConv(pt.we), chartConv(pt.ae), chartConv(pt.tc)];
     });
-    downloadCSV("export_sales_" + comm + "_" + myType + "_" + unit + ".csv", hdrs, rows);
+    downloadCSV("export_sales_" + comm + "_" + myType + "_" + (isBu ? alt.file : "mt") + ".csv", hdrs, rows);
   };
 
   var chevSvg = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' fill='none' stroke='%23666' stroke-width='1.5'/%3E%3C/svg%3E\")";
@@ -8339,7 +8446,7 @@ function ExportSalesPage({ ready }) {
       </div>
       <div style={{display:"flex",gap:3}}>
         <button onClick={function(){setUnit("mt");}} style={modeSt(unit==="mt")}>Metric Tons</button>
-        <button onClick={function(){setUnit("bu");}} style={modeSt(unit==="bu")}>Bushels</button>
+        <button onClick={function(){setUnit("bu");}} style={modeSt(unit==="bu")}>{alt.btn}</button>
       </div>
       <div style={{marginLeft:"auto"}}><DownloadBtn onClick={dlCSV} /></div>
     </div>
@@ -8364,7 +8471,7 @@ function ExportSalesPage({ ready }) {
         {ready && <ChartBox id={"es_"+ch.key+"_"+comm+"_"+range+"_"+country+"_"+myType+"_"+unit} height={240} renderChart={mkChart(ch.data)} deps={"es_"+ch.key+"_"+comm+"_"+range+"_"+country+"_"+myType+"_"+unit+"_"+esLoaded+"_"+hk} />}
       </div>); })}
     </div>
-    <div style={{marginTop:14,fontSize:11,color:"var(--color-text-tertiary)"}}>Source: USDA FAS Export Sales Reporting. Marketing years: Corn/Soybeans/Sorghum (Sep–Aug), Wheat (Jun–May). CMY = current marketing year, NMY = next marketing year.</div>
+    <div style={{marginTop:14,fontSize:11,color:"var(--color-text-tertiary)"}}>Source: USDA FAS Export Sales Reporting. Marketing years: Corn/Soybeans/Sorghum (Sep–Aug), Soybean Meal (Oct–Sep), Wheat (Jun–May). CMY = current marketing year, NMY = next marketing year.</div>
   </div>);
 }
 
@@ -8566,11 +8673,10 @@ function App() {
     // Load Chart.js
     if (!window.Chart) {
       const s = document.createElement("script"); s.src = "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"; s.onload = () => {
-        Chart.defaults.scale.ticks.padding = 4;
-        Chart.defaults.scale.grid.drawTicks = false;
+        installChartGlobals();
         setChartReady(true);
       }; document.head.appendChild(s);
-    } else { setChartReady(true); }
+    } else { installChartGlobals(); setChartReady(true); }
     // D3 loaded via index.html
   }, []);
 

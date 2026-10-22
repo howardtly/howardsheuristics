@@ -21,6 +21,7 @@ BASE = "https://api.fas.usda.gov"
 COMMODITIES = {
     "corn": {"code": 401, "myStart": 9},      # Sep
     "soybeans": {"code": 801, "myStart": 9},   # Sep
+    "soymeal": {"code": 901, "myStart": 10},   # Oct (Soybean Cake & Meal)
     "wheat": {"code": 107, "myStart": 6},      # Jun (All Wheat)
     "sorghum": {"code": 701, "myStart": 9},    # Sep
 }
@@ -37,6 +38,13 @@ def api_get(url):
     req.add_header("Accept", "application/json")
     resp = urlopen(req, timeout=60)
     return json.loads(resp.read().decode("utf-8"))
+
+
+def fallback_my(my_start):
+    """Current marketing year (ESR convention: labelled by the year it ends)
+    derived from today's date, used only if datareleasedates omits a commodity."""
+    today = datetime.now(timezone.utc)
+    return today.year + 1 if today.month >= my_start else today.year
 
 
 def get_current_mys():
@@ -147,7 +155,7 @@ def main():
 
     for name, cfg in COMMODITIES.items():
         code = cfg["code"]
-        current_my = my_map.get(code, 2026)
+        current_my = my_map.get(code) or fallback_my(cfg["myStart"])
         totals, by_country = fetch_commodity(name, code, current_my)
         result[name] = {"totals": totals, "byCountry": by_country}
 

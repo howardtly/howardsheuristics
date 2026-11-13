@@ -3,6 +3,31 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [ main ]
+
+  # The data workflows commit using GitHub's built-in token, and GitHub deliberately
+  # does not start "push" workflows for commits made that way. Without this block,
+  # fresh data lands in the repo but the site is not republished until someone
+  # deploys by hand. With it, the site republishes whenever one of these finishes.
+  #
+  # Each entry must match that workflow's `name:` line exactly. If you rename one,
+  # or add a new data workflow, update this list.
+  workflow_run:
+    workflows:
+      - "Fetch Cattle on Feed"
+      - "Fetch COT Data (Weekly)"
+      - "Fetch Crop Progress (Weekly)"
+      - "Fetch Drought Data (Weekly)"
+      - "Fetch Ethanol (Weekly)"
+      - "Fetch Export Inspections (Weekly)"
+      - "Fetch Export Sales (Weekly)"
+      - "Fetch Meat Prices"
+      - "Fetch Oilseed Crushing (Monthly)"
+      - "Fetch Poultry Prices"
+      - "Fetch PSD History (One-Time)"
+      - "Fetch WASDE Data"
+      - "Fetch World Balance Sheets (PSD)"
+    types: [completed]
+
   workflow_dispatch:
 
 permissions:
@@ -23,6 +48,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: main   # always publish the newest main, whichever trigger started this run
       - name: Setup Pages
         uses: actions/configure-pages@v4
       - name: Upload artifact

@@ -1,32 +1,113 @@
 name: Fetch COT Data (Weekly)
+# ^ Keep this name in sync with the workflow_run list in deploy-pages.yml:
+#   that list is what publishes the site after this workflow commits.
+
 on:
   schedule:
-    - cron: '30 19 * * 5'  # Fridays 3:30 PM ET (CFTC release time)
+    # WATCHERS (Mon / Wed / Fri)
+    # Start well ahead of CFTC's 3:30 PM ET release, pre-load history, then check
+    # CFTC every 30 seconds around release time and commit the moment a new report
+    # appears. The head start is the point: GitHub routinely starts scheduled jobs
+    # 15-60 minutes late, and starting early absorbs that.
+    #   Fri = normal release day
+    #   Mon = where CFTC moves the release in federal-holiday weeks
+    #   Wed = CFTC's announced twice-weekly schedule (Mon data on Wed, Wed data on Fri)
+    # On a day with no release the watcher exits at 4:15 PM ET without committing.
+    # Two lines because cron runs in UTC and 3:30 PM ET shifts with daylight saving.
+    - cron: '7 18 * 3-11 1,3,5'     # Mar-Nov: 2:07 PM EDT (1:07 PM in the standard-time weeks)
+    - cron: '7 19 * 12,1,2 1,3,5'   # Dec-Feb: 2:07 PM EST
+
+    # SWEEPER (every weekday evening)
+    # One quick look, about 20 seconds when there is nothing new. Catches a report
+    # that came out late or on an unusual day, or a watcher GitHub never started.
+    - cron: '37 23 * * 1-5'         # 6:37 PM EST / 7:37 PM EDT
+
   workflow_dispatch:
+    inputs:
+      mode:
+        description: 'now = rebuild immediately  |  watch = wait for the next 3:30 PM ET release'
+        type: choice
+        options:
+          - now
+          - watch
+        default: now
 
 permissions:
   contents: write
 
+# One COT run at a time. A second run waits for the first instead of racing it.
+concurrency:
+  group: fetch-cot
+  cancel-in-progress: false
+
 jobs:
   fetch-cot:
     runs-on: ubuntu-latest
+    timeout-minutes: 300
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
+      # fetch_cot.py uses only the Python standard library, so no pip install.
+      # Scheduled runs watch for the release; manual runs do what the dropdown says.
       - name: Fetch COT data
-        run: python commodity-markets-deploy_2/scripts/fetch_cot.py
-      - name: Commit and push
+        id: fetch
+        env:
+          COT_MODE: ${{ github.event_name == 'schedule' && 'watch' || inputs.mode || 'now' }}
         run: |
+          if [ "$COT_MODE" = "watch" ]; then
+            python -u commodity-markets-deploy_2/scripts/fetch_cot.py --watch
+          else
+            python -u commodity-markets-deploy_2/scripts/fetch_cot.py
+          fi
+
+      # Skipped entirely when the script reports nothing new.
+      - name: Commit and push
+        if: steps.fetch.outputs.updated == 'true'
+        env:
+          LATEST: ${{ steps.fetch.outputs.latest_date }}
+          DETECTED: ${{ steps.fetch.outputs.detected_at }}
+        run: |
+          set -euo pipefail
+          FILE=commodity-markets-deploy_2/data/cot.json
+          cp "$FILE" "$RUNNER_TEMP/cot.json"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add .
-          if git diff --staged --quiet; then
-            echo "No changes to commit"
-          else
-            git commit -m "Update COT data $(date -u +%Y-%m-%d)"
-            git push
-          fi
+
+          # This job may have been waiting for hours, and other data workflows push
+          # to main in the meantime. So: jump to main as it is right now, drop the
+          # fresh cot.json on top, commit, push. cot.json is written only by this
+          # workflow, so this can never hit a merge conflict. If main moves again
+          # in the second between fetch and push, go around once more.
+          for attempt in 1 2 3 4 5; do
+            git fetch --quiet --depth=1 origin main
+            git reset --quiet --hard FETCH_HEAD
+            cp "$RUNNER_TEMP/cot.json" "$FILE"
+            git add "$FILE"
+            if git diff --staged --quiet; then
+              echo "cot.json on main is already identical. Nothing to commit."
+              exit 0
+            fi
+            git commit --quiet -m "Update COT data $(date -u +%Y-%m-%d) (report dated $LATEST)"
+            if git push --quiet origin HEAD:main; then
+              PUSHED="$(TZ=America/New_York date '+%-I:%M:%S %p ET')"
+              echo "Pushed on attempt $attempt at $PUSHED"
+              {
+                echo "### COT data committed"
+                echo "- Report dated **$LATEST**"
+                if [ -n "$DETECTED" ]; then echo "- Seen on cftc.gov at $DETECTED"; fi
+                echo "- Pushed to main at $PUSHED"
+                echo "- *Deploy to GitHub Pages* starts on its own when this run finishes"
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "Push rejected because main moved. Retrying (attempt $attempt of 5)..."
+            sleep $((attempt * 2))
+          done
+          echo "::error title=COT::Could not push cot.json after 5 attempts."
+          exit 1

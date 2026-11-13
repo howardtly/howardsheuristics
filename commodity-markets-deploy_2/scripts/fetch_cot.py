@@ -7,10 +7,25 @@ Source: https://www.cftc.gov/files/dea/history/com_disagg_txt_{YYYY}.zip
 Each zip contains a CSV with all weekly reports for that year.
 
 Fetches 10+ years for historical band charts + current year for latest positions.
+
+Two ways to run:
+
+  python fetch_cot.py            Rebuild cot.json right now from whatever CFTC has.
+
+  python fetch_cot.py --watch    Wait for CFTC to publish a report newer than the one
+                                 already in cot.json, then rebuild immediately. Meant to
+                                 be started ahead of the 3:30 PM ET release. If nothing
+                                 new appears by the give-up time the file is left
+                                 untouched. Makes no assumption about WHICH days CFTC
+                                 publishes, so holiday-delayed and twice-weekly releases
+                                 are picked up the same way.
+
+Either way, cot.json is never overwritten with something older or less complete than
+what is already published.
 """
 
-import csv, io, json, os, sys, zipfile, urllib.request, urllib.error, time
-from datetime import datetime, timedelta
+import argparse, csv, io, json, os, sys, zipfile, urllib.request, urllib.error, time
+from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -89,28 +104,93 @@ START_YEAR = 2010  # CFTC disaggregated combined data starts 2010
 BAND_YEARS = 10  # Use most recent N years for seasonal band charts
 
 
-def download_cftc_zip(year):
-    """Download and extract CFTC disaggregated combined F+O zip for a given year."""
-    url = CFTC_URL.format(year=year)
-    print(f"  Downloading {year}...", end=" ", flush=True)
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            data = resp.read()
-            print(f"{len(data):,} bytes", end=" ", flush=True)
+# Ask for an uncached copy when checking for a just-released report. If CFTC's
+# servers ever reject the extra query string we notice and stop sending it.
+_cache_bust_ok = True
+
+
+def _fetch_year(year, fresh=False, validators=None, conditional=True, quiet=False):
+    """Fetch one yearly CFTC zip. Returns (status, lines):
+
+      "ok"            lines = the CSV as a list of lines
+      "not_modified"  server says the file is unchanged since the last download
+      "missing"       HTTP 404 (normal for a new year before its first report)
+      "error"         anything else
+
+    fresh       ask caches for the newest copy (cache-busting query + no-cache).
+    validators  dict carrying ETag / Last-Modified between calls so repeat checks
+                cost a few bytes instead of a full download. Updated in place.
+    conditional send those validators (False = force a full download).
+    """
+    global _cache_bust_ok
+    base_url = CFTC_URL.format(year=year)
+    urls = []
+    if fresh and _cache_bust_ok:
+        urls.append((base_url + "?t=" + str(int(time.time())), True))
+    urls.append((base_url, False))
+
+    bust_failed = False
+    err = "no attempt made"
+    for url, busted in urls:
+        headers = {"User-Agent": "Mozilla/5.0"}
+        if fresh:
+            headers["Cache-Control"] = "no-cache"
+            headers["Pragma"] = "no-cache"
+        if validators and conditional:
+            if validators.get("etag"):
+                headers["If-None-Match"] = validators["etag"]
+            if validators.get("last_modified"):
+                headers["If-Modified-Since"] = validators["last_modified"]
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                data = resp.read()
+                resp_headers = resp.headers
             zf = zipfile.ZipFile(io.BytesIO(data))
             # The zip contains one CSV file
             csv_name = zf.namelist()[0]
             csv_data = zf.read(csv_name).decode("utf-8", errors="replace")
             lines = csv_data.strip().split("\n")
-            print(f"→ {len(lines)-1} rows")
+            if validators is not None:
+                validators["etag"] = resp_headers.get("ETag")
+                validators["last_modified"] = resp_headers.get("Last-Modified")
+            if bust_failed:
+                _cache_bust_ok = False  # plain URL works, cache-busting one doesn't
+            if not quiet:
+                print(f"{len(data):,} bytes → {len(lines)-1} rows")
+            return "ok", lines
+        except urllib.error.HTTPError as e:
+            if e.code == 304:
+                return "not_modified", None
+            if e.code == 404:
+                if not quiet:
+                    print("HTTP 404")
+                return "missing", None
+            err = f"HTTP {e.code}"
+        except Exception as e:
+            err = f"Error: {e}"
+        if busted:
+            bust_failed = True  # fall through and try the plain URL
+    if not quiet:
+        print(err)
+    return "error", None
+
+
+def download_cftc_zip(year, retries=3):
+    """Download and extract CFTC disaggregated combined F+O zip for a given year.
+    Returns the CSV as a list of lines, or None. Transient failures are retried;
+    a 404 is final (the current year's file does not exist until its first report)."""
+    for attempt in range(1, retries + 1):
+        print(f"  Downloading {year}...", end=" ", flush=True)
+        status, lines = _fetch_year(year)
+        if status == "ok":
             return lines
-    except urllib.error.HTTPError as e:
-        print(f"HTTP {e.code}")
-        return None
-    except Exception as e:
-        print(f"Error: {e}")
-        return None
+        if status == "missing" or attempt == retries:
+            return None
+        wait = 3 * attempt
+        print(f"    retrying {year} in {wait}s (attempt {attempt + 1} of {retries})")
+        time.sleep(wait)
+    return None
 
 
 _unmatched_names = set()
@@ -375,9 +455,204 @@ def build_bands(all_years_data, cot_id, field):
     return bands
 
 
-def main():
+# ════════════════════════════════════════════════════════════════════════════
+# Watch mode: wait for the release, publish the moment it lands
+# ════════════════════════════════════════════════════════════════════════════
+
+RELEASE_ET = (15, 30)          # CFTC publishes COT reports at 3:30 PM US Eastern
+WATCH_LEAD_MIN = 1             # begin checking this many minutes before the release
+WATCH_GIVE_UP_MIN = 45         # stop this many minutes after it
+WATCH_MAX_PRE_WAIT_MIN = 240   # never sit idle longer than this ahead of a release
+
+
+def _now_utc():
+    return datetime.utcnow()
+
+
+def _us_eastern_offset_hours(utc_dt):
+    """UTC offset of US Eastern time: daylight time runs from 2:00 AM on the second
+    Sunday of March to 2:00 AM on the first Sunday of November."""
+    y = utc_dt.year
+    mar = datetime(y, 3, 8)
+    mar += timedelta(days=(6 - mar.weekday()) % 7)      # second Sunday of March
+    nov = datetime(y, 11, 1)
+    nov += timedelta(days=(6 - nov.weekday()) % 7)      # first Sunday of November
+    dst_start = mar + timedelta(hours=7)                # 2:00 AM EST = 07:00 UTC
+    dst_end = nov + timedelta(hours=6)                  # 2:00 AM EDT = 06:00 UTC
+    return -4 if dst_start <= utc_dt < dst_end else -5
+
+
+def now_et():
+    """Current wall-clock time in US Eastern (naive datetime), DST-aware."""
+    utc = _now_utc()
+    try:
+        from zoneinfo import ZoneInfo
+        return utc.replace(tzinfo=timezone.utc).astimezone(ZoneInfo("America/New_York")).replace(tzinfo=None)
+    except Exception:
+        return utc + timedelta(hours=_us_eastern_offset_hours(utc))
+
+
+def _clock(dt):
+    """3:30:41 PM ET"""
+    return dt.strftime("%I:%M:%S %p ET").lstrip("0")
+
+
+def latest_report_date(parsed):
+    """Newest report date across our commodities in one parsed yearly file."""
+    dates = [recs[-1]["date"] for recs in parsed.values() if recs]
+    return max(dates) if dates else None
+
+
+def load_published(path):
+    """What is already in the repo: (newest report date, {cot_id: latest_date})."""
+    try:
+        with open(path) as f:
+            existing = json.load(f)
+        per_id = {k: v.get("latest_date") for k, v in existing.get("data", {}).items() if v.get("latest_date")}
+        return (max(per_id.values()) if per_id else None), per_id
+    except Exception:
+        return None, {}
+
+
+def set_outputs(**pairs):
+    """Hand results to the GitHub Actions workflow (no-op when run anywhere else)."""
+    path = os.environ.get("GITHUB_OUTPUT")
+    if not path:
+        return
+    with open(path, "a") as f:
+        for k, v in pairs.items():
+            f.write(f"{k}={v}\n")
+
+
+def _diag_snapshot():
+    return (set(_unmatched_names), set(_natgas_matches), set(_heating_matches),
+            set(_crude_matches), dict(_crude_per_name_count))
+
+
+def _diag_restore(snap):
+    for target, saved in zip((_unmatched_names, _natgas_matches, _heating_matches, _crude_matches), snap[:4]):
+        target.clear()
+        target.update(saved)
+    _crude_per_name_count.clear()
+    _crude_per_name_count.update(snap[4])
+
+
+def watch_for_new_report(baseline):
+    """Wait for CFTC to publish a report dated after `baseline`.
+
+    Returns (date, preparsed) where preparsed is {year: parsed records} for every
+    yearly file already downloaded while waiting, or (None, {}) if nothing new
+    appeared by the give-up time.
+    """
+    et = now_et()
+    release = et.replace(hour=RELEASE_ET[0], minute=RELEASE_ET[1], second=0, microsecond=0)
+    hot_start = release - timedelta(minutes=WATCH_LEAD_MIN)
+    give_up = release + timedelta(minutes=WATCH_GIVE_UP_MIN)
+
+    # A report dated late December can be published in early January, into last
+    # year's file, so in January keep an eye on both.
+    probe_years = [CURRENT_YEAR] + ([CURRENT_YEAR - 1] if et.month == 1 else [])
+    validators = {y: {} for y in probe_years}
+    raw = {}       # {year: csv lines} newest copy of each watched file
+    seen = {}      # {year: newest report date in that copy}
+    preparsed = {}
+    state = {"n": 0}
+
+    def check():
+        state["n"] += 1
+        # Every third check is a full download even if the server answers "not
+        # modified", so a misbehaving cache can't hide a new report for long.
+        full = (state["n"] % 3 == 1)
+        parts = []
+        for y in probe_years:
+            status, lines = _fetch_year(y, fresh=True, validators=validators[y],
+                                        conditional=not full, quiet=True)
+            if status == "ok":
+                snap = _diag_snapshot()
+                seen[y] = latest_report_date(parse_cftc_csv(lines))
+                _diag_restore(snap)          # checks leave no trace in the diagnostics
+                raw[y] = lines
+                parts.append(f"{y} file: latest report {seen[y]}")
+            elif status == "not_modified":
+                parts.append(f"{y} file: unchanged")
+            elif status == "missing":
+                parts.append(f"{y} file: not published yet")
+            else:
+                parts.append(f"{y} file: fetch failed")
+        dates = [d for d in seen.values() if d]
+        newest = max(dates) if dates else None
+        is_new = bool(newest) and (baseline is None or newest > baseline)
+        print(f"  [{now_et():%H:%M:%S} ET] check #{state['n']}: {' | '.join(parts)}"
+              + ("   <-- NEW REPORT" if is_new else ""), flush=True)
+        return newest if is_new else None
+
+    print("\n-- Watch mode --")
+    print(f"  Published now: report dated {baseline or '(nothing yet)'}")
+    print(f"  Now {et:%a %Y-%m-%d %H:%M:%S} ET | release {release:%H:%M} ET | give up {give_up:%H:%M} ET")
+
+    found = check()   # always look once straight away: it may already be out
+
+    if not found and et < give_up:
+        pre_wait_min = (hot_start - et).total_seconds() / 60
+        if pre_wait_min > WATCH_MAX_PRE_WAIT_MIN:
+            print(f"  Release is {pre_wait_min:.0f} min away, too early to sit and wait. "
+                  f"The scheduled run will handle it.")
+            return None, {}
+
+        if pre_wait_min > 3:
+            # Use the quiet time to load the years that won't change, so that when
+            # the report lands only the one new file stands between us and publishing.
+            print("  Pre-loading history while we wait...")
+            for year in range(START_YEAR, CURRENT_YEAR + 1):
+                if year in probe_years:
+                    continue
+                lines = download_cftc_zip(year)
+                if lines:
+                    preparsed[year] = parse_cftc_csv(lines, year=year)
+                time.sleep(0.5)
+
+        announced_wait = False
+        while not found:
+            et = now_et()
+            if et >= give_up:
+                break
+            if et < hot_start:
+                wait = min((hot_start - et).total_seconds(), 600)
+                if not announced_wait:
+                    print(f"  Waiting until {hot_start:%H:%M} ET to start checking...", flush=True)
+                    announced_wait = True
+            elif et < release + timedelta(minutes=5):
+                wait = 30
+            elif et < release + timedelta(minutes=20):
+                wait = 60
+            else:
+                wait = 300
+            wait = min(wait, (give_up - et).total_seconds())
+            time.sleep(max(1, wait))
+            if now_et() < hot_start:
+                continue
+            found = check()
+
+    if not found:
+        return None, {}
+
+    # Parse the file(s) holding the new report for real (same call the normal
+    # run makes), reusing the exact bytes we just verified.
+    for y in probe_years:
+        if y in raw:
+            preparsed[y] = parse_cftc_csv(raw[y], year=y)
+    return found, preparsed
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description="Fetch CFTC COT data into data/cot.json")
+    ap.add_argument("--watch", action="store_true",
+                    help="wait for a report newer than the published one, then rebuild")
+    args = ap.parse_args(argv)
+
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     output_file = os.path.join(OUTPUT_DIR, "cot.json")
+    baseline, published_ids = load_published(output_file)
 
     print("=" * 60)
     print("CFTC COT Data Fetch")
@@ -390,17 +665,38 @@ def main():
     all_years_parsed = {}  # {year: parsed_dict} for band building
     all_records = defaultdict(list)  # combined records across all years
     
+    preparsed = {}
+    detected_at = None
+    if args.watch:
+        detected, preparsed = watch_for_new_report(baseline)
+        if not detected:
+            print(f"\nNo report newer than {baseline} was published. cot.json left untouched.")
+            print(f"::notice title=COT::No new COT report today (published data is dated {baseline}).")
+            set_outputs(updated="false", latest_date=baseline or "")
+            return 0
+        detected_at = now_et()
+        print(f"\n-- New report {detected} detected at {detected_at:%H:%M:%S} ET, building --")
+
     for year in range(START_YEAR, CURRENT_YEAR + 1):
-        lines = download_cftc_zip(year)
-        if lines:
-            parsed = parse_cftc_csv(lines, year=year)
+        if year in preparsed:
+            parsed = preparsed[year]
+        else:
+            lines = download_cftc_zip(year)
+            parsed = parse_cftc_csv(lines, year=year) if lines else None
+            time.sleep(0.5)
+        if parsed is not None:
             all_years_parsed[year] = parsed
             for cot_id, recs in parsed.items():
                 all_records[cot_id].extend(recs)
-        time.sleep(0.5)
 
     if not all_records:
         print("ERROR: No data fetched")
+        return 1
+
+    # Never publish truncated history: every completed year must have downloaded.
+    missing_years = [y for y in range(START_YEAR, CURRENT_YEAR) if y not in all_years_parsed]
+    if missing_years:
+        print(f"::error title=COT::Could not download CFTC history for {missing_years}; cot.json left untouched.")
         return 1
 
     # Sort combined records
@@ -581,10 +877,34 @@ def main():
         "data": cot_output,
     }
 
+    # Never replace published data with something older.
+    new_ids = {k: v["latest_date"] for k, v in cot_output.items()}
+    new_latest = max(new_ids.values()) if new_ids else None
+    if baseline and (not new_latest or new_latest < baseline):
+        print(f"::error title=COT::Built data ends {new_latest} but {baseline} is already published; cot.json left untouched.")
+        return 1
+    if args.watch and baseline and new_latest <= baseline:
+        print(f"::error title=COT::A new report was detected but the build still ends {new_latest}; cot.json left untouched.")
+        return 1
+
+    # Heads-up (not fatal) if a market dropped out or didn't get the newest report:
+    # usually means CFTC renamed it and COMMODITY_MAP needs a new alias.
+    dropped = sorted(set(published_ids) - set(new_ids))
+    lagging = sorted(k for k, d in new_ids.items() if d < new_latest)
+    if dropped:
+        print(f"::warning title=COT::Markets no longer found in CFTC data: {', '.join(dropped)}")
+    if lagging:
+        print(f"::warning title=COT::Markets missing the {new_latest} report: {', '.join(lagging)}")
+
     print(f"\nWriting {output_file}")
     with open(output_file, "w") as f:
         json.dump(result, f)
     print(f"  {os.path.getsize(output_file):,} bytes")
+
+    set_outputs(updated="true", latest_date=new_latest or "",
+                detected_at=(_clock(detected_at) if detected_at else ""))
+    if detected_at:
+        print(f"::notice title=COT::Report dated {new_latest} detected at {_clock(detected_at)} (previously {baseline}).")
 
     return 0
 
